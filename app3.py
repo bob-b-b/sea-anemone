@@ -92,12 +92,12 @@ def add_window(selected_value):
 
 
 @app.callback(
-    Output('map', 'figure'),
-    Output('dbdt', 'figure'),
+    Output('map', 'figure', allow_duplicate=True),
+    Output('dbdt', 'figure', allow_duplicate=True),
     State('map', 'figure'),
     State('dbdt', 'figure'),
     Input('table-overview', 'selected_cells'),
-    prevent_initial_call=True
+    prevent_initial_call=True,
 )
 def update_map(epmap, dbdt, selected_cells):
     if not selected_cells:
@@ -124,13 +124,80 @@ def update_map(epmap, dbdt, selected_cells):
     
     return epmap, fig.to_dict()
 
-
 @app.callback(
-    Output('table-overview', 'selected_cells'),
-    Output('dbdt', 'figure'),
+    Output('dbdt', 'figure', allow_duplicate=True),
     State('dbdt', 'figure'),
     Input('map', 'selectedData'),
+    prevent_initial_call=True,
+    allow_duplicate=True
 )
+def update_dbdt(dbdt, selected_data):
+    if not selected_data or 'points' not in selected_data:
+        raise PreventUpdate
+
+    # Extract selected points
+    selected_points = [point['pointIndex'] for point in selected_data['points']]
+
+    fig = go.Figure()
+
+    hm_time = ep.hm.time.mean(0)
+    lm_time = ep.lm.time.mean(0)
+
+    # Update dbdt curves based on selected points
+    for i_point in selected_points:
+        fig.add_trace(go.Scatter(x=hm_time, y=ep.hm.data[i_point], mode='lines+markers', showlegend=False, line_color="#2D81FF"))
+        fig.add_trace(go.Scatter(x=lm_time, y=ep.lm.data[i_point], mode='lines+markers', showlegend=False, line_color="#FF2727"))
+
+    fig.update_layout(
+        xaxis_type="log",
+        yaxis_type="log",
+        xaxis_title="time [s]",
+        yaxis_title="$\\frac{dB}{dt}$ \\[V / m$^2$\\]",
+        margin=dict(t=30)
+    )
+
+    return fig
+
+@app.callback(
+    Output('map', 'figure'),
+    Input('map', 'clickData'),
+    State('map', 'figure'),
+    prevent_initial_call=True
+)
+def draw_lines_on_map(click_data, current_figure):
+    if not click_data or 'points' not in click_data:
+        raise PreventUpdate
+
+    # Extract clicked point coordinates
+    clicked_point = click_data['points'][0]
+    lat = clicked_point['lat']
+    lon = clicked_point['lon']
+
+    # Initialize or update the line data
+    if 'line_data' not in current_figure:
+        current_figure['line_data'] = {'lat': [], 'lon': []}
+
+    current_figure['line_data']['lat'].append(lat)
+    current_figure['line_data']['lon'].append(lon)
+
+    # Add the line to the map
+    current_figure['data'].append({
+        'type': 'scattermapbox',
+        'lat': current_figure['line_data']['lat'],
+        'lon': current_figure['line_data']['lon'],
+        'mode': 'lines+markers',
+        'line': {'color': 'blue', 'width': 2},
+        'marker': {'size': 8, 'color': 'red'}
+    })
+
+    return current_figure
+
+# @app.callback(
+#     Output('table-overview', 'selected_cells'),
+#     Output('dbdt', 'figure'),
+#     State('dbdt', 'figure'),
+#     Input('map', 'selectedData'),
+# )
 
 if __name__ == '__main__':
     app.run(debug=True)

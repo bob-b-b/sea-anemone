@@ -1,0 +1,114 @@
+{
+	"global": {
+		"splitterSize": 1,
+		"splitterExtra": 4,
+		"tabEnableFloat": true,
+		"tabSetEnableClose": true,
+		"tabSetMinWidth": 100,
+		"tabSetMinHeight": 100,
+		"borderMinSize": 100,
+		"borderEnableAutoHide": true
+	},
+	"borders": [
+		{
+			"type": "border",
+			"selected": 2,
+			"location": "bottom",
+			"children": [
+				{
+					"type": "tab",
+					"id": "#d193a402-7dfa-4954-b8b7-0520ab0d7299",
+					"name": "Output",
+					"component": "grid",
+					"enableClose": false
+				},
+				{
+					"type": "tab",
+					"id": "#f49d281d-582d-4f40-b768-82e10789b2f9",
+					"name": "Terminal",
+					"component": "grid",
+					"enableClose": false
+				},
+				{
+					"type": "tab",
+					"id": "#9603bfc9-d00b-4bf9-8ace-5387735b8211",
+					"name": "Layout JSON",
+					"component": "json"
+				}
+			]
+		},
+		{
+			"type": "border",
+			"location": "left",
+			"children": [
+				{
+					"type": "tab",
+					"id": "#eb11e4ac-e88d-4da6-9e55-c65fa06f653a",
+					"name": "Navigation",
+					"component": "grid",
+					"enableClose": false
+				},
+				{
+					"type": "tab",
+					"id": "#33fc92f1-4a85-429e-839b-ac6373ae6aa6",
+					"name": "With border sizes",
+					"component": "grid",
+					"enableClose": false,
+					"borderWidth": 500,
+					"borderHeight": 500
+				}
+			]
+		},
+		{
+			"type": "border",
+			"location": "right",
+			"children": [
+				{
+					"type": "tab",
+					"id": "#1b2391a8-b9dd-4a4d-9db6-cc1f2b28f684",
+					"name": "Options",
+					"component": "grid",
+					"enableClose": false
+				}
+			]
+		}
+	],
+	"layout": {
+		"type": "row",
+		"id": "#bf19267f-2162-4f26-8b51-425c97c57fc2",
+		"children": [
+			{
+				"type": "tabset",
+				"id": "#7dd3deee-e7d2-453b-aa33-59f23397ded1",
+				"weight": 12.5,
+				"children": [
+					{
+						"type": "tab",
+						"id": "#d217bc61-092c-4316-8fc0-76a10f225a34",
+						"name": "New",
+						"helpText": "this tab has helpText defined",
+						"component": "newfeatures"
+					}
+				],
+				"active": true
+			},
+			{
+				"type": "tabset",
+				"id": "#63252133-f899-4b97-81e1-00eb622541b6",
+				"weight": 25,
+				"children": [
+					{
+						"type": "tab",
+						"id": "#a88fba1d-2f6b-4be6-a52b-36aafafb6753",
+						"name": "Tab Storage",
+						"component": "tabstorage",
+						"config": {
+							"storedTabs": []
+						},
+						"borderWidth": 500
+					}
+				]
+			}
+		]
+	}
+}

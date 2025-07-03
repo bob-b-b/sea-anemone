@@ -1,0 +1,17 @@
+.toolbar {
+    background-color: #333;
+    color: white;
+    padding: 10px;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+}
+
+.toolbar > * {
+    margin: 0 10px;
+}
+
+.toolbar a {
+    color: white;
+    text-decoration: none;
+}
