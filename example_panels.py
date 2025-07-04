@@ -56,6 +56,39 @@ fig.update_layout(
     dragmode='select'
 )
 
+# choose the figure font
+font_dict=dict(family='Arial',
+               size=12,
+               color='black'
+               )
+# general figure formatting
+fig.update_layout(font=font_dict,  # font formatting
+                  plot_bgcolor='white',  # background color
+                  margin=dict(r=20,t=30,b=10)  # remove white space 
+                  )
+# x and y-axis formatting
+fig.update_yaxes(title_text='Y-axis',  # axis label
+                 showline=True,  # add line at x=0
+                 linecolor='black',  # line color
+                 linewidth=2.4, # line size
+                 ticks='outside',  # ticks outside axis
+                 tickfont=font_dict, # tick label font
+                 mirror='allticks',  # add ticks to top/right axes
+                 tickwidth=2.4,  # tick width
+                 tickcolor='black',  # tick color
+                 )
+fig.update_xaxes(title_text='X-axis',
+                 showline=True,
+                 showticklabels=True,
+                 linecolor='black',
+                 linewidth=2.4,
+                 ticks='outside',
+                 tickfont=font_dict,
+                 mirror='allticks',
+                 tickwidth=2.4,
+                 tickcolor='black',
+                 )
+
 fig_tTEM = go.Figure()
 x_ttem = np.arange(len(hm.time))
 for i_row in range(len(lm.time[0])):
@@ -127,20 +160,36 @@ panel_list_entry_style = {
     }
 }
 
-panel_list = html.Div([
-    html.H1('Panels'),
-    html.H2('Data'),
-    html.Li('Sounding',
-            id='clickable-paragraph',
-            style=panel_list_entry_style
-        ),
-    html.Li('section',
-            id='clickable-paragraph',
-            style=panel_list_entry_style,
-            title="show the data in a tTEM style section"
-        )
+# panel_list = html.Div([
+#     html.H1('Panels'),
+#     html.H2('Data'),
+#     html.Li('Sounding',
+#             id='clickable-paragraph',
+#             style=panel_list_entry_style
+#         ),
+#     html.Li('section',
+#             id='clickable-paragraph',
+#             style=panel_list_entry_style,
+#             title="show the data in a tTEM style section"
+#         )
         
-], style={'padding': '10px'})
+# ], style={'padding': '10px'})
+
+
+markdown_text = '''
+# Panels
+## Data
+- [Sounding](#sounding)
+- [Section](#section)
+## Models
+- [graph](#graph)
+- [colorbar](#colorbar)
+- [table](#table)
+'''
+
+panel_list = html.Div([
+    dcc.Markdown(children=markdown_text)
+])
 
 if __name__ == '__main__':
     app = Dash(__name__, assets_folder='assets')

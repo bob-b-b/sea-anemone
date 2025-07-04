@@ -24,7 +24,16 @@ config = {
                         "component": "text",
                         "id": "tab-panels",
                         "tabEnableClose": False,
-                    }]},
+                    },
+                    {
+                        "type":"tab",
+                        "name": "Two1",
+                        "component": "text",
+                        "id": "tab-dump",
+                        "tabEnableClose": False,
+                    }
+                    
+                    ]},
     ],
     "layout": {
         "type": "row",
@@ -84,8 +93,11 @@ import plotly.graph_objects as go
 import json
 
 from dash import dcc
+
+import map
+
 nodes = [
-    dfl.Tab(id="tab-map", children=[dcc.Graph(figure = ep.map, style={'height': '100%'}, id='map'),]),
+    dfl.Tab(id="tab-map", children=[map.create(ep.df)]),
     dfl.Tab(id="tab-table", children=[ep.table_overview]),
     dfl.Tab(id="tab-data", children=[dcc.Graph(figure=ep.fig, mathjax=True, id='dbdt')]),
     dfl.Tab(id='tab-ttem', children=[dcc.Graph(figure=ep.fig_tTEM, mathjax=True, id='ttem')]),
@@ -97,7 +109,9 @@ nodes = [
             html.Pre(id="layout-json-output", style={'whiteSpace': 'pre-wrap', 'border': '1px solid #ccc', 'padding': '10px'}),
         ],
     ),
-    dfl.Tab(id="tab-panels", children=[ep.panel_list])
+    dfl.Tab(id="tab-panels", children=[ep.panel_list]),
+    dfl.Tab(id='tab-dump', children=[
+        html.Div('dumping zone')])
 ]
 
 headers = {
@@ -111,12 +125,15 @@ headers = {
 }
 
 
-app.layout = dfl.FlexLayout(
+app.layout = html.Div([
+    dcc.Location(id='url', refresh=False),
+    dfl.FlexLayout(
     id="flex-layout",
     model=config,
     children=nodes,
-    useStateForModel=True,
+    useStateForModel=False,
     headers=headers,
+)]
 )
 
 
@@ -199,6 +216,36 @@ def update_dbdt(dbdt, selected_data):
         yaxis_title="$\\frac{dB}{dt}$ \\[V / m$^2$\\]",
         margin=dict(t=30)
     )
+    font_dict=dict(family='Arial',
+               size=12,
+               color='black'
+               )    
+    fig.update_layout(font=font_dict,  # font formatting
+                    plot_bgcolor='white',  # background color
+                    margin=dict(r=20,t=30,b=10)  # remove white space 
+                    )
+    # x and y-axis formatting
+    fig.update_yaxes(title_text='Y-axis',  # axis label
+                    showline=True,  # add line at x=0
+                    linecolor='black',  # line color
+                    linewidth=2.4, # line size
+                    ticks='outside',  # ticks outside axis
+                    tickfont=font_dict, # tick label font
+                    mirror='allticks',  # add ticks to top/right axes
+                    tickwidth=2.4,  # tick width
+                    tickcolor='black',  # tick color
+                    )
+    fig.update_xaxes(title_text='X-axis',
+                    showline=True,
+                    showticklabels=True,
+                    linecolor='black',
+                    linewidth=2.4,
+                    ticks='outside',
+                    tickfont=font_dict,
+                    mirror='allticks',
+                    tickwidth=2.4,
+                    tickcolor='black',
+                    )
 
     return fig
 
@@ -251,18 +298,34 @@ def update_output(n_clicks, value):
 # Callback to update the layout JSON
 @app.callback(
     Output("layout-json-output", "children"),
-    Input("get-layout-button", "n_clicks"),
+    [Input("get-layout-button", "n_clicks"),
+    Input("flex-layout", "model")],
     prevent_initial_call=True
 )
-def get_layout_json(n_clicks):
+def get_layout_json(n_clicks, layout):
     # Return the current layout (config) as JSON
-    return json.dumps(config, indent=4)
-
-
+    return json.dumps(layout, indent=4)
 
 
 app.title = 'sea-anemone'
 
+location = dcc.Location('url')
 
+# Need all dependant components here to prevent an infinite callback loop
+@app.callback(
+    Output('tab-dump', 'children'),
+    Output('url', 'href'),
+    [Input('url', 'href')],
+    prevent_initial_call=True
+)
+def handle_navigation(fragment):
+    print('fragment: ', str(fragment))
+    return html.Div(fragment), fragment.split('#')[0] if '#' in fragment else fragment
+
+
+import os
 if __name__ == "__main__":
+    # os.system('start chrome --app=\"http://127.0.0.1:8050/\"')
     app.run(debug=True, port=8050, dev_tools_hot_reload=True, dev_tools_ui=True)
+    
+    # start chrome --app="http://127.0.0.1:8050/"
