@@ -39,7 +39,7 @@ class Panel:
             row_children = []
             row_children.append(dbc.Label(prop.get('title', key), style={'marginRight': '10px'}))
             # Use Dash DAQ ColorPicker if the key or title suggests a color
-            if key.lower() == 'color' or 'color' in prop.get('title', '').lower():
+            if 'color' in key.lower():
                 import dash_daq as daq
                 row_children.append(
                     daq.ColorPicker(
