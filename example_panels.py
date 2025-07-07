@@ -1,15 +1,13 @@
-import dash_leaflet as dl
 import numpy as np
 
 import usf
 
 import os
-usf_folders = [#'/home/matt/geophysics_data/TEM/sTEM_data/2025_0227/USF_Files_dawa river/',
-            #    '/home/matt/geophysics_data/TEM/sTEM_data/2025_0226/USF_Files_Dawa River Channel/',
+usf_folders = ['/home/matt/geophysics_data/TEM/sTEM_data/2025_0227/USF_Files_dawa river/',
+               '/home/matt/geophysics_data/TEM/sTEM_data/2025_0226/USF_Files_Dawa River Channel/',
             #    'E:/sTEM_data/2025_0302/USF_Files_dawa river 3/',
-               'C:/Users/au646858/Downloads/2025_0622_profiler_sTEM53/USF_Files_profile_day_4_DD_Boren_Aliy_river/',
-
-            #    '/home/matt/geophysics_data/TEM/sTEM_data/2025_0302/USF_Files_dawa river 3/'
+            #    'C:/Users/au646858/Downloads/2025_0622_profiler_sTEM53/USF_Files_profile_day_4_DD_Boren_Aliy_river/',
+               '/home/matt/geophysics_data/TEM/sTEM_data/2025_0302/USF_Files_dawa river 3/'
                ]
 
 sweeps = []

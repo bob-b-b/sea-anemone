@@ -50,7 +50,15 @@ config = {
                         "component": "text",
                         "enableFloat": True,
                         "id": "tab-map",
-                    }
+                    },
+                    {
+                        "type": "tab",
+                        "name": "Three1",
+                        "component": "text",
+                        "enableFloat": True,
+                        "id": "tab-map_settings",
+                    },
+
                 ],
             },
             {
@@ -95,9 +103,11 @@ import json
 from dash import dcc
 
 import map
+m1 = map.MapPanel(id='map', data=ep.df, settings_schema=map.settings_schema)
 
 nodes = [
     dfl.Tab(id="tab-map", children=[map.create(ep.df)]),
+    dfl.Tab(id='tab-map_settings', children=[m1.render_settings()]),
     dfl.Tab(id="tab-table", children=[ep.table_overview]),
     dfl.Tab(id="tab-data", children=[dcc.Graph(figure=ep.fig, mathjax=True, id='dbdt')]),
     dfl.Tab(id='tab-ttem', children=[dcc.Graph(figure=ep.fig_tTEM, mathjax=True, id='ttem')]),
@@ -158,7 +168,7 @@ app.layout = html.Div([
     State('map', 'figure'),
     State('dbdt', 'figure'),
     Input('table-overview', 'selected_cells'),
-    prevent_initial_call=True,
+    prevent_initial_call="initial_duplicate",
 )
 def update_map(epmap, dbdt, selected_cells):
     if not selected_cells:
@@ -189,7 +199,7 @@ def update_map(epmap, dbdt, selected_cells):
     Output('dbdt', 'figure', allow_duplicate=True),
     State('dbdt', 'figure'),
     Input('map', 'selectedData'),
-    prevent_initial_call=True,
+    prevent_initial_call="initial_duplicate",
     allow_duplicate=True
 )
 def update_dbdt(dbdt, selected_data):
@@ -250,10 +260,10 @@ def update_dbdt(dbdt, selected_data):
     return fig
 
 @app.callback(
-    Output('map', 'figure'),
+    Output('map', 'figure', allow_duplicate=True),
     Input('map', 'clickData'),
     State('map', 'figure'),
-    prevent_initial_call=True
+    prevent_initial_call="initial_duplicate"
 )
 def draw_lines_on_map(click_data, current_figure):
     if not click_data or 'points' not in click_data:
@@ -287,7 +297,7 @@ def draw_lines_on_map(click_data, current_figure):
     Output('container-button-basic', 'children'),
     Input('submit-val', 'n_clicks'),
     State('input-on-submit', 'value'),
-    prevent_initial_call=True
+    prevent_initial_call='initial_duplicate'
 )
 def update_output(n_clicks, value):
     return 'The input value was "{}" and the button has been clicked {} times'.format(
@@ -300,7 +310,7 @@ def update_output(n_clicks, value):
     Output("layout-json-output", "children"),
     [Input("get-layout-button", "n_clicks"),
     Input("flex-layout", "model")],
-    prevent_initial_call=True
+    prevent_initial_call='initial_duplicate'
 )
 def get_layout_json(n_clicks, layout):
     # Return the current layout (config) as JSON
@@ -316,11 +326,29 @@ location = dcc.Location('url')
     Output('tab-dump', 'children'),
     Output('url', 'href'),
     [Input('url', 'href')],
-    prevent_initial_call=True
+    prevent_initial_call='initial_duplicate'
 )
 def handle_navigation(fragment):
     print('fragment: ', str(fragment))
     return html.Div(fragment), fragment.split('#')[0] if '#' in fragment else fragment
+
+from dash.dependencies import Input, Output, State, ALL
+
+# Suppose your panel instance is called `panel`
+# @app.callback(
+#     Output(m1.id, 'figure', allow_duplicate=True),
+#     [Input({'type': f'settings-{m1.id}', 'key': ALL}, 'value')],
+#     [State(m1.id, 'figure')],
+#     prevent_initial_call='initial_duplicate'    
+# )
+# def update_map_panel(settings_values, current_figure):
+#     # Map settings_values to keys from the schema
+#     keys = list(m1.settings_schema['properties'].keys())
+#     new_settings = dict(zip(keys, settings_values))
+#     m1.settings = new_settings
+#     # Re-render the map with new settings
+#     fig = m1.render().figure
+#     return fig
 
 
 import os
