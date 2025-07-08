@@ -1,30 +1,75 @@
-import dash
-from dash import html, dcc
 import dash_bootstrap_components as dbc
-import plotly.express as px
-import dash
-from dash import Dash, html, Output, Input, State
+from dash import Dash, html, Output, Input, dcc, State
 from dash.exceptions import PreventUpdate
-import dash_mantine_components as dmc
+
+import dash_flexlayout as dfl
+
 from dataclasses import dataclass
 from dataclasses_jsonschema import JsonSchemaMixin
-import dash_flexlayout as dfl
+
 import tkinter as tk
 from tkinter import filedialog
 
+import plotly.express as px
+import plotly.graph_objects as go
+import numpy as np
+
+# import dash_mantine_components as dmc
+
+# gear = html.Div(html.Span([html.Img(id="logo", src="./assets/settings.svg", style={'height':'0.5cm'})],
+#         style={'cursor': 'pointer'}), style={'textAlign': 'right'})  # Align content to the right
+
+
+def gear_maker(id):
+    gear = html.Div(
+        html.Span(
+            [html.Img(id=id+'_gear', src="./assets/settings.svg", style={'height': '0.5cm'})],
+            style={'cursor': 'pointer', 'position': 'absolute', 'bottom': '0', 'right': '0'}
+        ),
+    )
+    return gear
+
+def update_tabset(json_data, target_tab_id, settings_tab_id):
+    # Traverse the layout to find the tabset containing the target tab
+    for row in json_data['layout']['children']:
+        for tabset in row['children']:
+            if tabset['type'] == 'tabset':
+                # Check if the target tab exists in this tabset
+                for index, tab in enumerate(tabset['children']):
+                    if tab['id'] == target_tab_id:
+                        # Check if the settings tab exists
+                        settings_tab_exists = any(t['id'] == settings_tab_id for t in tabset['children'])
+                        
+                        if not settings_tab_exists:
+                            # Add the settings tab to the tabset
+                            tabset['children'].append({
+                                "type": "tab",
+                                "id": settings_tab_id,
+                                "name": "Settings",
+                                "component": "text"
+                            })
+                        
+                        # Find the index of the settings tab
+                        for idx, t in enumerate(tabset['children']):
+                            if t['id'] == settings_tab_id:
+                                tabset['selected'] = idx  # Set the selected tab to the settings tab
+                                break
+                        
+                        return json_data  # Return the updated JSON data
+    return json_data
 
 @dataclass
-class Panel:
+class PanelSettings:
+    id: str
     _settings_schema: dict = None
-    def __init__(self, id, data=None):
+    def __init__(self, id):
         self.id = id
-        self.data = data
 
     def initialize(self):
         # Main panel content (to be overridden by subclasses)
         return html.Div([html.H3(f"Panel: {self.id}")])
 
-    def render_settings(self):
+    def render(self):
         # Render settings form based on JSON schema
         if self.schema is None:
             return html.Div("No settings available.")
@@ -82,13 +127,11 @@ class Panel:
             style={'margin': '10px'}
         ))
 
-        return dbc.Form(form_items, style={'margin': '10px'})
+        return html.Div([dbc.Form(form_items, style={'margin': '10px'}), 
+                         gear_maker(self.id+'_settings')])
 
-    def to_nodes(self):
-        return [
-            dfl.Tab(id=f'tab-{self.id}', children=[self.initialize()]),
-            dfl.Tab(id=f'tab-{self.id}_settings', children=[self.render_settings()])
-        ]
+    def node(self):
+        return dfl.Tab(id=f'tab-{self.id}_settings', children=[self.render()])
     
     @classmethod
     def _create_schema(cls):
@@ -101,6 +144,7 @@ class Panel:
         if self._settings_schema is None:
             tmp = self.__class__._create_schema()
             tmp['properties'].pop('_settings_schema')
+            tmp['properties'].pop('id')
             self._settings_schema = tmp
         return self._settings_schema
     
@@ -121,7 +165,7 @@ class Panel:
             if hasattr(self, key):
                 setattr(self, key, value)
 
-    def add_settings_callbacks(self, app):
+    def add_callbacks(self, app):
         @app.callback(
             Output(f'{self.id}_settings_save', 'n_clicks'),
             [Input(f'{self.id}_settings_save', 'n_clicks')],
@@ -159,40 +203,75 @@ class Panel:
                 )
                 if fname:
                     self.load_settings(fname)
-            return self.render_settings()
+            return self.render()
         
+        @app.callback(
+            Output('flex-layout', 'model', allow_duplicate=True),
+            Input(f'{self.id}_gear', 'n_clicks'),
+            State('flex-layout', 'model'),
+            prevent_initial_call=True
+        )
+        def show_settings(n_clicks, model):
+            # print(f"Settings clicked for {self.id}\tnClicks: {n_clicks}")
+            if n_clicks:
+                # Iterate through the layout to find the tabset containing the current tab
+                return update_tabset(model, f'tab-{self.id}', f'tab-{self.id}_settings')
+                # str_model = str(model)
+                # str_model=str_model.replace("\'selected\': 2", "\'selected\': 1")
+
+                # return eval(str_model)
+            else:
+                raise PreventUpdate        
         
+
+@dataclass
+class Panel:
+    id: str
+    settings: PanelSettings = None
+
+    def add_callbacks(self, app):
+        self.settings.add_callbacks(app)
         def update_render(*args):
-            for key, arg in zip(self.schema.get('properties', {}).keys(), args):
+            for key, arg in zip(self.settings.schema.get('properties', {}).keys(), args):
                 if isinstance(arg, dict) and 'hex' in arg:
                     arg = arg['hex']
                 
-                if hasattr(self, key):
-                    setattr(self, key, arg)
+                if hasattr(self.settings, key):
+                    setattr(self.settings, key, arg)
     
             return self.render()
         
         update_render = app.callback(Output(self.id, 'figure'),
-                    [Input({'type': f'settings-{self.id}', 'key': x}, 'value') for x in self.schema.get('properties', {}).keys()])(update_render)
+                    [Input({'type': f'settings-{self.id}', 'key': x}, 'value') for x in self.settings.schema.get('properties', {}).keys()])(update_render)
     
     
     def initialize(self):
-        return dcc.Graph(figure=self.render(), id=self.id, mathjax=True)
+        return html.Div([dcc.Graph(figure=self.render(), id=self.id, mathjax=True, style={'height': '100%'}),
+                         gear_maker(self.id)],
+                        style={'height': '100%', 'overflow': 'hidden'} )
+                         
+    
+    def to_nodes(self):
+        # Returns a layout with panel and settings tab
+        return [dfl.Tab(id=f'tab-{self.id}', children=[self.initialize()]), self.settings.node()]
 
 
 @dataclass
-class Map(Panel): 
-    zoom           : int  = 14
-    color          : str = '#ff0000'
+class MapSettings(PanelSettings):
+    zoom: int = 14
+    color: str = '#ff0000'
+
+
+class Map(Panel):
+    data: None
 
     def __init__(self, data, **kwargs):
-        super().__init__(id='map', data=data)
-        for key, value in kwargs.items():
-            setattr(self, key, value)
+        settings = MapSettings(id='map', **kwargs)
+        super().__init__(id='map', settings=settings)
+        self.data = data
         
-
     def render(self):
-        fig = px.scatter_map(self.data, lat="latitude", lon="longitude", zoom=self.zoom, color_discrete_sequence=[self.color])
+        fig = px.scatter_map(self.data, lat="latitude", lon="longitude", zoom=self.settings.zoom, color_discrete_sequence=[self.settings.color])
         fig.update_layout(map_style="white-bg",
             map_layers=[
                 {
@@ -201,53 +280,96 @@ class Map(Panel):
                     "sourceattribution": "Google Earth (C)",
                     "source": ['https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}']
                 }])
-        fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0})
+        fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0},
+                          dragmode='select')
         return fig
-
-    def add_callbacks(self, app):
-        self.add_settings_callbacks(app)
         
 
-import plotly.graph_objects as go
-import numpy as np
+
 
 @dataclass
-class Sounding(Panel):
+class SoundingSettings(PanelSettings):
     lm_color: str = '#ff0000'
     hm_color: str = '#0000ff'
-    def __init__(self, data, **kwargs): 
-        super().__init__(id='sounding', data=data)
+
+class Sounding(Panel):
+    lm_time: None
+    lm_data: None
+    hm_time: None
+    hm_data: None
+
+
+    def __init__(self, **kwargs):
+        settings = kwargs.pop('settings', SoundingSettings(id='sounding'))
+        super().__init__(id='sounding', settings=settings)
         for key, value in kwargs.items():
             setattr(self, key, value)
     
     def render(self):
-        x = np.logspace(-6, -4, 25)
-        y = x**(-5/2)
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x=x, y=y, mode='lines+markers', name='Low Moment', line_color=self.lm_color))
+        # print(self.lm_data.ndim)
+        lm_data = self.lm_data if self.lm_data.ndim > 1 else self.lm_data[np.newaxis,:]
+        hm_data = self.hm_data if self.hm_data.ndim > 1 else self.hm_data[np.newaxis,:]
+        # print(lm_data.shape)
 
-        x = np.logspace(-5, -3, 35)
-        y = 10*x**(-5/2)
-        fig.add_trace(go.Scatter(x=x, y=y, mode='lines+markers', name='High Moment', line_color=self.hm_color))
+        fig.add_trace(go.Scatter(x=self.lm_time, y=np.abs(lm_data[0]), mode='lines+markers', name='Low Moment',  line_color=self.settings.lm_color))
+        fig.add_trace(go.Scatter(x=self.hm_time, y=np.abs(hm_data[0]), mode='lines+markers', name='High Moment', line_color=self.settings.hm_color))
+
+        if lm_data.shape[0] > 1:
+            for i in range(1, lm_data.shape[0]):
+                fig.add_trace(go.Scatter(x=self.lm_time, y=np.abs(lm_data[i]), mode='lines+markers', showlegend=False, line_color=self.settings.lm_color))
+                fig.add_trace(go.Scatter(x=self.hm_time, y=np.abs(hm_data[i]), mode='lines+markers', showlegend=False, line_color=self.settings.hm_color))
+        
         fig.update_layout(
             xaxis_type="log",
             yaxis_type="log",
             xaxis_title="time [s]",
-            yaxis_title="$\\frac{dB}{dt}$ \\[V / m$^2$\\]",
+            yaxis_title="$\\frac{dB}{dt}$ [V / m$^2$]",
             margin=dict(t=30),
             dragmode='select'
         )
         return fig
 
-    def add_callbacks(self, app):
-        self.add_settings_callbacks(app)
+@dataclass
+class tTEMSettings(PanelSettings):
+    lm_color: str = '#ff0000'
+    hm_color: str = '#2D81FF'
+    lm_factor: float = 20.0
+    hm_factor: float = 1.0
 
+class tTEM(Panel):
+    lm_time: None
+    lm_data: None
+    hm_time: None
+    hm_data: None
+
+
+    def __init__(self, **kwargs):
+        settings = kwargs.pop('settings', tTEMSettings(id='tTEM'))
+        super().__init__(id='tTEM', settings=settings)
+        for key, value in kwargs.items():
+            setattr(self, key, value)
     
+    def render(self):
+        fig = go.Figure()
+        x_ttem = np.arange(len(self.hm_time))
+        for i_row in range(len(self.lm_time[0])):
+            fig.add_trace(go.Scatter(x=x_ttem, y=self.settings.lm_factor*np.abs(self.lm_data[:, i_row]), mode='lines+markers', name=f'Low Moment {i_row}', showlegend=False, line_color=self.settings.lm_color))
+        for i_row in range(len(self.hm_time[0])):
+            fig.add_trace(go.Scatter(x=x_ttem, y=self.settings.hm_factor*np.abs(self.hm_data[:, i_row]), mode='lines+markers', name=f'High Moment {i_row}', showlegend=False, line_color=self.settings.hm_color))
+        fig.update_layout(
+            yaxis_type="log",
+            xaxis_title="data index",
+            yaxis_title="$\\frac{dB}{dt}$ \\[V / m$^2$\\]",
+            margin=dict(t=30),
+            dragmode='select'
+        )
+        return fig    
 
 if __name__ == '__main__':
     import dash_mantine_components as dmc
 
-    app = dash.Dash(__name__, suppress_callback_exceptions=True, assets_folder='assets')
+    app = Dash(__name__, suppress_callback_exceptions=True, assets_folder='assets')
 
     config = {
         "global": {"tabEnableClose": True, "tabEnableFloat": True},
@@ -278,8 +400,10 @@ if __name__ == '__main__':
                         ]},
         ],
         "layout": {
-            "type": "row",
+            "type": "col",
             "weight": 100,
+            "children": [{
+            "type": "row",
             "children": [
                 {
                     "type": "tabset",
@@ -320,19 +444,39 @@ if __name__ == '__main__':
                             "component": "text",
                             "id": "tab-sounding_settings",
                         },                 
+                        {
+                            "type": "tab",
+                            "name": "Four",
+                            "component": "text",
+                            "id": "tab-tTEM",
+                        },
+                        {
+                            "type": "tab",
+                            "name": "Four1",
+                            "component": "text",
+                            "id": "tab-tTEM_settings",
+                        },                                         
                     ],
                 },
             ],
+            }]
         },
     }
 
     from dash import dcc
     import example_panels as ep
     m1 = Map(data=ep.df)
-    dbdt1 = Sounding(data=None)
+    dbdt1 = Sounding(lm_time=ep.lm.time.mean(0),
+                     lm_data=ep.lm.data.mean(0),
+                     hm_time=ep.hm.time.mean(0),
+                     hm_data=ep.hm.data.mean(0))
 
+    tTEM1 = tTEM(lm_time=ep.lm.time,
+                lm_data=ep.lm.data,
+                hm_time=ep.hm.time,
+                hm_data=ep.hm.data)
 
-    nodes = m1.to_nodes()+dbdt1.to_nodes()
+    nodes = m1.to_nodes() + dbdt1.to_nodes() + tTEM1.to_nodes()
 
     app.layout = html.Div([
         dcc.Location(id='url', refresh=False),
@@ -341,10 +485,37 @@ if __name__ == '__main__':
         model=config,
         children=nodes,
         useStateForModel=False,
+        
     )]
     )
 
     m1.add_callbacks(app)
     dbdt1.add_callbacks(app)
+    tTEM1.add_callbacks(app)
+
+    @app.callback(
+        [Output('sounding', 'figure', allow_duplicate=True),
+                Output('tTEM', 'figure', allow_duplicate=True)],
+        Input('map', 'selectedData'),
+        prevent_initial_call="initial_duplicate",
+        allow_duplicate=True
+    )
+    def update_dbdt(selected_data):
+        if not selected_data or 'points' not in selected_data:
+            raise PreventUpdate
+
+        # Extract selected points
+        selected_points = [point['pointIndex'] for point in selected_data['points']]
+
+        dbdt1.hm_data = ep.hm.data[selected_points]*1.
+        dbdt1.lm_data = ep.lm.data[selected_points]*1.
+
+        tTEM1.hm_data = ep.hm.data[selected_points]*1.
+        tTEM1.lm_data = ep.lm.data[selected_points]*1.
+        tTEM1.hm_time = ep.hm.time[selected_points]*1.
+        tTEM1.lm_time = ep.lm.time[selected_points]*1.
+        return dbdt1.render(), tTEM1.render()
+
+
 
     app.run(debug=True, port=8050, dev_tools_hot_reload=True, dev_tools_ui=True)
