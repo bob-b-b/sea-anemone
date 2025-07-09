@@ -29,8 +29,35 @@ def gear_maker(id):
     )
     return gear
 
+def search_dictionary(dic, id):
+    stack = [(dic, 1)]
+    max_depth = 1
+    while stack:
+        curr_dict, depth = stack.pop()
+        for key, value in curr_dict.items():
+            if isinstance(value, dict):
+                stack.append((value, depth + 1))
+            elif 'id' in key and value == id:
+                    print(f"Found {id} at depth {depth} with key {key}")
+        if depth > max_depth:
+            print(f"New max depth: {depth} at key: {key}")
+            print(stack)
+        max_depth = max(max_depth, depth)
+        
+    return max_depth
+
+# dic = {1:'a', 2: {3: {4: {}}}}
+# print(dict_depth(dic))
+
 def update_tabset(json_data, target_tab_id, settings_tab_id):
     # Traverse the layout to find the tabset containing the target tab
+    # use a depth first search to find the tab
+
+    # for key,value 
+
+
+    
+
     for row in json_data['layout']['children']:
         for tabset in row['children']:
             if tabset['type'] == 'tabset':
@@ -152,6 +179,14 @@ class PanelSettings:
     def settings(self):
         return {k: getattr(self, k) for k in self.schema.get('properties', {}).keys() if hasattr(self, k)}
     
+    @property
+    def layout_dict(self):
+        return {
+            'type': 'tab',
+            'id': f'tab-{self.id}_settings',
+            'name': f'{self.id.lower()} settings',
+        }
+    
     def save_settings(self, fname):
         import json
         with open(fname, 'w') as f:
@@ -215,6 +250,7 @@ class PanelSettings:
             # print(f"Settings clicked for {self.id}\tnClicks: {n_clicks}")
             if n_clicks:
                 # Iterate through the layout to find the tabset containing the current tab
+                print('depth of dictionary set: ', dict_depth(model))
                 return update_tabset(model, f'tab-{self.id}', f'tab-{self.id}_settings')
                 # str_model = str(model)
                 # str_model=str_model.replace("\'selected\': 2", "\'selected\': 1")
@@ -254,6 +290,14 @@ class Panel:
     def to_nodes(self):
         # Returns a layout with panel and settings tab
         return [dfl.Tab(id=f'tab-{self.id}', children=[self.initialize()]), self.settings.node()]
+    
+    @property
+    def layout_dict(self):
+        return {
+            'type': 'tab',
+            'id': f'tab-{self.id}',
+            'name': f'{self.id.lower()}',
+        }    
 
 
 @dataclass
@@ -371,97 +415,7 @@ if __name__ == '__main__':
 
     app = Dash(__name__, suppress_callback_exceptions=True, assets_folder='assets')
 
-    config = {
-        "global": {"tabEnableClose": True, "tabEnableFloat": True},
-        "borders": [
-            {"type": "border", "location": "right", "size": 200, "children": [                    
-                        {
-                            "type": "tab",
-                            "name": "One",
-                            "component": "text",
-                            "id": "side-1",
-                            "tabEnableClose": False,
-                        },
-                        {
-                            "type":"tab",
-                            "name": "Two",
-                            "component": "text",
-                            "id": "tab-panels",
-                            "tabEnableClose": False,
-                        },
-                        {
-                            "type":"tab",
-                            "name": "Two1",
-                            "component": "text",
-                            "id": "tab-dump",
-                            "tabEnableClose": False,
-                        }
-                        
-                        ]},
-        ],
-        "layout": {
-            "type": "col",
-            "weight": 100,
-            "children": [{
-            "type": "row",
-            "children": [
-                {
-                    "type": "tabset",
-                    "weight": 50,
-                    "selected": 0,
-                    "children": [
-                        {
-                            "type": "tab",
-                            "name": "Three",
-                            "component": "text",
-                            "enableFloat": True,
-                            "id": "tab-map",
-                        },
-                        {
-                            "type": "tab",
-                            "name": "Three1",
-                            "component": "text",
-                            "enableFloat": True,
-                            "id": "tab-map_settings",
-                        },
 
-                    ],
-                },
-                {
-                    "type": "tabset",
-                    "weight": 50,
-                    "selected": 0,
-                    "children": [
-                        {
-                            "type": "tab",
-                            "name": "Four",
-                            "component": "text",
-                            "id": "tab-sounding",
-                        },
-                        {
-                            "type": "tab",
-                            "name": "Four1",
-                            "component": "text",
-                            "id": "tab-sounding_settings",
-                        },                 
-                        {
-                            "type": "tab",
-                            "name": "Four",
-                            "component": "text",
-                            "id": "tab-tTEM",
-                        },
-                        {
-                            "type": "tab",
-                            "name": "Four1",
-                            "component": "text",
-                            "id": "tab-tTEM_settings",
-                        },                                         
-                    ],
-                },
-            ],
-            }]
-        },
-    }
 
     from dash import dcc
     import example_panels as ep
@@ -477,6 +431,44 @@ if __name__ == '__main__':
                 hm_data=ep.hm.data)
 
     nodes = m1.to_nodes() + dbdt1.to_nodes() + tTEM1.to_nodes()
+
+    config = {
+        "global": {"tabEnableClose": True, "tabEnableFloat": True},
+        "borders": [
+            {"type": "border", "location": "right", "size": 200, "children": [                    
+                        {
+                            "type": "tab",
+                            "name": "One",
+                            "component": "text",
+                            "id": "side-1",
+                            "tabEnableClose": False,
+                        },
+            ]},
+        ],
+        "layout": {
+            "type": "row",
+            "weight": 100,
+            "children": [{
+                    "type": "tabset",
+                    "weight": 50,
+                    "selected": 1,
+                    "children": [
+                        m1.layout_dict,
+                        m1.settings.layout_dict,
+                    ],
+                },
+                {
+                    "type": "tabset",
+                    "weight": 50,
+                    "selected": 1,
+                    "children": [
+                        dbdt1.layout_dict,
+                        tTEM1.layout_dict,
+                    ],
+                },
+            ],
+        },
+    }
 
     app.layout = html.Div([
         dcc.Location(id='url', refresh=False),
@@ -518,4 +510,4 @@ if __name__ == '__main__':
 
 
 
-    app.run(debug=True, port=8050, dev_tools_hot_reload=True, dev_tools_ui=True)
+    app.run(debug=True, port=8050, dev_tools_hot_reload=True)
