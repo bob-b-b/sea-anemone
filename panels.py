@@ -29,61 +29,56 @@ def gear_maker(id):
     )
     return gear
 
-def search_dictionary(dic, id):
-    stack = [(dic, 1)]
-    max_depth = 1
-    while stack:
-        curr_dict, depth = stack.pop()
-        for key, value in curr_dict.items():
-            if isinstance(value, dict):
-                stack.append((value, depth + 1))
-            elif 'id' in key and value == id:
-                    print(f"Found {id} at depth {depth} with key {key}")
-        if depth > max_depth:
-            print(f"New max depth: {depth} at key: {key}")
-            print(stack)
-        max_depth = max(max_depth, depth)
-        
-    return max_depth
+def find_tab_by_id(tabs, tab_id, path=None):
+    if path is None: path = []
 
-# dic = {1:'a', 2: {3: {4: {}}}}
-# print(dict_depth(dic))
+    if isinstance(tabs, dict):
+        if 'id' in tabs and tabs['id'] == tab_id:
+            return path
+        for key, value in tabs.items():
+            if isinstance(value, (dict, list)):
+                new_path = find_tab_by_id(value, tab_id, path=path + [key])
+                if new_path:  # If a valid path is found, return it
+                    return new_path
+    elif isinstance(tabs, list):
+        for i, item in enumerate(tabs):
+            new_path = find_tab_by_id(item, tab_id, path=path + [i])
+            if new_path:  # If a valid path is found, return it
+                return new_path
+    return None
 
-def update_tabset(json_data, target_tab_id, settings_tab_id):
-    # Traverse the layout to find the tabset containing the target tab
-    # use a depth first search to find the tab
+def update_tabset(json_data, target_tab_id, settings_tab_id, change_order=False):
+    accessor_chain = find_tab_by_id(json_data, target_tab_id)
+    accessor_string = ''
+    for key in accessor_chain[:-1]:
+        if isinstance(key, int):
+            accessor_string += f'[{key}]'
+        else:
+            accessor_string += f'["{key}\"]'
+    tablist = eval('json_data' + accessor_string)
+    tabset = [x['id'] for x in eval('json_data' + accessor_string)]
+    idx = tabset.index(target_tab_id)
+    if settings_tab_id not in tabset:
+        tablist.insert(idx+1, {
+            'type': 'tab',
+            'id': settings_tab_id,
+            'name': f'{target_tab_id.replace('tab-', '')} settings',
+            'component': 'text',
+        })
+        tabset.insert(idx+1, settings_tab_id)
+    elif change_order:
+        ctab = tablist.pop(tabset.index(settings_tab_id))
+        tablist.insert(idx+1, ctab)
 
-    # for key,value 
-
-
-    
-
-    for row in json_data['layout']['children']:
-        for tabset in row['children']:
-            if tabset['type'] == 'tabset':
-                # Check if the target tab exists in this tabset
-                for index, tab in enumerate(tabset['children']):
-                    if tab['id'] == target_tab_id:
-                        # Check if the settings tab exists
-                        settings_tab_exists = any(t['id'] == settings_tab_id for t in tabset['children'])
-                        
-                        if not settings_tab_exists:
-                            # Add the settings tab to the tabset
-                            tabset['children'].append({
-                                "type": "tab",
-                                "id": settings_tab_id,
-                                "name": "Settings",
-                                "component": "text"
-                            })
-                        
-                        # Find the index of the settings tab
-                        for idx, t in enumerate(tabset['children']):
-                            if t['id'] == settings_tab_id:
-                                tabset['selected'] = idx  # Set the selected tab to the settings tab
-                                break
-                        
-                        return json_data  # Return the updated JSON data
+    accessor_string = ''
+    for key in accessor_chain[:-2]:
+        if isinstance(key, int):
+            accessor_string += f'[{key}]'
+        else:
+            accessor_string += f'["{key}\"]'
+    exec(f'json_data{accessor_string}[\'selected\'] = {tabset.index(settings_tab_id)}')
     return json_data
+
 
 @dataclass
 class PanelSettings:
@@ -247,18 +242,22 @@ class PanelSettings:
             prevent_initial_call=True
         )
         def show_settings(n_clicks, model):
-            # print(f"Settings clicked for {self.id}\tnClicks: {n_clicks}")
             if n_clicks:
-                # Iterate through the layout to find the tabset containing the current tab
-                print('depth of dictionary set: ', dict_depth(model))
-                return update_tabset(model, f'tab-{self.id}', f'tab-{self.id}_settings')
-                # str_model = str(model)
-                # str_model=str_model.replace("\'selected\': 2", "\'selected\': 1")
-
-                # return eval(str_model)
+                return update_tabset(model, f'tab-{self.id}', f'tab-{self.id}_settings', change_order=True)
             else:
                 raise PreventUpdate        
         
+        @app.callback(
+            Output('flex-layout', 'model', allow_duplicate=True),
+            Input(self.id+'_settings_gear', 'n_clicks'),
+            State('flex-layout', 'model'),
+            prevent_initial_call=True
+        )
+        def hide_settings(n_clicks, model):
+            if n_clicks:
+                return update_tabset(model, f'tab-{self.id}_settings', f'tab-{self.id}', change_order=False)
+            else:
+                raise PreventUpdate                
 
 @dataclass
 class Panel:
@@ -332,11 +331,11 @@ class Map(Panel):
 
 
 @dataclass
-class SoundingSettings(PanelSettings):
+class dbdtSoundingSettings(PanelSettings):
     lm_color: str = '#ff0000'
     hm_color: str = '#0000ff'
 
-class Sounding(Panel):
+class dbdtSounding(Panel):
     lm_time: None
     lm_data: None
     hm_time: None
@@ -344,7 +343,7 @@ class Sounding(Panel):
 
 
     def __init__(self, **kwargs):
-        settings = kwargs.pop('settings', SoundingSettings(id='sounding'))
+        settings = kwargs.pop('settings', dbdtSoundingSettings(id='sounding'))
         super().__init__(id='sounding', settings=settings)
         for key, value in kwargs.items():
             setattr(self, key, value)
@@ -375,13 +374,13 @@ class Sounding(Panel):
         return fig
 
 @dataclass
-class tTEMSettings(PanelSettings):
+class dbdtSectionSettings(PanelSettings):
     lm_color: str = '#ff0000'
     hm_color: str = '#2D81FF'
     lm_factor: float = 20.0
     hm_factor: float = 1.0
 
-class tTEM(Panel):
+class dbdtSection(Panel):
     lm_time: None
     lm_data: None
     hm_time: None
@@ -389,7 +388,7 @@ class tTEM(Panel):
 
 
     def __init__(self, **kwargs):
-        settings = kwargs.pop('settings', tTEMSettings(id='tTEM'))
+        settings = kwargs.pop('settings', dbdtSectionSettings(id='tTEM'))
         super().__init__(id='tTEM', settings=settings)
         for key, value in kwargs.items():
             setattr(self, key, value)
@@ -420,17 +419,17 @@ if __name__ == '__main__':
     from dash import dcc
     import example_panels as ep
     m1 = Map(data=ep.df)
-    dbdt1 = Sounding(lm_time=ep.lm.time.mean(0),
+    dbdt1 = dbdtSounding(lm_time=ep.lm.time.mean(0),
                      lm_data=ep.lm.data.mean(0),
                      hm_time=ep.hm.time.mean(0),
                      hm_data=ep.hm.data.mean(0))
 
-    tTEM1 = tTEM(lm_time=ep.lm.time,
+    dbdt2 = dbdtSection(lm_time=ep.lm.time,
                 lm_data=ep.lm.data,
                 hm_time=ep.hm.time,
                 hm_data=ep.hm.data)
 
-    nodes = m1.to_nodes() + dbdt1.to_nodes() + tTEM1.to_nodes()
+    nodes = m1.to_nodes() + dbdt1.to_nodes() + dbdt2.to_nodes()
 
     config = {
         "global": {"tabEnableClose": True, "tabEnableFloat": True},
@@ -463,7 +462,7 @@ if __name__ == '__main__':
                     "selected": 1,
                     "children": [
                         dbdt1.layout_dict,
-                        tTEM1.layout_dict,
+                        dbdt2.layout_dict,
                     ],
                 },
             ],
@@ -483,7 +482,7 @@ if __name__ == '__main__':
 
     m1.add_callbacks(app)
     dbdt1.add_callbacks(app)
-    tTEM1.add_callbacks(app)
+    dbdt2.add_callbacks(app)
 
     @app.callback(
         [Output('sounding', 'figure', allow_duplicate=True),
@@ -502,11 +501,11 @@ if __name__ == '__main__':
         dbdt1.hm_data = ep.hm.data[selected_points]*1.
         dbdt1.lm_data = ep.lm.data[selected_points]*1.
 
-        tTEM1.hm_data = ep.hm.data[selected_points]*1.
-        tTEM1.lm_data = ep.lm.data[selected_points]*1.
-        tTEM1.hm_time = ep.hm.time[selected_points]*1.
-        tTEM1.lm_time = ep.lm.time[selected_points]*1.
-        return dbdt1.render(), tTEM1.render()
+        dbdt2.hm_data = ep.hm.data[selected_points]*1.
+        dbdt2.lm_data = ep.lm.data[selected_points]*1.
+        dbdt2.hm_time = ep.hm.time[selected_points]*1.
+        dbdt2.lm_time = ep.lm.time[selected_points]*1.
+        return dbdt1.render(), dbdt2.render()
 
 
 
