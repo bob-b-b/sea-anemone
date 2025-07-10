@@ -1,76 +1,114 @@
-import numpy as np
-from dash import Dash, dcc, html
-import dash_leaflet as dl
-import dash_leaflet.express as dlx
-from dash.dependencies import Input, Output
-import dash_bootstrap_components as dbc
+from panels import *
 
-import json
+import dash_mantine_components as dmc
+from dash import Dash
 
-# Initialize the Dash app
-app = Dash(__name__)
+app = Dash(__name__, suppress_callback_exceptions=True, assets_folder='assets')
 
 
-import usf
 
-loc_files  = usf.find_location_files("C:/Users/au646858/Downloads/2025_0225")
-loc_files += usf.find_location_files("C:/Users/au646858/Downloads/2025_0226")
-loc_files += usf.find_location_files("C:/Users/au646858/Downloads/2025_0227")
+from dash import dcc
+import example_panels as ep
+m1 = Map(data=ep.df)
+dbdt1 = dbdtSounding(lm_time=ep.lm.time.mean(0),
+                    lm_data=ep.lm.data.mean(0),
+                    hm_time=ep.hm.time.mean(0),
+                    hm_data=ep.hm.data.mean(0))
 
-coordinates = []
-for loc_file in loc_files:
-    coordinates += usf.get_coordinates(loc_file)
+rhoa1 = rhoaSounding(lm_time=ep.lm.time.mean(0),
+                    lm_data=ep.lm.data.mean(0),
+                    hm_time=ep.hm.time.mean(0),
+                    hm_data=ep.hm.data.mean(0))
+
+
+dbdt2 = dbdtSection(lm_time=ep.lm.time,
+            lm_data=ep.lm.data,
+            hm_time=ep.hm.time,
+            hm_data=ep.hm.data)
+u1 = Upload()
+
+panels = [u1, m1, dbdt1, dbdt2, rhoa1]
+nodes = [node for panel in panels for node in panel.to_nodes()]
+config = {
+    "global": {"tabEnableClose": True, "tabEnableFloat": True},
+    "borders": [
+        {"type": "border", "location": "right", "size": 200, "children": [                    
+                    {
+                        "type": "tab",
+                        "name": "One",
+                        "component": "text",
+                        "id": "side-1",
+                        "tabEnableClose": False,
+                    },
+        ]},
+    ],
+    "layout": {
+        "type": "row",
+        "weight": 100,
+        "children": [{
+                "type": "tabset",
+                "weight": 50,
+                "children": [
+                    u1.layout_dict,
+                    m1.layout_dict,
+                ],
+            },
+            {
+                "type": "tabset",
+                "weight": 50,
+                "children": [
+                    dbdt1.layout_dict,
+                    dbdt2.layout_dict,
+                    rhoa1.layout_dict,
+                ],
+            },
+        ],
+    },
+}
+
+app.layout = html.Div([
+    dcc.Location(id='url', refresh=False),
+    dfl.FlexLayout(
+    id="flex-layout",
+    model=config,
+    children=nodes,
+    useStateForModel=False,
     
-
-
-
-lats = np.array([lat for lat, lon in coordinates])
-lons = np.array([lon for lat, lon in coordinates])
-
-
-import usf
-
-lm,hm = usf.Sweep.from_usf("C:/Users/au646858/Downloads/2025_0227/USF_Files_dawa river/L001_S001_2025_0227_120804.usf")
-
-import plotly.graph_objects as go
-
-fig = go.Figure()
-
-
-
-# Combined data
-fig.add_trace(go.Scatter(x=hm.time.mean(0), y=hm.data.mean(0), mode='lines+markers', name='High Mass Mean Combined', showlegend=False))
-fig.add_trace(go.Scatter(x=lm.time.mean(0), y=lm.data.mean(0), mode='lines+markers', name='Low Mass Mean Combined', showlegend=False))
-
-fig.update_layout(
-    xaxis_type="log",
-    yaxis_type="log",
-    title="USF Data",
-    xaxis_title="Time",
-    yaxis_title="Data",
-    template="plotly_white"
+)]
 )
 
-# Define the layout of the app
-ge_url = 'http://www.google.cn/maps/vt?lyrs=s@189&gl=cn&x={x}&y={y}&z={z}'
-app = Dash(external_stylesheets=[dbc.themes.CYBORG])
+for panel in panels:
+    panel.add_callbacks(app)
 
-app.layout = dbc.Container([
-    html.Br(),
-    dbc.Row([
-        dbc.Col(
-            dl.Map([
-                dl.TileLayer(url=ge_url),
-                dl.LayerGroup([dl.CircleMarker(center=coord, radius=1, color='blue', fill=True, fillColor='blue', fillOpacity=1) for coord in coordinates])
-            ], center=[np.mean(lats), np.mean(lons)], zoom=14, style={'height': '80vh'})
-        ),
-        dbc.Col(dcc.Graph(figure=fig), width=6)
-    ])
-], fluid=True)
+@app.callback(
+    [ 
+        Output('sounding', 'figure', allow_duplicate=True),
+        Output('tTEM',     'figure', allow_duplicate=True),
+        Output('rhoa',     'figure', allow_duplicate=True)
+    ],
+    Input('map', 'selectedData'),
+    prevent_initial_call="initial_duplicate",
+    allow_duplicate=True
+)
+def update_dbdt(selected_data):
+    if not selected_data or 'points' not in selected_data:
+        raise PreventUpdate
+
+    # Extract selected points
+    selected_points = [point['pointIndex'] for point in selected_data['points']]
+
+    dbdt1.hm_data = ep.hm.data[selected_points]*1.
+    dbdt1.lm_data = ep.lm.data[selected_points]*1.
+    
+    rhoa1.hm_data = ep.hm.data[selected_points]*1.
+    rhoa1.lm_data = ep.lm.data[selected_points]*1.        
+
+    dbdt2.hm_data = ep.hm.data[selected_points]*1.
+    dbdt2.lm_data = ep.lm.data[selected_points]*1.
+    dbdt2.hm_time = ep.hm.time[selected_points]*1.
+    dbdt2.lm_time = ep.lm.time[selected_points]*1.
+    return dbdt1.render(), dbdt2.render(), rhoa1.render()
 
 
 
-
-# Run the app
-if __name__ == '__main__':
-    app.run_server(debug=True)
+app.run(port=8050, dev_tools_hot_reload=True)
