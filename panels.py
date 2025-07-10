@@ -297,8 +297,8 @@ if __name__ == '__main__':
     @app.callback(
         [ 
             Output('sounding', 'figure', allow_duplicate=True),
-            Output('tTEM', 'figure', allow_duplicate=True),
-            Output('rhoa', 'figure', allow_duplicate=True)
+            Output('tTEM',     'figure', allow_duplicate=True),
+            Output('rhoa',     'figure', allow_duplicate=True)
         ],
         Input('map', 'selectedData'),
         prevent_initial_call="initial_duplicate",
@@ -325,4 +325,4 @@ if __name__ == '__main__':
 
 
 
-    app.run(debug=True, port=8050, dev_tools_hot_reload=True)
+    app.run(port=8050, dev_tools_hot_reload=True)
