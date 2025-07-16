@@ -278,9 +278,10 @@ class Panel:
     
     
     def initialize(self):
-        return html.Div([dcc.Graph(figure=self.render(), id=self.id, mathjax=True, style={'height': '100%'}),
+        return html.Div([dcc.Graph(figure=self.render(), id=self.id, mathjax=True, 
+                                   style={'height':'98%', 'width': '98%', 'align': 'center'}),
                          gear_maker(self.id)],
-                        style={'height': '100%', 'overflow': 'hidden'} )
+                        style={'height': '100%'})
                          
     
     def to_nodes(self):

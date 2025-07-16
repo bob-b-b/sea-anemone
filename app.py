@@ -4,7 +4,7 @@ import dash_mantine_components as dmc
 from dash import Dash
 
 app = Dash(__name__, suppress_callback_exceptions=True, assets_folder='assets')
-
+app.title = "sea anemone"
 
 
 from dash import dcc
@@ -111,4 +111,4 @@ def update_dbdt(selected_data):
 
 
 
-app.run(port=8050, dev_tools_hot_reload=True)
+app.run(debug=True, port=8050, dev_tools_hot_reload=True)

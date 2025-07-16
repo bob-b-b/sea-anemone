@@ -1,5 +1,38 @@
 from basepanel import *
 
+import plotly.io as pio
+
+# Define a custom template
+custom_template = {
+    "layout": {
+        "font": {"family": "Arial", "size": 14, "color": "black"},
+        "plot_bgcolor": "white",
+        "paper_bgcolor": "white",
+        "margin": {"l": 50, "r": 50, "t": 50, "b": 50},
+        "xaxis": {
+            "showgrid": True,
+            "gridcolor": "#e5e5e5",
+            "zeroline": False,
+            "showline": True,
+            "linecolor": "black",
+            "ticks": "outside",
+        },
+        "yaxis": {
+            "showgrid": True,
+            "gridcolor": "#e5e5e5",
+            "zeroline": False,
+            "showline": True,
+            "linecolor": "black",
+            "ticks": "outside",
+        },
+    }
+}
+
+# Register the custom template
+pio.templates["custom"] = custom_template
+
+# Set the custom template as the default
+pio.templates.default = "custom"
 
 @dataclass
 class MapSettings(PanelSettings):
@@ -28,6 +61,12 @@ class Map(Panel):
         fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0},
                           dragmode='select')
         return fig
+
+    def initialize(self):
+        return html.Div([dcc.Graph(figure=self.render(), id=self.id, mathjax=True, 
+                                   style={'height': '100%'}),
+                         gear_maker(self.id)],
+                        style={'height': '100%', 'overflow': 'hidden'} )
         
 
 
@@ -70,7 +109,7 @@ class dbdtSounding(Panel):
             yaxis_type="log",
             xaxis_title="time [s]",
             yaxis_title="$\\frac{dB}{dt}$ [V / m$^2$]",
-            margin=dict(t=30),
+            margin={"l": 50, "r": 50, "t": 50, "b": 50},
             dragmode='select'
         )
         return fig
@@ -122,7 +161,7 @@ class rhoaSounding(Panel):
             yaxis_type="log",
             xaxis_title="time [s]",
             yaxis_title="$\\frac{dB}{dt}$ [V / m$^2$]",
-            margin=dict(t=30),
+            margin={"l": 50, "r": 50, "t": 50, "b": 50},
             dragmode='select'
         )
         return fig
@@ -160,7 +199,7 @@ class dbdtSection(Panel):
             yaxis_type="log",
             xaxis_title="data index",
             yaxis_title="$\\frac{dB}{dt}$ \\[V / m$^2$\\]",
-            margin=dict(t=30),
+            margin={"l": 50, "r": 50, "t": 50, "b": 50},
             dragmode='select'
         )
         return fig    
@@ -187,30 +226,26 @@ class Upload(Panel):
                     children=html.Div([
                         'Drag and Drop \n or \n',
                         html.A('Select Files')
-                    ]),
+                    ], style={'height': '110px', 'lineHeight': '100px', 'textAlign': 'center'}),
                     style={
-                        'height': '100px',
-                        'lineHeight': '100px',
                         'borderWidth': '2px',
                         'borderStyle': 'dashed',
                         'borderRadius': '5px',
                         'textAlign': 'center',
-                        'margin': '25px'
                     },
                     multiple=True,
                 ),
-                html.Div(id='output-data-upload', style={'overflow': 'hidden'}),
-            ],
-            style={'margin': '10px', 'overflow': 'hidden'}
+                html.Div(id='output-data-upload'),
+        ],
         )
     
     def initialize(self):
         return html.Div([
             dcc.Markdown("# welcome to sea anemone", style={'textAlign': 'center'}),
-            dcc.Markdown("## Upload your data to get started"),
+            dcc.Markdown("Upload your data to get started."),
             self.render(),
             gear_maker(self.id)],
-            style={'height': '100%', 'overflow': 'hidden', 'margin':'10px'} 
+            style={'margin':'10px'}#,'height': 'calc(100%-30px)', 'overflow': 'hidden'} 
         )    
 
 
@@ -325,4 +360,4 @@ if __name__ == '__main__':
 
 
 
-    app.run(port=8050, dev_tools_hot_reload=True)
+    app.run(debug=True, port=8050, dev_tools_hot_reload=True)
