@@ -111,4 +111,5 @@ def update_dbdt(selected_data):
 
 
 
-app.run(port=8050, dev_tools_hot_reload=True)
+app.run(debug=True, port=8050, dev_tools_hot_reload=True)
+#start msedge --app=http://127.0.0.1:8050/

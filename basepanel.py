@@ -57,7 +57,7 @@ def update_tabset(json_data, target_tab_id, settings_tab_id, change_order=False)
         tablist.insert(idx+1, {
             'type': 'tab',
             'id': settings_tab_id,
-            'name': f'{target_tab_id.replace('tab-', '')} settings',
+            'name': target_tab_id.replace('tab-', '')+' settings',
             'component': 'text',
         })
         tabset.insert(idx+1, settings_tab_id)
