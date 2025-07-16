@@ -4,7 +4,7 @@ import dash_mantine_components as dmc
 from dash import Dash
 
 app = Dash(__name__, suppress_callback_exceptions=True, assets_folder='assets')
-
+app.title = "sea anemone"
 
 
 from dash import dcc
