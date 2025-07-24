@@ -1,4 +1,5 @@
 from panels import *
+from database_panel_simple import create_database_panel
 
 import dash_mantine_components as dmc
 from dash import Dash
@@ -9,6 +10,7 @@ app.title = "sea anemone"
 
 from dash import dcc
 import example_panels as ep
+
 m1 = Map(data=ep.df)
 dbdt1 = dbdtSounding(lm_time=ep.lm.time.mean(0),
                     lm_data=ep.lm.data.mean(0),
@@ -27,7 +29,15 @@ dbdt2 = dbdtSection(lm_time=ep.lm.time,
             hm_data=ep.hm.data)
 u1 = Upload()
 
-panels = [u1, m1, dbdt1, dbdt2, rhoa1]
+t1 = Table(ep.df)
+
+# Create database panel
+# db1 = create_database_panel()
+
+
+
+
+panels = [u1, m1, dbdt1, dbdt2, rhoa1, t1]
 nodes = [node for panel in panels for node in panel.to_nodes()]
 config = {
     "global": {"tabEnableClose": True, "tabEnableFloat": True},
@@ -51,6 +61,7 @@ config = {
                 "children": [
                     u1.layout_dict,
                     m1.layout_dict,
+                    t1.layout_dict,
                 ],
             },
             {
@@ -108,8 +119,6 @@ def update_dbdt(selected_data):
     dbdt2.hm_time = ep.hm.time[selected_points]*1.
     dbdt2.lm_time = ep.lm.time[selected_points]*1.
     return dbdt1.render(), dbdt2.render(), rhoa1.render()
-
-
 
 app.run(debug=True, port=8050, dev_tools_hot_reload=True)
 #start msedge --app=http://127.0.0.1:8050/

@@ -83,39 +83,61 @@ class PanelSettings:
     def __init__(self, id):
         self.id = id
 
+    def __post_init__(self):
+        for key in self.schema.get('properties', {}).keys():
+            if self.schema['properties'][key]['type'] == 'array':
+                exec(f'self.{key}_len = len(self.{key})')
+
+
     def initialize(self):
         # Main panel content (to be overridden by subclasses)
         return html.Div([html.H3(f"Panel: {self.id}")])
+
+    def special_renders(self):
+        color_check = lambda key,prop: 'color' in key.lower()
+        def color_render(key, prop):
+            import dash_daq as daq
+            return daq.ColorPicker(
+                id={'type': f'settings-{self.id}', 'key': key},
+                label=key.lower(),
+                value={'hex': eval(f'self.{key}')},
+                size=164,
+                style={'margin': '5px'}
+            )
+        enum_check = lambda key, prop: 'enum' in prop
+        def enum_render(key, prop):
+            return dbc.Select(
+                options=[{"label": v, "value": v} for v in prop['enum']],
+                id={'type': f'settings-{self.id}', 'key': key},
+                value=eval(f'self.{key}'),
+                style={'margin': '5px'}
+            )
+        return [
+            (color_check, color_render),
+            (enum_check, enum_render)
+        ]
 
     def render(self):
         # Render settings form based on JSON schema
         if self.schema is None:
             return html.Div("No settings available.")
         form_items = [dcc.Markdown(f'# {self.id} settings') if self.title is None else dcc.Markdown(f'# {self.title}')]
+
+        special_renders = self.special_renders()
+        n_special_renders = len(special_renders)
+
         for key, prop in self.schema.get('properties', {}).items():
             row_children = []
             row_children.append(dbc.Label(prop.get('title', key), style={'marginRight': '10px'}))
-            if 'color' in key.lower():
-                import dash_daq as daq
-                row_children.append(
-                    daq.ColorPicker(
-                        id={'type': f'settings-{self.id}', 'key': key},
-                        label=key.lower(),
-                        value={'hex': eval(f'self.{key}')},
-                        size=164,
-                        style={'margin': '5px'}
-                    )
-                )
-            elif 'enum' in prop:
-                row_children.append(
-                    dbc.Select(
-                        options=[{"label": v, "value": v} for v in prop['enum']],
-                        id={'type': f'settings-{self.id}', 'key': key},
-                        value=eval(f'self.{key}'),
-                        style={'margin': '5px'}
-                    )
-                )
-            else:
+
+            n_render = 0
+            for check, render in special_renders:
+                if check(key, prop):
+                    row_children.append(render(key, prop))
+                    break
+                else:
+                    n_render += 1
+            if n_render == n_special_renders:
                 input_type = 'text'
                 if prop.get('type') == 'number':
                     input_type = 'number'
@@ -254,27 +276,51 @@ class PanelSettings:
             if n_clicks:
                 return update_tabset(model, f'tab-{self.id}_settings', f'tab-{self.id}', change_order=False)
             else:
-                raise PreventUpdate                
+                raise PreventUpdate
+
+    @property
+    def flat_keys(self):
+        all_keys = list(self.schema.get('properties', {}).keys())
+        key_elements = []
+        for key in all_keys:
+            if self.schema['properties'][key].get('type') == 'array':
+                all_keys.remove(key)  # Remove list types from callbacks
+                key_elements += [key+'-'+ str(i) for i in range(eval(f'self.{key}_len'))]
+        all_keys = all_keys + key_elements
+        return all_keys
 
 @dataclass
 class Panel:
     id: str
     settings: PanelSettings = None
+    childname: str = 'figure'
 
     def add_callbacks(self, app):
         self.settings.add_callbacks(app)
         def update_render(*args):
-            for key, arg in zip(self.settings.schema.get('properties', {}).keys(), args):
+            for key, arg in zip(self.settings.flat_keys, args):
                 if isinstance(arg, dict) and 'hex' in arg:
                     arg = arg['hex']
                 
                 if hasattr(self.settings, key):
+                    if self.settings.schema['properties'][key].get('type')=='integer':
+                        arg = int(arg)
+                    elif self.settings.schema['properties'][key].get('type')=='number':
+                        arg = float(arg)
+                    elif self.settings.schema['properties'][key].get('type')=='boolean':
+                        arg = (arg=='true' or arg is True)
                     setattr(self.settings, key, arg)
+                elif '-' in key:
+                    basekey,index = key.split('-')
+                    if hasattr(self.settings, basekey):
+                        arg = (arg=='true' or arg is True)
+                        exec(f'self.settings.{basekey}[{index}] = arg')
+
     
             return self.render()
         
-        update_render = app.callback(Output(self.id, 'figure'),
-                    [Input({'type': f'settings-{self.id}', 'key': x}, 'value') for x in self.settings.schema.get('properties', {}).keys()])(update_render)
+        update_render = app.callback(Output(self.id, self.childname),
+                    [Input({'type': f'settings-{self.id}', 'key': x}, 'value') for x in self.settings.flat_keys])(update_render)
     
     
     def initialize(self):
@@ -285,7 +331,6 @@ class Panel:
                          
     
     def to_nodes(self):
-        # Returns a layout with panel and settings tab
         return [dfl.Tab(id=f'tab-{self.id}', children=[self.initialize()]), self.settings.node()]
     
     @property

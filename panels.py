@@ -1,4 +1,8 @@
+from dataclasses import field
 from basepanel import *
+#from database_panel import DatabasePanel
+from dash import dash_table
+import numpy as np
 
 import plotly.io as pio
 
@@ -246,8 +250,80 @@ class Upload(Panel):
             self.render(),
             gear_maker(self.id)],
             style={'margin':'10px'}#,'height': 'calc(100%-30px)', 'overflow': 'hidden'} 
-        )    
+        )
 
+
+@dataclass
+class TableSettings(PanelSettings):
+    max_rows: int = 6
+    visible_columns: list[bool] = None
+
+    def special_renders(self):
+        special_renders = super().special_renders()
+        vis_check = lambda key,prop: key == 'visible_columns'
+        def vis_render(key, prop):
+            checkbox_row = []
+            if hasattr(self, 'column_names'):
+                col_names = self.column_names
+            else:
+                col_names = [str(i) for i in range(self.visible_columns_len)]
+
+            for i, (val, name) in enumerate(zip(self.visible_columns, col_names)):
+                checkbox_row.append(
+                    html.Div([
+                        html.Label(name, style={'fontSize': '12px', 'marginLeft': '5px'}),
+                        dbc.Checkbox(
+                            id={'type': f'settings-{self.id}', 'key': f'{key}-{i}'},
+                            #value=self.visible_columns[i] if i < len(self.visible_columns) else True,
+                            value=val,
+                            style={'margin': '5px', 'horizontalAlign': 'center', 'verticalAlign': 'middle'}
+                        ),
+                    ], style={'display': 'inline-block', 'marginRight': '15px', 'verticalAlign': 'top'})
+                )
+            
+            return html.Div([
+                html.Br(),
+                html.Div(checkbox_row, style={'display': 'flex', 'flexWrap': 'wrap', 'gap': '10px'}),
+                html.Br()])
+        
+        special_renders.append((vis_check, vis_render))
+        return special_renders
+    
+class Table(Panel):
+    def __init__(self, dataframe, **kwargs):
+        id = kwargs.pop('id', 'table')
+        settings = kwargs.pop('settings', TableSettings(id, visible_columns=[True for _ in dataframe.columns.tolist()]))
+        settings.column_names = dataframe.columns.tolist()
+        super().__init__(id=id, settings=settings, childname='children')
+        self.df = dataframe
+
+        for key, value in kwargs.items():
+            setattr(self, key, value)      
+
+    def render(self):
+        return html.Div(children=[
+            dash_table.DataTable(
+                        data=self.df.to_dict('records'),
+                        columns=[{"name": i, "id": i} for i in self.df.columns[self.settings.visible_columns]],
+                        style_cell={'textAlign': 'left', 'padding': '5px', 'fontSize': '12px'},
+                        style_header={'backgroundColor': 'rgb(230, 230, 230)', 'fontWeight': 'bold'},
+                        page_size=self.settings.max_rows,
+                        page_action='native',
+                        sort_action='native',
+                    )
+        ], id=self.id)
+                
+    def initialize(self):
+        if hasattr(self, 'name'):
+            name = self.name
+        else:
+            name = self.id
+        return html.Div([
+            dcc.Markdown(f"## {name}"),
+            self.render(),
+            gear_maker(self.id)],
+            style={'margin':'10px'}#,'height': 'calc(100%-30px)', 'overflow': 'hidden'} 
+        )
 
 if __name__ == '__main__':
     import dash_mantine_components as dmc
@@ -275,8 +351,9 @@ if __name__ == '__main__':
                 hm_time=ep.hm.time,
                 hm_data=ep.hm.data)
     u1 = Upload()
-    
-    panels = [u1, m1, dbdt1, dbdt2, rhoa1]
+    t1 = Table(dataframe=ep.df, id='overview table')
+
+    panels = [u1, m1, dbdt1, dbdt2, rhoa1, t1]
     nodes = [node for panel in panels for node in panel.to_nodes()]
     config = {
         "global": {"tabEnableClose": True, "tabEnableFloat": True},
@@ -298,8 +375,9 @@ if __name__ == '__main__':
                     "type": "tabset",
                     "weight": 50,
                     "children": [
-                        u1.layout_dict,
+                        t1.layout_dict,
                         m1.layout_dict,
+                        u1.layout_dict,
                     ],
                 },
                 {
@@ -322,7 +400,6 @@ if __name__ == '__main__':
         model=config,
         children=nodes,
         useStateForModel=False,
-        
     )]
     )
     
@@ -357,7 +434,4 @@ if __name__ == '__main__':
         dbdt2.hm_time = ep.hm.time[selected_points]*1.
         dbdt2.lm_time = ep.lm.time[selected_points]*1.
         return dbdt1.render(), dbdt2.render(), rhoa1.render()
-
-
-
     app.run(debug=True, port=8050, dev_tools_hot_reload=True)
