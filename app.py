@@ -9,27 +9,54 @@ app.title = "sea anemone"
 
 
 from dash import dcc
-import example_panels as ep
 
-m1 = Map(data=ep.df)
-dbdt1 = dbdtSounding(lm_time=ep.lm.time.mean(0),
-                    lm_data=ep.lm.data.mean(0),
-                    hm_time=ep.hm.time.mean(0),
-                    hm_data=ep.hm.data.mean(0))
+import usf
+import os
 
-rhoa1 = rhoaSounding(lm_time=ep.lm.time.mean(0),
-                    lm_data=ep.lm.data.mean(0),
-                    hm_time=ep.hm.time.mean(0),
-                    hm_data=ep.hm.data.mean(0))
+usf_folders = [
+               '/home/matt/geophysics_data/TEM/sTEM_data/2025_0302/USF_Files_dawa river 3/'
+            ]
+
+sweeps = []
+for usf_folder in usf_folders:
+    usf_files = [usf_folder+f for f in os.listdir(usf_folder) if f.endswith('.usf')]
+    for usf_file in usf_files:        
+        sweeps += usf.Sweep.from_usf(usf_file, combine=False)
+
+data_overview, df_data = usf.sweep2dataframes(sweeps)
+data_overview.reset_index(inplace=True)
+
+m1 = Map(data=data_overview)
+# dbdt1 = dbdtSounding(lm_time=ep.lm.time.mean(0),
+#                     lm_data=ep.lm.data.mean(0),
+#                     hm_time=ep.hm.time.mean(0),
+#                     hm_data=ep.hm.data.mean(0))
+
+# rhoa1 = rhoaSounding(lm_time=ep.lm.time.mean(0),
+#                     lm_data=ep.lm.data.mean(0),
+#                     hm_time=ep.hm.time.mean(0),
+#                     hm_data=ep.hm.data.mean(0))
 
 
-dbdt2 = dbdtSection(lm_time=ep.lm.time,
-            lm_data=ep.lm.data,
-            hm_time=ep.hm.time,
-            hm_data=ep.hm.data)
+# dbdt2 = dbdtSection(lm_time=ep.lm.time,
+#                 lm_data=ep.lm.data,
+#                 hm_time=ep.hm.time,
+#                 hm_data=ep.hm.data)
+
 u1 = Upload()
 
-t1 = Table(ep.df)
+t1 = Table(data_overview, id='table_overview')
+
+df_data['sys_gate'] = df_data['system_id'].astype(str) + '-' + df_data['gate_id'].astype(str)
+pivot = df_data.pivot_table(
+    index=['site_id'],
+    columns='sys_gate',
+    values='dbdt'
+)
+
+
+
+t2 = Table(pivot, id='table_dbdt')
 
 # Create database panel
 # db1 = create_database_panel()
@@ -37,7 +64,7 @@ t1 = Table(ep.df)
 
 
 
-panels = [u1, m1, dbdt1, dbdt2, rhoa1, t1]
+panels = [u1, m1, t1, t2]
 nodes = [node for panel in panels for node in panel.to_nodes()]
 config = {
     "global": {"tabEnableClose": True, "tabEnableFloat": True},
@@ -68,9 +95,7 @@ config = {
                 "type": "tabset",
                 "weight": 50,
                 "children": [
-                    dbdt1.layout_dict,
-                    dbdt2.layout_dict,
-                    rhoa1.layout_dict,
+                    t2.layout_dict,
                 ],
             },
         ],
@@ -120,39 +145,39 @@ for panel in panels:
 #     dbdt2.lm_time = ep.lm.time[selected_points]*1.
 #     return dbdt1.render(), dbdt2.render(), rhoa1.render()
 
-@app.callback(
-    [
-        Output('sounding', 'figure', allow_duplicate=True),
-        Output('tTEM',     'figure', allow_duplicate=True),
-        Output('rhoa',     'figure', allow_duplicate=True),
-        # Output('table', 'children', allow_duplicate=True)
-    ],
-    Input('map', 'selectedData'),
-    prevent_initial_call="initial_duplicate",
-    allow_duplicate=True
-)
-def select_from_map(selected_data):
-    if not selected_data or 'points' not in selected_data:
-        raise PreventUpdate
+# @app.callback(
+#     [
+#         Output('sounding', 'figure', allow_duplicate=True),
+#         Output('tTEM',     'figure', allow_duplicate=True),
+#         Output('rhoa',     'figure', allow_duplicate=True),
+#         # Output('table', 'children', allow_duplicate=True)
+#     ],
+#     Input('map', 'selectedData'),
+#     prevent_initial_call="initial_duplicate",
+#     allow_duplicate=True
+# )
+# def select_from_map(selected_data):
+#     if not selected_data or 'points' not in selected_data:
+#         raise PreventUpdate
 
 
-    selected_points = [point['pointIndex'] for point in selected_data['points']]
-    # t1.selected_rows = selected_points
+#     selected_points = [point['pointIndex'] for point in selected_data['points']]
+#     # t1.selected_rows = selected_points
 
-    tmp_hm  = ep.hm.data[selected_points]*1.
-    tmp_lm  = ep.lm.data[selected_points]*1.
+#     tmp_hm  = ep.hm.data[selected_points]*1.
+#     tmp_lm  = ep.lm.data[selected_points]*1.
 
-    dbdt1.hm_data = tmp_hm
-    dbdt1.lm_data = tmp_lm
+#     dbdt1.hm_data = tmp_hm
+#     dbdt1.lm_data = tmp_lm
 
-    rhoa1.hm_data = tmp_hm
-    rhoa1.lm_data = tmp_lm
-    dbdt2.hm_data = tmp_hm
-    dbdt2.lm_data = tmp_lm
+#     rhoa1.hm_data = tmp_hm
+#     rhoa1.lm_data = tmp_lm
+#     dbdt2.hm_data = tmp_hm
+#     dbdt2.lm_data = tmp_lm
 
-    dbdt2.hm_time = ep.hm.time[selected_points]*1.
-    dbdt2.lm_time = ep.lm.time[selected_points]*1.
-    return dbdt1.render(), dbdt2.render(), rhoa1.render()
+#     dbdt2.hm_time = ep.hm.time[selected_points]*1.
+#     dbdt2.lm_time = ep.lm.time[selected_points]*1.
+#     return dbdt1.render(), dbdt2.render(), rhoa1.render()
 
 # @app.callback(
 #     [

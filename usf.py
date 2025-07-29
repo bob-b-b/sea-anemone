@@ -238,17 +238,16 @@ def sweep2dataframes(sweeps):
 
     df_data['log10_dbdt'] = np.log10(df_data['dbdt'])
 
-
     df_data['sys_gate'] = df_data['system_id'].astype(str) + '-' + df_data['gate_id'].astype(str)
 
     # Pivot the table: index by site_id and time, columns by sys_gate, values as dbdt
-    pivot = df_data.pivot_table(
+    df_overview = df_data.pivot_table(
         index=['site_id'],
-        columns='sys_gate',
-        values='dbdt'
-    )
+        values=['date', 'latitude', 'longitude', 'elevation'],
+        aggfunc='first'
+    )#.reset_index()
 
-    return pivot, df_data    
+    return df_overview, df_data    
 
 if __name__ == '__main__':
     data_folder = "O:/Nat-Tech_HGG-Projects/2025_sTEM_DollowSomalia/sTEM Profiler data/sTEM35/2025_0227"
