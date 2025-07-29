@@ -143,7 +143,112 @@ class Sweep:
         with open(fname, "rb") as a_file:
             data = load(a_file)
         return data
+
+from anemone.forwards import Forward
+from anemone.system import Loop, Receiver, Waveform, FilterChain, ButterworthFilter
+from usf import Sweep
+import numpy as np
+
+def sweep2fwr(sweeps, fwr=Forward):
+    points = set(swp.points for swp in sweeps)
+    forwards = []
+    for pnts in points:
+        swp = next(swp for swp in sweeps if swp.points == pnts)
+        tx = Loop.square(swp.loop_size[0])
+        rx = Receiver(x=swp.coil_location[0], y=swp.coil_location[1])
+        wv = Waveform(swp.tx_ramp_time, -swp.tx_ramp)
+        filter_chain = []
+        for f_cut, order in swp.low_pass[::2], swp.low_pass[1::2]:
+            filter_chain.append(ButterworthFilter(f_cut))
+        fc = FilterChain(filter_chain)
+        time = swp.time
+        forwards.append(fwr(tx, rx, time, wv, fc, tolerance=1e-6))
+    return forwards
+
+def sweep2dataframes(sweeps):
+    import pandas as pd
+
+    points = set([x.points for x in sweeps])
+
+    mega_sweeps = []
+    for pnts in points:
+        mega_sweeps.append(Sweep.combine_sweeps([swp for swp in sweeps if swp.points==pnts]))
+    lm,hm = mega_sweeps
+
+    n_sites,n_gates = lm.data.shape
+
+    lm.data  = np.pad(lm.data, ((1,0), (0,0)), mode='constant', constant_values=np.nan)
+    lm.time  = np.pad(lm.time, ((1,0), (0,0)), mode='constant', constant_values=np.nan)
+    lm.error = np.pad(lm.error, ((1,0), (0,0)), mode='constant', constant_values=np.nan)
+
+    lm.date     = np.pad(lm.date, (1,0), mode='constant', constant_values=np.nan)
+    lm.location = np.pad(lm.location, ((1,0), (0,0)), mode='constant', constant_values=np.nan)
+    lm.daytime  = np.pad(lm.daytime, (1,0), mode='constant', constant_values=np.nan)
+
+    data_avg = {
+        'site_id': np.concatenate([np.ones(n_gates, dtype=int)*i for i in range(-1, n_sites)]),
+        'dbdt': lm.data.flatten(),
+        'error':   lm.error.flatten(),
+        'inuse_auto': [True for _ in lm.data.flatten()],
+        'inuse_manual': [np.nan for _ in lm.data.flatten()],
+        'time': lm.time.flatten(),
+        'gate_id': np.concatenate([np.arange(n_gates) for i in range(-1, n_sites)]),
+        'system_id': ['lm' for _ in lm.data.flatten()],
+        'date':     np.concatenate([np.ones(n_gates, dtype=int)*x for x in lm.date]),
+        'latitude': np.concatenate([np.ones( n_gates, dtype=float)*x for x in lm.location[:, 1]]),
+        'longitude':np.concatenate([np.ones(n_gates, dtype=float)*x for x in lm.location[:, 0]]),
+        'elevation':np.concatenate([np.ones(n_gates, dtype=float)*x for x in lm.location[:, 2]]),
+        'daytime':  np.concatenate([np.ones(n_gates, dtype=float)*x for x in lm.daytime]),
+    }
+    df_data = pd.DataFrame(data_avg)
+
+    n_sites,n_gates = hm.data.shape
     
+    n_sites,n_gates = hm.data.shape
+    hm.data = np.pad(hm.data, ((1,0), (0,0)), mode='constant', constant_values=np.nan)
+    hm.time = np.pad(hm.time, ((1,0), (0,0)), mode='constant', constant_values=np.nan)
+    hm.error = np.pad(hm.error, ((1,0), (0,0)), mode='constant', constant_values=np.nan)
+
+    hm.date = np.pad(hm.date, (1,0), mode='constant', constant_values=np.nan)
+    hm.location = np.pad(hm.location, ((1,0), (0,0)), mode='constant', constant_values=np.nan)
+    hm.daytime = np.pad(hm.daytime, (1,0), mode='constant', constant_values=np.nan)
+
+    data_avg = {
+        'site_id': np.concatenate([np.ones(n_gates, dtype=int)*i for i in range(-1, n_sites)]),
+        'dbdt': hm.data.flatten(),
+        'error':   hm.error.flatten(),
+        'inuse_auto': [True for _ in hm.data.flatten()],
+        'inuse_manual': [np.nan for _ in hm.data.flatten()],
+        'time': hm.time.flatten(),
+        'gate_id': np.concatenate([np.arange(n_gates) for i in range(-1, n_sites)]),
+        'system_id': ['hm' for _ in hm.data.flatten()],
+        'date': np.concatenate([np.ones(n_gates, dtype=int)*x for x in lm.date]),
+        'latitude': np.concatenate([np.ones(n_gates, dtype=float)*x for x in lm.location[:, 1]]),
+        'longitude': np.concatenate([np.ones(n_gates, dtype=float)*x for x in lm.location[:, 0]]),
+        'elevation': np.concatenate([np.ones(n_gates, dtype=float)*x for x in lm.location[:, 2]]),
+        'daytime': np.concatenate([np.ones(n_gates, dtype=float)*x for x in lm.daytime]),
+    }
+    df_data = pd.concat([df_data, pd.DataFrame(data_avg)], ignore_index=True)
+    df_data = df_data.sort_values(by=['site_id','system_id', 'gate_id'])
+    df_data = df_data.reset_index(drop=True)
+    df_data.loc[df_data['time']>1e-3, 'inuse_auto'] = False
+
+    df_data['error_lb'] = df_data['dbdt']-df_data['dbdt']/(1. + df_data['error']/100.)
+    df_data['error_ub'] = df_data['dbdt']*(1. + df_data['error']/100.)-df_data['dbdt']
+
+    df_data['log10_dbdt'] = np.log10(df_data['dbdt'])
+
+
+    df_data['sys_gate'] = df_data['system_id'].astype(str) + '-' + df_data['gate_id'].astype(str)
+
+    # Pivot the table: index by site_id and time, columns by sys_gate, values as dbdt
+    pivot = df_data.pivot_table(
+        index=['site_id'],
+        columns='sys_gate',
+        values='dbdt'
+    )
+
+    return pivot, df_data    
 
 if __name__ == '__main__':
     data_folder = "O:/Nat-Tech_HGG-Projects/2025_sTEM_DollowSomalia/sTEM Profiler data/sTEM35/2025_0227"
