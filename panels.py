@@ -296,22 +296,24 @@ class Table(Panel):
         settings.column_names = dataframe.columns.tolist()
         super().__init__(id=id, settings=settings, childname='children')
         self.df = dataframe
+        self.dashtable = None
 
         for key, value in kwargs.items():
             setattr(self, key, value)      
 
     def render(self):
-        return html.Div(children=[
-            dash_table.DataTable(
-                        data=self.df.to_dict('records'),
-                        columns=[{"name": i, "id": i} for i in self.df.columns[self.settings.visible_columns]],
-                        style_cell={'textAlign': 'left', 'padding': '5px', 'fontSize': '12px'},
-                        style_header={'backgroundColor': 'rgb(230, 230, 230)', 'fontWeight': 'bold'},
-                        page_size=self.settings.max_rows,
-                        page_action='native',
-                        sort_action='native',
-                    )
-        ], id=self.id)
+        if self.dashtable is None:
+            self.dashtable = dash_table.DataTable(
+                data=self.df.to_dict('records'),
+                columns=[{"name": i, "id": i} for i in self.df.columns],
+                page_size=self.settings.max_rows,
+                sort_action="native",
+                style_table={'height': '400px', 'overflowY': 'auto'},
+                style_cell={'textAlign': 'left', 'padding': '5px', 'fontSize': '12px'},
+                style_header={'backgroundColor': 'rgb(230, 230, 230)', 'fontWeight': 'bold'},
+            )
+        # self.dashtable.SelectedCells = self.dashtable.SelectedCells if hasattr(self.dashtable, 'SelectedCells') else None
+        return html.Div(self.dashtable)
                 
     def initialize(self):
         if hasattr(self, 'name'):

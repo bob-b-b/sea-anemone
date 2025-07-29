@@ -1,5 +1,5 @@
 from panels import *
-from database_panel_simple import create_database_panel
+# from database_panel_simple import create_database_panel
 
 import dash_mantine_components as dmc
 from dash import Dash
@@ -91,34 +91,106 @@ app.layout = html.Div([
 for panel in panels:
     panel.add_callbacks(app)
 
+# @app.callback(
+#     [ 
+#         Output('sounding', 'figure', allow_duplicate=True),
+#         Output('tTEM',     'figure', allow_duplicate=True),
+#         Output('rhoa',     'figure', allow_duplicate=True)
+#     ],
+#     Input('map', 'selectedData'),
+#     prevent_initial_call="initial_duplicate",
+#     allow_duplicate=True
+# )
+# def update_dbdt(selected_data):
+#     if not selected_data or 'points' not in selected_data:
+#         raise PreventUpdate
+
+#     # Extract selected points
+#     selected_points = [point['pointIndex'] for point in selected_data['points']]
+
+#     dbdt1.hm_data = ep.hm.data[selected_points]*1.
+#     dbdt1.lm_data = ep.lm.data[selected_points]*1.
+    
+#     rhoa1.hm_data = ep.hm.data[selected_points]*1.
+#     rhoa1.lm_data = ep.lm.data[selected_points]*1.        
+
+#     dbdt2.hm_data = ep.hm.data[selected_points]*1.
+#     dbdt2.lm_data = ep.lm.data[selected_points]*1.
+#     dbdt2.hm_time = ep.hm.time[selected_points]*1.
+#     dbdt2.lm_time = ep.lm.time[selected_points]*1.
+#     return dbdt1.render(), dbdt2.render(), rhoa1.render()
+
 @app.callback(
-    [ 
+    [
         Output('sounding', 'figure', allow_duplicate=True),
         Output('tTEM',     'figure', allow_duplicate=True),
-        Output('rhoa',     'figure', allow_duplicate=True)
+        Output('rhoa',     'figure', allow_duplicate=True),
+        # Output('table', 'children', allow_duplicate=True)
     ],
     Input('map', 'selectedData'),
     prevent_initial_call="initial_duplicate",
     allow_duplicate=True
 )
-def update_dbdt(selected_data):
+def select_from_map(selected_data):
     if not selected_data or 'points' not in selected_data:
         raise PreventUpdate
 
-    # Extract selected points
+
     selected_points = [point['pointIndex'] for point in selected_data['points']]
+    # t1.selected_rows = selected_points
 
-    dbdt1.hm_data = ep.hm.data[selected_points]*1.
-    dbdt1.lm_data = ep.lm.data[selected_points]*1.
-    
-    rhoa1.hm_data = ep.hm.data[selected_points]*1.
-    rhoa1.lm_data = ep.lm.data[selected_points]*1.        
+    tmp_hm  = ep.hm.data[selected_points]*1.
+    tmp_lm  = ep.lm.data[selected_points]*1.
 
-    dbdt2.hm_data = ep.hm.data[selected_points]*1.
-    dbdt2.lm_data = ep.lm.data[selected_points]*1.
+    dbdt1.hm_data = tmp_hm
+    dbdt1.lm_data = tmp_lm
+
+    rhoa1.hm_data = tmp_hm
+    rhoa1.lm_data = tmp_lm
+    dbdt2.hm_data = tmp_hm
+    dbdt2.lm_data = tmp_lm
+
     dbdt2.hm_time = ep.hm.time[selected_points]*1.
     dbdt2.lm_time = ep.lm.time[selected_points]*1.
     return dbdt1.render(), dbdt2.render(), rhoa1.render()
+
+# @app.callback(
+#     [
+#         Output('sounding', 'figure', allow_duplicate=True),
+#         Output('tTEM',     'figure', allow_duplicate=True),
+#         Output('rhoa',     'figure', allow_duplicate=True),
+#         # Output('map', 'selectedData', allow_duplicate=True)
+#     ],
+#     Input('table', 'selected_data'),
+#     prevent_initial_call="initial_duplicate",
+# )
+# def select_from_table(selected_data):
+#     print('selected data: ', selected_data)
+    # if not selected_data or 'points' not in selected_data:
+    #     raise PreventUpdate
+
+    # row_ids = [cell['row'] for cell in selected_data if 'row' in cell]
+    # # Extract selected points
+    # selected_points = [point['pointIndex'] for point in selected_data['points']]
+
+    # tmp_hm  = ep.hm.data[selected_points]*1.
+    # tmp_lm  = ep.lm.data[selected_points]*1.
+
+    # dbdt1.hm_data = tmp_hm
+    # dbdt1.lm_data = tmp_lm
+
+    # rhoa1.hm_data = tmp_hm
+    # rhoa1.lm_data = tmp_lm
+    # dbdt2.hm_data = tmp_hm
+    # dbdt2.lm_data = tmp_lm
+
+    # dbdt2.hm_time = ep.hm.time[selected_points]*1.
+    # dbdt2.lm_time = ep.lm.time[selected_points]*1.
+    # return dbdt1.render(), dbdt2.render(), rhoa1.render()
+
+
+
+
 
 app.run(debug=True, port=8050, dev_tools_hot_reload=True)
 #start msedge --app=http://127.0.0.1:8050/
