@@ -13,33 +13,39 @@ from dash import dcc
 import usf
 import os
 
-usf_folders = [
-            #    '/home/matt/geophysics_data/TEM/sTEM_data/2025_0302/USF_Files_dawa river 3/'
-            'C:/Users/au646858/Downloads/USF_Files_dawa river/'
-            ]
+# usf_folders = [
+#             #    '/home/matt/geophysics_data/TEM/sTEM_data/2025_0302/USF_Files_dawa river 3/'
+#             'C:/Users/au646858/Downloads/USF_Files_dawa river/'
+#             ]
 
-sweeps = []
-for usf_folder in usf_folders:
-    usf_files = [usf_folder+f for f in os.listdir(usf_folder) if f.endswith('.usf')]
-    for usf_file in usf_files:        
-        sweeps += usf.Sweep.from_usf(usf_file, combine=False)
+# sweeps = []
+# for usf_folder in usf_folders:
+#     usf_files = [usf_folder+f for f in os.listdir(usf_folder) if f.endswith('.usf')]
+#     for usf_file in usf_files:        
+#         sweeps += usf.Sweep.from_usf(usf_file, combine=False)
 
-data_overview, df_data = usf.sweep2dataframes(sweeps)
-data_overview.reset_index(inplace=True)
+# data_overview, df_data = usf.sweep2dataframes(sweeps)
+# data_overview.reset_index(inplace=True)
 
 from pandas import DataFrame
 import pandas as pd
 df_res = pd.read_csv('inversion_results.csv', index_col=0)
+df_overview = df_res.pivot_table(
+    index=['site_id'],
+    values=['date', 'latitude', 'longitude', 'elevation'],
+    aggfunc='first'
+)
 
-m1 = Map(data=data_overview)
+
+m1 = Map(data=df_overview)
 dbdt1 = dbdtSounding(dataframe=df_res)
 dbdt2 = dbdtSection(dataframe=df_res)
 
 u1 = Upload()
 
-t1 = Table(data_overview, id='table_overview')
+t1 = Table(df_overview, id='table_overview')
 
-pivot = df_data.pivot_table(
+pivot = df_res.pivot_table(
     index=['site_id'],
     columns='sys_gate',
     values='dbdt'
@@ -179,7 +185,6 @@ for panel in panels:
     [ 
         Output('sounding', 'figure', allow_duplicate=True),
         Output('tTEM',     'figure', allow_duplicate=True),
-        # Output('rhoa',     'figure', allow_duplicate=True)
     ],
     Input('map', 'selectedData'),
     prevent_initial_call="initial_duplicate",
@@ -196,26 +201,26 @@ def select_from_map(selected_data):
 
     return dbdt1.render(), dbdt2.render()
 
-@app.callback(
-    [ 
-        Output('sounding', 'figure', allow_duplicate=True),
-        Output('tTEM',     'figure', allow_duplicate=True),
-    ],
-    Input('tTEM', 'selectedData'),
-    prevent_initial_call="initial_duplicate",
-    allow_duplicate=True
-)
-def disable_points_from_section(selected_data):
-    if not selected_data or 'points' not in selected_data:
-        raise PreventUpdate
-    data_ids = [point['customdata'][1] for point in selected_data['points'] if 'customdata' in point]
+# @app.callback(
+#     [ 
+#         Output('sounding', 'figure', allow_duplicate=True),
+#         Output('tTEM',     'figure', allow_duplicate=True),
+#     ],
+#     Input('tTEM', 'selectedData'),
+#     prevent_initial_call="initial_duplicate",
+#     allow_duplicate=True
+# )
+# def disable_points_from_section(selected_data):
+#     if not selected_data or 'points' not in selected_data:
+#         raise PreventUpdate
+#     data_ids = [point['customdata'][1] for point in selected_data['points'] if 'customdata' in point]
 
-    df_prev = dbdt2.dataframe
-    df_prev.loc[df_prev['data_id'].isin(data_ids), 'inuse_auto'] = False
-    dbdt1.dataframe = df_prev
-    dbdt2.dataframe = df_prev
+#     df_prev = dbdt2.dataframe
+#     df_prev.loc[df_prev['data_id'].isin(data_ids), 'inuse_auto'] = False
+#     dbdt1.dataframe = df_prev
+#     dbdt2.dataframe = df_prev
 
-    return dbdt1.render(), dbdt2.render()
+#     return dbdt1.render(), dbdt2.render()
 
 @app.callback(
     [ 
@@ -224,9 +229,9 @@ def disable_points_from_section(selected_data):
     ],
     Input('sounding', 'selectedData'),
     prevent_initial_call="initial_duplicate",
-    allow_duplicate=True
 )
 def disable_points_from_sounding(selected_data):
+    print('selected data: ', selected_data)
     if not selected_data or 'points' not in selected_data:
         raise PreventUpdate
     data_ids = [point['customdata'][1] for point in selected_data['points'] if 'customdata' in point]

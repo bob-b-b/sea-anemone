@@ -92,7 +92,7 @@ class dbdtSounding(Panel):
             setattr(self, key, value)
     
     def render(self):
-        df_tmp = self.dataframe.copy()
+        df_tmp = self.dataframe#.copy()
         df_tmp.loc[df_tmp['site_id'] == -1, 'inuse_auto'] = False
 
         
@@ -104,8 +104,8 @@ class dbdtSounding(Panel):
             color="system_id",
             markers=True,
             title="dbdt vs time by site_id",
-            custom_data=["system_id", "data_id"],
-
+            custom_data=["gate_id", "data_id"],
+            hover_data=["data_id"],
         )
 
         df_tmp.loc[df_tmp['site_id'] == -1, 'inuse_auto'] = True
@@ -118,7 +118,6 @@ class dbdtSounding(Panel):
             color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
             markers=True,
             title="dbdt vs time by site_id",
-            custom_data=["system_id", "data_id"],
         )
 
 
@@ -209,14 +208,14 @@ class dbdtSection(Panel):
             setattr(self, key, value)
     
     def compare_synthetic(self):
-        y_axis = 'dbdt_syn'
-        df_tmp = self.dataframe.sort_values(['gate_id', self.settings.x_axis])
-        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt_syn'] *= self.settings.lm_factor
-        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt'] *= self.settings.lm_factor
-        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt_syn'] *= self.settings.hm_factor
-        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt'] *= self.settings.hm_factor
-        df_tmp.loc[df_tmp['site_id'] == -1, 'inuse_auto'] = False
-        df_tmp['system_id'] = df_tmp['system_id'].map({0: 'lm', 1: 'hm'})
+        y_axis                                             = 'dbdt_syn'
+        df_tmp                                             = self.dataframe.sort_values(['gate_id', self.settings.x_axis])
+        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt_syn']  *= self.settings.lm_factor
+        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
+        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt_syn']  *= self.settings.hm_factor
+        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
+        df_tmp.loc[df_tmp['site_id'] == -1, 'inuse_auto']  = False
+        df_tmp['system_id']                                = df_tmp['system_id'].map({0: 'hm', 1: 'lm'})
 
         error_ub,error_lb = 'error_ub', 'error_lb'
         if True:
