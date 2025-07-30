@@ -27,21 +27,10 @@ data_overview, df_data = usf.sweep2dataframes(sweeps)
 data_overview.reset_index(inplace=True)
 
 m1 = Map(data=data_overview)
-# dbdt1 = dbdtSounding(lm_time=ep.lm.time.mean(0),
-#                     lm_data=ep.lm.data.mean(0),
-#                     hm_time=ep.hm.time.mean(0),
-#                     hm_data=ep.hm.data.mean(0))
+dbdt1 = dbdtSounding(dataframe=df_data[df_data['site_id'] < 10])
+#rhoa1 = rhoaSounding(dataframe=df_data[df_data['site_id'] < 10])
 
-# rhoa1 = rhoaSounding(lm_time=ep.lm.time.mean(0),
-#                     lm_data=ep.lm.data.mean(0),
-#                     hm_time=ep.hm.time.mean(0),
-#                     hm_data=ep.hm.data.mean(0))
-
-
-# dbdt2 = dbdtSection(lm_time=ep.lm.time,
-#                 lm_data=ep.lm.data,
-#                 hm_time=ep.hm.time,
-#                 hm_data=ep.hm.data)
+dbdt2 = dbdtSection(dataframe=df_data[df_data['site_id'] < 10])
 
 u1 = Upload()
 
@@ -64,7 +53,7 @@ t2 = Table(pivot, id='table_dbdt')
 
 
 
-panels = [u1, m1, t1, t2]
+panels = [u1, m1, dbdt1, t1, t2, dbdt2]
 nodes = [node for panel in panels for node in panel.to_nodes()]
 config = {
     "global": {"tabEnableClose": True, "tabEnableFloat": True},
@@ -95,7 +84,8 @@ config = {
                 "type": "tabset",
                 "weight": 50,
                 "children": [
-                    t2.layout_dict,
+                    dbdt1.layout_dict,
+                    dbdt2.layout_dict,
                 ],
             },
         ],
@@ -116,68 +106,48 @@ app.layout = html.Div([
 for panel in panels:
     panel.add_callbacks(app)
 
-# @app.callback(
-#     [ 
-#         Output('sounding', 'figure', allow_duplicate=True),
-#         Output('tTEM',     'figure', allow_duplicate=True),
-#         Output('rhoa',     'figure', allow_duplicate=True)
-#     ],
-#     Input('map', 'selectedData'),
-#     prevent_initial_call="initial_duplicate",
-#     allow_duplicate=True
-# )
-# def update_dbdt(selected_data):
-#     if not selected_data or 'points' not in selected_data:
-#         raise PreventUpdate
+@app.callback(
+    [ 
+        Output('sounding', 'figure', allow_duplicate=True),
+        Output('tTEM',     'figure', allow_duplicate=True),
+        # Output('rhoa',     'figure', allow_duplicate=True)
+    ],
+    Input('map', 'selectedData'),
+    prevent_initial_call="initial_duplicate",
+    allow_duplicate=True
+)
+def select_from_map(selected_data):
+    if not selected_data or 'points' not in selected_data:
+        raise PreventUpdate
 
-#     # Extract selected points
-#     selected_points = [point['pointIndex'] for point in selected_data['points']]
+    selected_points = [-1]+[point['pointIndex'] for point in selected_data['points']]
+    new_df = df_data[df_data['site_id'].isin(selected_points)]
+    dbdt1.dataframe = new_df
+    dbdt2.dataframe = new_df
 
-#     dbdt1.hm_data = ep.hm.data[selected_points]*1.
-#     dbdt1.lm_data = ep.lm.data[selected_points]*1.
-    
-#     rhoa1.hm_data = ep.hm.data[selected_points]*1.
-#     rhoa1.lm_data = ep.lm.data[selected_points]*1.        
+    return dbdt1.render(), dbdt2.render()
 
-#     dbdt2.hm_data = ep.hm.data[selected_points]*1.
-#     dbdt2.lm_data = ep.lm.data[selected_points]*1.
-#     dbdt2.hm_time = ep.hm.time[selected_points]*1.
-#     dbdt2.lm_time = ep.lm.time[selected_points]*1.
-#     return dbdt1.render(), dbdt2.render(), rhoa1.render()
+@app.callback(
+    [ 
+        Output('sounding', 'figure', allow_duplicate=True),
+        Output('tTEM',     'figure', allow_duplicate=True),
+    ],
+    Input('tTEM', 'selectedData'),
+    prevent_initial_call="initial_duplicate",
+    allow_duplicate=True
+)
+def disable_points_from_dbdt(selected_data):
+    if not selected_data or 'points' not in selected_data:
+        raise PreventUpdate
 
-# @app.callback(
-#     [
-#         Output('sounding', 'figure', allow_duplicate=True),
-#         Output('tTEM',     'figure', allow_duplicate=True),
-#         Output('rhoa',     'figure', allow_duplicate=True),
-#         # Output('table', 'children', allow_duplicate=True)
-#     ],
-#     Input('map', 'selectedData'),
-#     prevent_initial_call="initial_duplicate",
-#     allow_duplicate=True
-# )
-# def select_from_map(selected_data):
-#     if not selected_data or 'points' not in selected_data:
-#         raise PreventUpdate
+    selected_points = [-1]+[point['pointIndex'] for point in selected_data['points']]
+    df_prev = dbdt2.dataframe
+    df_prev.loc[df_prev['site_id'].isin(selected_points), 'inuse_auto'] = False
+    dbdt1.dataframe = df_prev
+    dbdt2.dataframe = df_prev
 
+    return dbdt1.render(), dbdt2.render()
 
-#     selected_points = [point['pointIndex'] for point in selected_data['points']]
-#     # t1.selected_rows = selected_points
-
-#     tmp_hm  = ep.hm.data[selected_points]*1.
-#     tmp_lm  = ep.lm.data[selected_points]*1.
-
-#     dbdt1.hm_data = tmp_hm
-#     dbdt1.lm_data = tmp_lm
-
-#     rhoa1.hm_data = tmp_hm
-#     rhoa1.lm_data = tmp_lm
-#     dbdt2.hm_data = tmp_hm
-#     dbdt2.lm_data = tmp_lm
-
-#     dbdt2.hm_time = ep.hm.time[selected_points]*1.
-#     dbdt2.lm_time = ep.lm.time[selected_points]*1.
-#     return dbdt1.render(), dbdt2.render(), rhoa1.render()
 
 # @app.callback(
 #     [

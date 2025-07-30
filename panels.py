@@ -79,12 +79,10 @@ class Map(Panel):
 class dbdtSoundingSettings(PanelSettings):
     lm_color: str = '#ff0000'
     hm_color: str = '#0000ff'
+    plot_error: bool = False
 
 class dbdtSounding(Panel):
-    lm_time: None
-    lm_data: None
-    hm_time: None
-    hm_data: None
+    dataframe = None
 
 
     def __init__(self, **kwargs):
@@ -94,19 +92,36 @@ class dbdtSounding(Panel):
             setattr(self, key, value)
     
     def render(self):
-        fig = go.Figure()
-        # print(self.lm_data.ndim)
-        lm_data = self.lm_data if self.lm_data.ndim > 1 else self.lm_data[np.newaxis,:]
-        hm_data = self.hm_data if self.hm_data.ndim > 1 else self.hm_data[np.newaxis,:]
-        # print(lm_data.shape)
+        df_tmp = self.dataframe.copy()
+        df_tmp.loc[df_tmp['site_id'] == -1, 'inuse_auto'] = True
 
-        fig.add_trace(go.Scatter(x=self.lm_time, y=np.abs(lm_data[0]), mode='lines+markers', name='Low Moment',  line_color=self.settings.lm_color))
-        fig.add_trace(go.Scatter(x=self.hm_time, y=np.abs(hm_data[0]), mode='lines+markers', name='High Moment', line_color=self.settings.hm_color))
 
-        if lm_data.shape[0] > 1:
-            for i in range(1, lm_data.shape[0]):
-                fig.add_trace(go.Scatter(x=self.lm_time, y=np.abs(lm_data[i]), mode='lines+markers', showlegend=False, line_color=self.settings.lm_color))
-                fig.add_trace(go.Scatter(x=self.hm_time, y=np.abs(hm_data[i]), mode='lines+markers', showlegend=False, line_color=self.settings.hm_color))
+        fig = px.line(
+            df_tmp[df_tmp['inuse_auto'] == True],
+            x="time",
+            y="dbdt",
+            color="system_id",
+            color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
+            markers=True,
+            labels={"dbdt": "Value", "time": "Time", "site_id": "Site ID"},
+        )
+
+        df_tmp.loc[df_tmp['site_id'] == -1, 'inuse_auto'] = False
+
+        fig2 = px.line(
+            df_tmp[df_tmp['inuse_auto'] == False],
+            x="time",
+            y="dbdt",
+            color_discrete_sequence=["gray", "gray"],
+            color="system_id",
+            markers=True,
+            title="dbdt vs time by site_id",
+            labels={"dbdt": "Value", "time": "Time", "site_id": "Site ID"},
+        )
+
+
+        for trace in fig2.data:
+            fig.add_trace(trace)
         
         fig.update_layout(
             xaxis_type="log",
@@ -178,13 +193,11 @@ class dbdtSectionSettings(PanelSettings):
     hm_color: str = '#2D81FF'
     lm_factor: float = 20.0
     hm_factor: float = 1.0
+    x_axis: str = 'site_id'
+    plot_disabled: bool = True
 
 class dbdtSection(Panel):
-    lm_time: None
-    lm_data: None
-    hm_time: None
-    hm_data: None
-
+    dataframe = None
 
     def __init__(self, **kwargs):
         settings = kwargs.pop('settings', dbdtSectionSettings(id='tTEM'))
@@ -193,15 +206,44 @@ class dbdtSection(Panel):
             setattr(self, key, value)
     
     def render(self):
-        fig = go.Figure()
-        x_ttem = np.arange(len(self.hm_time))
-        for i_row in range(len(self.lm_time[0])):
-            fig.add_trace(go.Scatter(x=x_ttem, y=self.settings.lm_factor*np.abs(self.lm_data[:, i_row]), mode='lines+markers', name=f'Low Moment {i_row}', showlegend=False, line_color=self.settings.lm_color))
-        for i_row in range(len(self.hm_time[0])):
-            fig.add_trace(go.Scatter(x=x_ttem, y=self.settings.hm_factor*np.abs(self.hm_data[:, i_row]), mode='lines+markers', name=f'High Moment {i_row}', showlegend=False, line_color=self.settings.hm_color))
+
+        df_tmp = self.dataframe.sort_values(['gate_id', self.settings.x_axis])
+        df_tmp.loc[df_tmp['system_id'] == 'lm', 'dbdt'] *= self.settings.lm_factor
+        df_tmp.loc[df_tmp['system_id'] == 'hm', 'dbdt'] *= self.settings.hm_factor
+
+
+        df_tmp.loc[df_tmp['site_id'] == -1, 'inuse_auto'] = False
+
+        
+        fig = px.line(
+            df_tmp,
+            x=self.settings.x_axis,
+            y="dbdt",
+            color_discrete_sequence=["gray", "gray"],
+            color="system_id",
+            markers=True,
+            title="dbdt vs time by site_id",
+        )
+
+        df_tmp.loc[df_tmp['site_id'] == -1, 'inuse_auto'] = True
+        df_tmp.loc[(~df_tmp['inuse_auto']), 'dbdt'] = np.nan
+        fig2 = px.line(
+            df_tmp,
+            x=self.settings.x_axis,
+            y="dbdt",
+            color="system_id",
+            color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
+            markers=True,
+            title="dbdt vs time by site_id",
+        )
+
+
+        for trace in fig2.data:
+            fig.add_trace(trace)
+
         fig.update_layout(
             yaxis_type="log",
-            xaxis_title="data index",
+            xaxis_title=self.settings.x_axis,
             yaxis_title="$\\frac{dB}{dt}$ \\[V / m$^2$\\]",
             margin={"l": 50, "r": 50, "t": 50, "b": 50},
             dragmode='select'
@@ -302,16 +344,16 @@ class Table(Panel):
             setattr(self, key, value)      
 
     def render(self):
-        if self.dashtable is None:
-            self.dashtable = dash_table.DataTable(
-                data=self.df.to_dict('records'),
-                columns=[{"name": i, "id": i} for i in self.df.columns],
-                page_size=self.settings.max_rows,
-                sort_action="native",
-                style_table={'height': '400px', 'overflowY': 'auto'},
-                style_cell={'textAlign': 'left', 'padding': '5px', 'fontSize': '12px'},
-                style_header={'backgroundColor': 'rgb(230, 230, 230)', 'fontWeight': 'bold'},
-            )
+        # if self.dashtable is None:
+        self.dashtable = dash_table.DataTable(
+            data=self.df.to_dict('records'),
+            columns=[{"name": i, "id": i} for i in self.df.columns[self.settings.visible_columns]],
+            page_size=self.settings.max_rows,
+            sort_action="native",
+            style_table={'height': '400px', 'overflowY': 'auto'},
+            style_cell={'textAlign': 'left', 'padding': '5px', 'fontSize': '12px'},
+            style_header={'backgroundColor': 'rgb(230, 230, 230)', 'fontWeight': 'bold'},
+        )
         # self.dashtable.SelectedCells = self.dashtable.SelectedCells if hasattr(self.dashtable, 'SelectedCells') else None
         return html.Div(self.dashtable)
                 
