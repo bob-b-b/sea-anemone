@@ -93,45 +93,47 @@ class dbdtSounding(Panel):
     
     def render(self):
         df_tmp = self.dataframe.copy()
-        df_tmp.loc[df_tmp['site_id'] == -1, 'inuse_auto'] = True
-
-
-        fig = px.line(
-            df_tmp[df_tmp['inuse_auto'] == True],
-            x="time",
-            y="dbdt",
-            color="system_id",
-            color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
-            markers=True,
-            labels={"dbdt": "Value", "time": "Time", "site_id": "Site ID"},
-        )
-
         df_tmp.loc[df_tmp['site_id'] == -1, 'inuse_auto'] = False
 
-        fig2 = px.line(
-            df_tmp[df_tmp['inuse_auto'] == False],
-            x="time",
+        
+        fig = px.line(
+            df_tmp,
+            x='time',
             y="dbdt",
             color_discrete_sequence=["gray", "gray"],
             color="system_id",
             markers=True,
             title="dbdt vs time by site_id",
-            labels={"dbdt": "Value", "time": "Time", "site_id": "Site ID"},
+            custom_data=["system_id", "data_id"],
+
+        )
+
+        df_tmp.loc[df_tmp['site_id'] == -1, 'inuse_auto'] = True
+        df_tmp.loc[(~df_tmp['inuse_auto']), 'dbdt'] = np.nan
+        fig2 = px.line(
+            df_tmp,
+            x='time',
+            y="dbdt",
+            color="system_id",
+            color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
+            markers=True,
+            title="dbdt vs time by site_id",
+            custom_data=["system_id", "data_id"],
         )
 
 
         for trace in fig2.data:
             fig.add_trace(trace)
-        
+
         fig.update_layout(
             xaxis_type="log",
             yaxis_type="log",
-            xaxis_title="time [s]",
-            yaxis_title="$\\frac{dB}{dt}$ [V / m$^2$]",
+            xaxis_title='time [s]',
+            yaxis_title="$\\frac{dB}{dt}$ \\[V / m$^2$\\]",
             margin={"l": 50, "r": 50, "t": 50, "b": 50},
             dragmode='select'
         )
-        return fig
+        return fig    
 
 class rhoaSounding(Panel):
     lm_time: None
@@ -194,6 +196,7 @@ class dbdtSectionSettings(PanelSettings):
     lm_factor: float = 20.0
     hm_factor: float = 1.0
     x_axis: str = 'site_id'
+    y_axis: str = 'dbdt_syn'
     plot_disabled: bool = True
 
 class dbdtSection(Panel):
@@ -205,11 +208,75 @@ class dbdtSection(Panel):
         for key, value in kwargs.items():
             setattr(self, key, value)
     
-    def render(self):
+    def compare_synthetic(self):
+        y_axis = 'dbdt_syn'
+        df_tmp = self.dataframe.sort_values(['gate_id', self.settings.x_axis])
+        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt_syn'] *= self.settings.lm_factor
+        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt'] *= self.settings.lm_factor
+        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt_syn'] *= self.settings.hm_factor
+        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt'] *= self.settings.hm_factor
+        df_tmp.loc[df_tmp['site_id'] == -1, 'inuse_auto'] = False
+        df_tmp['system_id'] = df_tmp['system_id'].map({0: 'lm', 1: 'hm'})
+
+        error_ub,error_lb = 'error_ub', 'error_lb'
+        if True:
+            error_ub = None
+            error_lb = None
+        
+        fig = px.scatter(
+            df_tmp,
+            x=self.settings.x_axis,
+            y='dbdt',
+            color_discrete_sequence=["gray", "gray"],
+            color="system_id",
+            title="dbdt vs time by site_id",
+            custom_data=["system_id", "data_id"],
+            error_y=error_ub,
+            error_y_minus=error_lb
+        )
+
+        df_tmp.loc[df_tmp['site_id'] == -1, 'inuse_auto'] = True
+        df_tmp.loc[(~df_tmp['inuse_auto']), 'dbdt'] = np.nan
+        df_tmp.loc[(~df_tmp['inuse_auto']), 'dbdt_syn'] = np.nan
+
+
+        
+        fig3 = px.scatter(
+            df_tmp,
+            x=self.settings.x_axis,
+            y='dbdt',
+            color_discrete_sequence=["black", "black"],
+            color="system_id",
+            title="dbdt vs time by site_id",
+            # custom_data=["system_id", "data_id"],
+            error_y=error_ub,
+            error_y_minus=error_lb,
+        )
+
+        fig2 = px.line(
+            df_tmp,
+            x=self.settings.x_axis,
+            y='dbdt_syn',
+            color="system_id",
+            color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
+            title="dbdt vs time by site_id",
+            custom_data=["system_id", "data_id"],
+        )
+
+        for trace in fig3.data:
+            fig.add_trace(trace)
+
+        for trace in fig2.data:
+            fig.add_trace(trace)
+
+        return fig    
+
+    def standard_render(self):
+        y_axis = 'dbdt'
 
         df_tmp = self.dataframe.sort_values(['gate_id', self.settings.x_axis])
-        df_tmp.loc[df_tmp['system_id'] == 'lm', 'dbdt'] *= self.settings.lm_factor
-        df_tmp.loc[df_tmp['system_id'] == 'hm', 'dbdt'] *= self.settings.hm_factor
+        df_tmp.loc[df_tmp['system_id'] == 'lm', y_axis] *= self.settings.lm_factor
+        df_tmp.loc[df_tmp['system_id'] == 'hm', y_axis] *= self.settings.hm_factor
 
 
         df_tmp.loc[df_tmp['site_id'] == -1, 'inuse_auto'] = False
@@ -218,28 +285,36 @@ class dbdtSection(Panel):
         fig = px.line(
             df_tmp,
             x=self.settings.x_axis,
-            y="dbdt",
+            y=y_axis,
             color_discrete_sequence=["gray", "gray"],
             color="system_id",
             markers=True,
             title="dbdt vs time by site_id",
+            custom_data=["system_id", "data_id"],
+
         )
 
         df_tmp.loc[df_tmp['site_id'] == -1, 'inuse_auto'] = True
-        df_tmp.loc[(~df_tmp['inuse_auto']), 'dbdt'] = np.nan
+        df_tmp.loc[(~df_tmp['inuse_auto']), y_axis] = np.nan
         fig2 = px.line(
             df_tmp,
             x=self.settings.x_axis,
-            y="dbdt",
+            y=y_axis,
             color="system_id",
             color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
             markers=True,
             title="dbdt vs time by site_id",
+            custom_data=["system_id", "data_id"],
         )
 
 
         for trace in fig2.data:
-            fig.add_trace(trace)
+            fig.add_trace(trace)    
+        return fig    
+
+    def render(self):
+        fig = self.compare_synthetic()
+        # fig = self.standard_render()
 
         fig.update_layout(
             yaxis_type="log",

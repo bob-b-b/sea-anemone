@@ -146,7 +146,6 @@ class Sweep:
 
 from anemone.forwards import Forward
 from anemone.system import Loop, Receiver, Waveform, FilterChain, ButterworthFilter
-from usf import Sweep
 import numpy as np
 
 def sweep2fwr(sweeps, fwr=Forward):
@@ -193,7 +192,7 @@ def sweep2dataframes(sweeps):
         'inuse_manual': [np.nan for _ in lm.data.flatten()],
         'time': lm.time.flatten(),
         'gate_id': np.concatenate([np.arange(n_gates) for i in range(-1, n_sites)]),
-        'system_id': ['lm' for _ in lm.data.flatten()],
+        'system_id': [0 for _ in lm.data.flatten()],
         'date':     np.concatenate([np.ones(n_gates, dtype=int)*x for x in lm.date]),
         'latitude': np.concatenate([np.ones( n_gates, dtype=float)*x for x in lm.location[:, 1]]),
         'longitude':np.concatenate([np.ones(n_gates, dtype=float)*x for x in lm.location[:, 0]]),
@@ -221,7 +220,7 @@ def sweep2dataframes(sweeps):
         'inuse_manual': [np.nan for _ in hm.data.flatten()],
         'time': hm.time.flatten(),
         'gate_id': np.concatenate([np.arange(n_gates) for i in range(-1, n_sites)]),
-        'system_id': ['hm' for _ in hm.data.flatten()],
+        'system_id': [1 for _ in hm.data.flatten()],
         'date': np.concatenate([np.ones(n_gates, dtype=int)*x for x in lm.date]),
         'latitude': np.concatenate([np.ones(n_gates, dtype=float)*x for x in lm.location[:, 1]]),
         'longitude': np.concatenate([np.ones(n_gates, dtype=float)*x for x in lm.location[:, 0]]),
@@ -231,14 +230,15 @@ def sweep2dataframes(sweeps):
     df_data = pd.concat([df_data, pd.DataFrame(data_avg)], ignore_index=True)
     df_data = df_data.sort_values(by=['site_id','system_id', 'gate_id'])
     df_data = df_data.reset_index(drop=True)
-    df_data.loc[df_data['time']>1e-3, 'inuse_auto'] = False
+    
 
     df_data['error_lb'] = df_data['dbdt']-df_data['dbdt']/(1. + df_data['error']/100.)
     df_data['error_ub'] = df_data['dbdt']*(1. + df_data['error']/100.)-df_data['dbdt']
 
     df_data['log10_dbdt'] = np.log10(df_data['dbdt'])
 
-    df_data['sys_gate'] = df_data['system_id'].astype(str) + '-' + df_data['gate_id'].astype(str)
+    df_data['sys_gate'] = df_data['system_id'] + df_data['gate_id']/100.
+    df_data['data_id'] = np.arange(len(df_data))
 
     # Pivot the table: index by site_id and time, columns by sys_gate, values as dbdt
     df_overview = df_data.pivot_table(
