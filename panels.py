@@ -187,14 +187,14 @@ class rhoaSounding(Panel):
         return fig
 
 
-
+from typing import Literal
 @dataclass
 class dbdtSectionSettings(PanelSettings):
     lm_color: str = '#ff0000'
     hm_color: str = '#2D81FF'
     lm_factor: float = 20.0
     hm_factor: float = 1.0
-    x_axis: str = 'site_id'
+    x_axis: Literal['daytime', 'site_id', 'longitude', 'latitude'] = 'daytime'  # or 'site_id', 'longitude', 'latitude'
     y_axis: str = 'dbdt_syn'
     plot_disabled: bool = True
 
@@ -442,6 +442,98 @@ class Table(Panel):
             gear_maker(self.id)],
             style={'margin':'10px'}#,'height': 'calc(100%-30px)', 'overflow': 'hidden'} 
         )
+
+import pandas as pd
+@dataclass
+class ModelGraphSettings(PanelSettings):
+    z: Literal['depth', 'elevation'] = 'depth'
+    color_by: Literal['site_id', 'misfit'] = 'site_id'
+
+class ModelGraph(Panel):
+    def __init__(self, **kwargs):
+        settings = kwargs.pop('settings', ModelGraphSettings(id='model_graph'))
+        super().__init__(id='model_graph', settings=settings)
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+    
+    def render(self):
+        # ...existing code...
+        df_layers_long = pd.melt(
+            self.dataframe,
+            id_vars=['site_id', 'daytime', 'longitude', 'latitude', 'date', 'elevation', 'layer', 'resistivity'],
+            value_vars=['top_depth', 'bottom_depth'],
+            var_name='depth_type',
+            value_name='depth'
+        ).sort_values(['daytime', 'layer', 'depth'])
+
+        df_layers_long = df_layers_long.drop(columns=['depth_type'])
+
+        fig = px.line(
+            df_layers_long,
+            x="resistivity",
+            y="depth",
+            color="site_id",
+            # markers=True,
+            labels={
+                "resistivity": "Resistivity [Ω·m]",
+                "center_depth": "Depth [m]",
+                "site_id": "Site ID"
+            },
+            title="Resistivity vs. Depth by Site"
+        )
+
+        # Reverse y-axis so depth increases downward
+        fig.update_yaxes(autorange="reversed")
+        fig.update_layout(
+            xaxis_type="log",
+        )
+        return fig        
+    
+@dataclass
+class ModelSectionSettings(PanelSettings):
+    z: Literal['depth', 'elevation'] = 'depth'
+    x_axis: Literal['daytime', 'site_id', 'longitude', 'latitude'] = 'daytime'
+
+class ModelSection(Panel):
+    def __init__(self, **kwargs):
+        settings = kwargs.pop('settings', ModelSectionSettings(id='model_section'))
+        super().__init__(id='model_section', settings=settings)
+        for key, value in kwargs.items():
+            setattr(self, key, value)
+    
+    def render(self):
+        # ...existing code...
+        df_layers_long = pd.melt(
+            self.dataframe,
+            id_vars=['site_id', 'daytime', 'longitude', 'latitude', 'date', 'elevation', 'layer', 'resistivity'],
+            value_vars=['top_depth', 'bottom_depth'],
+            var_name='depth_type',
+            value_name='depth'
+        ).sort_values(['daytime', 'layer', 'depth'])
+
+        df_layers_long = df_layers_long.drop(columns=['depth_type'])
+        df_layers_long['log_resistivity'] = np.log10(df_layers_long['resistivity'])
+
+        heatmap_df = df_layers_long.pivot_table(
+            index='depth', columns=self.settings.x_axis, values='log_resistivity'
+        )        
+        heatmap_df = heatmap_df.sort_index(ascending=True)
+
+        fig = px.imshow(
+            heatmap_df,
+            aspect='auto',
+            origin='lower',
+            color_continuous_scale='turbo',
+            labels={'x': self.settings.x_axis, 'y': 'Depth [m]', 'color': 'Resistivity [Ω·m]'},
+            title='Resistivity Heatmap by Site and Depth',
+            zmin=heatmap_df.min().min(),
+            zmax=heatmap_df.max().max(),
+        )
+
+        fig.update_yaxes(autorange="reversed")
+        return fig
+
+
 
 if __name__ == '__main__':
     import dash_mantine_components as dmc

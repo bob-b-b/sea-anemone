@@ -30,9 +30,11 @@ import os
 from pandas import DataFrame
 import pandas as pd
 df_res = pd.read_csv('./prototyping/inversion_results.csv', index_col=0)
+df_mod = pd.read_csv('./prototyping/inversion_results_models.csv')
+
 df_overview = df_res.pivot_table(
     index=['site_id'],
-    values=['date', 'latitude', 'longitude', 'elevation'],
+    values=['date', 'daytime', 'latitude', 'longitude', 'elevation'],
     aggfunc='first'
 )
 
@@ -58,10 +60,11 @@ t2 = Table(pivot, id='table_dbdt')
 # Create database panel
 # db1 = create_database_panel()
 
+mod1 = ModelGraph(dataframe=df_mod)
+mod2 = ModelSection(dataframe=df_mod)
 
 
-
-panels = [u1, m1, dbdt1, t1, t2, dbdt2]
+panels = [u1, m1, dbdt1, t1, t2, dbdt2, mod1, mod2]
 nodes = [node for panel in panels for node in panel.to_nodes()]
 # config = {
 #     "global": {"tabEnableClose": True, "tabEnableFloat": True},
@@ -146,6 +149,23 @@ config = {
           },
           {
             "type": "tabset",
+            "id": "#b0c1f8d2-3e4a-4c5b-9f6d-7e8f9a0b1c2d",
+            "weight": 50,
+            "children": [
+                {
+                    "type": "tab",
+                    "id": "tab-model_section",
+                    "name": "model section"
+                },
+                {
+                    "type": "tab",
+                    "id": "tab-model_graph",
+                    "name": "models"
+                }
+              ]          
+          },
+          {
+            "type": "tabset",
             "id": "#6d729cf5-699f-4fad-bdcb-a1bd30574355",
             "weight": 50,
             "children": [
@@ -185,6 +205,8 @@ for panel in panels:
     [ 
         Output('sounding', 'figure', allow_duplicate=True),
         Output('tTEM',     'figure', allow_duplicate=True),
+        Output('model_graph', 'figure', allow_duplicate=True),
+        Output('model_section', 'figure', allow_duplicate=True),
     ],
     Input('map', 'selectedData'),
     prevent_initial_call="initial_duplicate",
@@ -198,8 +220,11 @@ def select_from_map(selected_data):
     new_df = df_res[df_res['site_id'].isin(selected_points)]
     dbdt1.dataframe = new_df
     dbdt2.dataframe = new_df
+    new_mod = df_mod[df_mod['site_id'].isin(selected_points)]
+    mod1.dataframe = new_mod
+    mod2.dataframe = new_mod
 
-    return dbdt1.render(), dbdt2.render()
+    return dbdt1.render(), dbdt2.render(), mod1.render(), mod2.render()
 
 # @app.callback(
 #     [ 
@@ -297,3 +322,4 @@ def disable_points_from_sounding(selected_data):
 
 app.run(debug=True, port=8050, dev_tools_hot_reload=True)
 #start msedge --app=http://127.0.0.1:8050/
+

@@ -75,6 +75,7 @@ def update_tabset(json_data, target_tab_id, settings_tab_id, change_order=False)
     return json_data
 
 
+
 @dataclass
 class PanelSettings:
     id: str
@@ -85,9 +86,11 @@ class PanelSettings:
 
     def __post_init__(self):
         for key in self.schema.get('properties', {}).keys():
-            if self.schema['properties'][key]['type'] == 'array':
-                exec(f'self.{key}_len = len(self.{key})')
-
+            try:
+                if self.schema['properties'][key]['type'] == 'array':
+                    exec(f'self.{key}_len = len(self.{key})')
+            except KeyError:
+                pass
 
     def initialize(self):
         # Main panel content (to be overridden by subclasses)
