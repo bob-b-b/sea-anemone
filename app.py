@@ -29,7 +29,7 @@ import os
 
 from pandas import DataFrame
 import pandas as pd
-df_res = pd.read_csv('inversion_results.csv', index_col=0)
+df_res = pd.read_csv('./prototyping/inversion_results.csv', index_col=0)
 df_overview = df_res.pivot_table(
     index=['site_id'],
     values=['date', 'latitude', 'longitude', 'elevation'],
