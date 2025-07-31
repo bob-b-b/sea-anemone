@@ -175,6 +175,10 @@ def sweep2dataframes(sweeps):
     lm,hm = mega_sweeps
 
     n_sites,n_gates = lm.data.shape
+    day_sort = np.argsort(lm.daytime)
+    site_id = np.zeros(n_sites, dtype=int)
+    site_id[day_sort] = np.arange(len(lm.daytime))
+    site_id = np.insert(site_id, 0, -1)  # insert a dummy site_id for the loop
 
     lm.data  = np.pad(lm.data, ((1,0), (0,0)), mode='constant', constant_values=np.nan)
     lm.time  = np.pad(lm.time, ((1,0), (0,0)), mode='constant', constant_values=np.nan)
@@ -184,14 +188,17 @@ def sweep2dataframes(sweeps):
     lm.location = np.pad(lm.location, ((1,0), (0,0)), mode='constant', constant_values=np.nan)
     lm.daytime  = np.pad(lm.daytime, (1,0), mode='constant', constant_values=np.nan)
 
+
+    
+
     data_avg = {
-        'site_id': np.concatenate([np.ones(n_gates, dtype=int)*i for i in range(-1, n_sites)]),
+        'site_id': np.concatenate([np.ones(n_gates, dtype=int)*i for i in site_id]),
         'dbdt': lm.data.flatten(),
         'error':   lm.error.flatten(),
         'inuse_auto': [True for _ in lm.data.flatten()],
         'inuse_manual': [np.nan for _ in lm.data.flatten()],
         'time': lm.time.flatten(),
-        'gate_id': np.concatenate([np.arange(n_gates) for i in range(-1, n_sites)]),
+        'gate_id': np.concatenate([np.arange(n_gates) for i in site_id]),
         'system_id': [0 for _ in lm.data.flatten()],
         'date':     np.concatenate([np.ones(n_gates, dtype=int)*x for x in lm.date]),
         'latitude': np.concatenate([np.ones( n_gates, dtype=float)*x for x in lm.location[:, 1]]),
@@ -210,10 +217,11 @@ def sweep2dataframes(sweeps):
 
     hm.date = np.pad(hm.date, (1,0), mode='constant', constant_values=np.nan)
     hm.location = np.pad(hm.location, ((1,0), (0,0)), mode='constant', constant_values=np.nan)
+
     hm.daytime = np.pad(hm.daytime, (1,0), mode='constant', constant_values=np.nan)
 
     data_avg = {
-        'site_id': np.concatenate([np.ones(n_gates, dtype=int)*i for i in range(-1, n_sites)]),
+        'site_id': np.concatenate([np.ones(n_gates, dtype=int)*i for i in site_id]),
         'dbdt': hm.data.flatten(),
         'error':   hm.error.flatten(),
         'inuse_auto': [True for _ in hm.data.flatten()],

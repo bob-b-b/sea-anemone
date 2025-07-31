@@ -1,6 +1,7 @@
 from panels import *
 # from database_panel_simple import create_database_panel
-
+from dash import dcc
+import pandas as pd
 import dash_mantine_components as dmc
 from dash import Dash
 
@@ -8,27 +9,7 @@ app = Dash(__name__, suppress_callback_exceptions=True, assets_folder='assets')
 app.title = "sea anemone"
 
 
-from dash import dcc
 
-import usf
-import os
-
-# usf_folders = [
-#             #    '/home/matt/geophysics_data/TEM/sTEM_data/2025_0302/USF_Files_dawa river 3/'
-#             'C:/Users/au646858/Downloads/USF_Files_dawa river/'
-#             ]
-
-# sweeps = []
-# for usf_folder in usf_folders:
-#     usf_files = [usf_folder+f for f in os.listdir(usf_folder) if f.endswith('.usf')]
-#     for usf_file in usf_files:        
-#         sweeps += usf.Sweep.from_usf(usf_file, combine=False)
-
-# data_overview, df_data = usf.sweep2dataframes(sweeps)
-# data_overview.reset_index(inplace=True)
-
-from pandas import DataFrame
-import pandas as pd
 df_res = pd.read_csv('./prototyping/inversion_results.csv', index_col=0)
 df_mod = pd.read_csv('./prototyping/inversion_results_models.csv')
 
@@ -37,11 +18,14 @@ df_overview = df_res.pivot_table(
     values=['date', 'daytime', 'latitude', 'longitude', 'elevation'],
     aggfunc='first'
 )
+df_overview['site_id'] = df_overview.index
 
 
 m1 = Map(data=df_overview)
 dbdt1 = dbdtSounding(dataframe=df_res)
 dbdt2 = dbdtSection(dataframe=df_res)
+
+m1.highlighted = 16
 
 u1 = Upload()
 
@@ -63,9 +47,18 @@ t2 = Table(pivot, id='table_dbdt')
 mod1 = ModelGraph(dataframe=df_mod)
 mod2 = ModelSection(dataframe=df_mod)
 
+x = html.Div([
+      dcc.Markdown(children='## buttons and hot keys'),
+      html.Button("disable [ctrl+d]", id='disableButton'),
+      html.Button("enable  [ctrl+e]", id='enableButton'),
+    ]
+, id='processing_buttons')
+
 
 panels = [u1, m1, dbdt1, t1, t2, dbdt2, mod1, mod2]
-nodes = [node for panel in panels for node in panel.to_nodes()]
+nodes = [node for panel in panels for node in panel.to_nodes()]+[dfl.Tab(id=f'tab-processing_buttons', children=[x])]
+
+
 # config = {
 #     "global": {"tabEnableClose": True, "tabEnableFloat": True},
 #     "borders": [
@@ -107,9 +100,11 @@ nodes = [node for panel in panels for node in panel.to_nodes()]
 #         ],
 #     },
 # }
+
+
 config = {
   "global": {
-    "tabEnableFloat": True
+    "tabEnableFloat": False
   },
   "borders": [
     {
@@ -124,7 +119,21 @@ config = {
           "component": "text"
         }
       ]
-    }
+    },
+    {
+      "type": "border",
+      "selected": 0,
+      "size": 200,
+      "location": "bottom",
+      "children": [
+        {
+          "type": "tab",
+          "id": "tab-processing_buttons",
+          "name": "buttons",
+        }
+      ],
+      "active": True
+    }    
   ],
   "layout": {
     "type": "column",
@@ -145,7 +154,6 @@ config = {
                 "name": "map"
               }
             ],
-            "active": True
           },
           {
             "type": "tabset",
@@ -190,12 +198,13 @@ config = {
 app.layout = html.Div([
     dcc.Location(id='url', refresh=False),
     dfl.FlexLayout(
-    id="flex-layout",
-    model=config,
-    children=nodes,
-    useStateForModel=False,
-    
-)]
+      id="flex-layout",
+      model=config,
+      children=nodes,
+      useStateForModel=False,
+    ), 
+    html.Div(id='output-click')
+  ]
 )
 
 for panel in panels:
@@ -223,29 +232,7 @@ def select_from_map(selected_data):
     new_mod = df_mod[df_mod['site_id'].isin(selected_points)]
     mod1.dataframe = new_mod
     mod2.dataframe = new_mod
-
     return dbdt1.render(), dbdt2.render(), mod1.render(), mod2.render()
-
-# @app.callback(
-#     [ 
-#         Output('sounding', 'figure', allow_duplicate=True),
-#         Output('tTEM',     'figure', allow_duplicate=True),
-#     ],
-#     Input('tTEM', 'selectedData'),
-#     prevent_initial_call="initial_duplicate",
-#     allow_duplicate=True
-# )
-# def disable_points_from_section(selected_data):
-#     if not selected_data or 'points' not in selected_data:
-#         raise PreventUpdate
-#     data_ids = [point['customdata'][1] for point in selected_data['points'] if 'customdata' in point]
-
-#     df_prev = dbdt2.dataframe
-#     df_prev.loc[df_prev['data_id'].isin(data_ids), 'inuse_auto'] = False
-#     dbdt1.dataframe = df_prev
-#     dbdt2.dataframe = df_prev
-
-#     return dbdt1.render(), dbdt2.render()
 
 @app.callback(
     [ 
@@ -266,6 +253,41 @@ def disable_points_from_sounding(selected_data):
     dbdt1.dataframe = df_prev
     dbdt2.dataframe = df_prev
     return dbdt1.render(), dbdt2.render()
+
+
+from dash import Input, Output, State, ClientsideFunction, html, dcc, ctx
+
+app.clientside_callback(
+    """
+        function(id) {
+            document.addEventListener("keydown", function(event) {
+                if (event.ctrlKey) {
+                    if (event.key == 'd') {
+                        document.getElementById('disableButton').click()
+                        event.stopPropagation()
+                    }
+                    if (event.key == 'e') {
+                        document.getElementById('enableButton').click()
+                        event.stopPropagation()
+                    }
+                }
+            });
+            return window.dash_clientside.no_update       
+        }
+    """,
+    Output("disableButton", "id"),
+    Input("disableButton", "id")
+)
+
+@app.callback(
+    Output("output-click", "children"),
+    Input("disableButton", "n_clicks"),
+    Input("enableButton", "n_clicks"),
+    prevent_initial_call=True
+)
+def show_value(n1, n2):
+    print(ctx.triggered_id)
+    return ctx.triggered_id
 
 # @app.callback(
 #     [
@@ -301,24 +323,52 @@ def disable_points_from_sounding(selected_data):
     # dbdt2.lm_time = ep.lm.time[selected_points]*1.
     # return dbdt1.render(), dbdt2.render(), rhoa1.render()
 
-# @app.callback(
-#     Output('flex-layout', 'id', allow_duplicate=True),  # Dummy output since we just want to print
-#     Input('flex-layout', 'model'),
-#     prevent_initial_call=True
-# )
-# def print_layout_changes(layout_model):
-#     """Print the layout configuration whenever it changes"""
-#     import json
-#     print("\n" + "="*50)
-#     print("LAYOUT CHANGED:")
-#     print("="*50)
-#     print(json.dumps(layout_model, indent=2))
-#     print("="*50 + "\n")
+@app.callback(
+    Output('flex-layout', 'id', allow_duplicate=True),  # Dummy output since we just want to print
+    Input('flex-layout', 'model'),
+    prevent_initial_call=True
+)
+def print_layout_changes(layout_model):
+    """Print the layout configuration whenever it changes"""
+    import json
+    print("\n" + "="*50)
+    print("LAYOUT CHANGED:")
+    print("="*50)
+    print(json.dumps(layout_model, indent=2))
+    print("="*50 + "\n")
     
-#     # Return the same ID to satisfy the callback requirement
-#     return 'flex-layout'
+    # Return the same ID to satisfy the callback requirement
+    return 'flex-layout'
 
+from dash import callback_context
 
+@app.callback(
+    Output('map', 'figure', allow_duplicate=True),
+    [
+        Input('model_section', 'hoverData'),
+        Input('tTEM', 'hoverData'),
+    ],
+    prevent_initial_call="initial_duplicate",
+    allow_duplicate=True
+)
+def cross_panel_hover(sounding_hover, ttem_hover):
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    hover_data = ctx.triggered[0]['value']
+    if not hover_data or 'points' not in hover_data:
+        raise PreventUpdate
+    if trigger_id == 'tTEM':
+        x_value = hover_data['points'][0]['x']
+        site_id = dbdt2.dataframe.query(f'{dbdt2.settings.x_axis} == @x_value')['site_id'].iloc[0]
+        m1.highlighted = site_id
+    elif trigger_id == 'model_section':
+        x_value = hover_data['points'][0]['x']
+        site_id = mod2.dataframe.query(f'{mod2.settings.x_axis} == @x_value')['site_id'].iloc[0]
+        m1.highlighted = site_id
+
+    return m1.render()
 
 app.run(debug=True, port=8050, dev_tools_hot_reload=True)
 #start msedge --app=http://127.0.0.1:8050/

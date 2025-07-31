@@ -46,6 +46,7 @@ class MapSettings(PanelSettings):
 
 class Map(Panel):
     data: None
+    highlighted: int = None
 
     def __init__(self, data, **kwargs):
         settings = MapSettings(id='map', **kwargs)
@@ -62,6 +63,13 @@ class Map(Panel):
                     "sourceattribution": "Google Earth (C)",
                     "source": ['https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}']
                 }])
+        if self.highlighted is not None:
+            highlight_trace = px.scatter_map(self.data[self.data['site_id'] == self.highlighted], lat="latitude", lon="longitude", color_discrete_sequence=[self.settings.color])
+            highlight_trace.update_traces(marker=dict(size=16))
+            for trace in highlight_trace.data:
+                fig.add_trace(
+                    trace
+                )
         fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0},
                           dragmode='select')
         return fig
@@ -229,7 +237,7 @@ class dbdtSection(Panel):
             color_discrete_sequence=["gray", "gray"],
             color="system_id",
             title="dbdt vs time by site_id",
-            custom_data=["system_id", "data_id"],
+            custom_data=["system_id", "data_id", "site_id"],
             error_y=error_ub,
             error_y_minus=error_lb
         )
@@ -259,7 +267,7 @@ class dbdtSection(Panel):
             color="system_id",
             color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
             title="dbdt vs time by site_id",
-            custom_data=["system_id", "data_id"],
+            custom_data=["system_id", "data_id", "site_id"],
         )
 
         for trace in fig3.data:
@@ -529,7 +537,7 @@ class ModelSection(Panel):
             zmin=heatmap_df.min().min(),
             zmax=heatmap_df.max().max(),
         )
-
+        fig.update_layout(hovermode="x")
         fig.update_yaxes(autorange="reversed")
         return fig
 
@@ -545,6 +553,7 @@ if __name__ == '__main__':
     from dash import dcc
     import example_panels as ep
     m1 = Map(data=ep.df)
+
     dbdt1 = dbdtSounding(lm_time=ep.lm.time.mean(0),
                      lm_data=ep.lm.data.mean(0),
                      hm_time=ep.hm.time.mean(0),
