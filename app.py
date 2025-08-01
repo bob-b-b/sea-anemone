@@ -280,14 +280,25 @@ app.clientside_callback(
 )
 
 @app.callback(
-    Output("output-click", "children"),
-    Input("disableButton", "n_clicks"),
-    Input("enableButton", "n_clicks"),
-    prevent_initial_call=True
+    [Output("tTEM", "figure", allow_duplicate=True),
+    Output("sounding", "figure", allow_duplicate=True)],
+    Input("disableButton", "n_clicks"),    
+    State('tTEM', 'selectedData'),
+    State('sounding', 'selectedData'),
+    prevent_initial_call="initial_duplicate",
 )
-def show_value(n1, n2):
-    print(ctx.triggered_id)
-    return ctx.triggered_id
+def show_value(n_clicks, ttem_selected, sounding_selected):
+    if not ctx.triggered:
+        raise PreventUpdate 
+
+    if ttem_selected is not None:
+        ttem_selected = [point['customdata'][1] for point in ttem_selected['points'] if 'customdata' in point]
+        df_res.loc[df_res['data_id'].isin(ttem_selected), 'inuse_auto'] = False
+        
+    dbdt1.dataframe = df_res
+    dbdt2.dataframe = df_res
+
+    return dbdt2.render(), dbdt1.render()
 
 # @app.callback(
 #     [
@@ -323,22 +334,22 @@ def show_value(n1, n2):
     # dbdt2.lm_time = ep.lm.time[selected_points]*1.
     # return dbdt1.render(), dbdt2.render(), rhoa1.render()
 
-@app.callback(
-    Output('flex-layout', 'id', allow_duplicate=True),  # Dummy output since we just want to print
-    Input('flex-layout', 'model'),
-    prevent_initial_call=True
-)
-def print_layout_changes(layout_model):
-    """Print the layout configuration whenever it changes"""
-    import json
-    print("\n" + "="*50)
-    print("LAYOUT CHANGED:")
-    print("="*50)
-    print(json.dumps(layout_model, indent=2))
-    print("="*50 + "\n")
+# @app.callback(
+#     Output('flex-layout', 'id', allow_duplicate=True),  # Dummy output since we just want to print
+#     Input('flex-layout', 'model'),
+#     prevent_initial_call=True
+# )
+# def print_layout_changes(layout_model):
+#     """Print the layout configuration whenever it changes"""
+#     import json
+#     print("\n" + "="*50)
+#     print("LAYOUT CHANGED:")
+#     print("="*50)
+#     print(json.dumps(layout_model, indent=2))
+#     print("="*50 + "\n")
     
-    # Return the same ID to satisfy the callback requirement
-    return 'flex-layout'
+#     # Return the same ID to satisfy the callback requirement
+#     return 'flex-layout'
 
 from dash import callback_context
 

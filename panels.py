@@ -216,14 +216,14 @@ class dbdtSection(Panel):
             setattr(self, key, value)
     
     def compare_synthetic(self):
-        y_axis                                             = 'dbdt_syn'
+
         df_tmp                                             = self.dataframe.sort_values(['gate_id', self.settings.x_axis])
         df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt_syn']  *= self.settings.lm_factor
         df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
         df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt_syn']  *= self.settings.hm_factor
         df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
         df_tmp.loc[df_tmp['site_id'] == -1, 'inuse_auto']  = False
-        df_tmp['system_id']                                = df_tmp['system_id'].map({0: 'hm', 1: 'lm'})
+        df_tmp['system_id']                                = df_tmp['system_id'].map({0: 'lm', 1: 'hm'})
 
         error_ub,error_lb = 'error_ub', 'error_lb'
         if True:
