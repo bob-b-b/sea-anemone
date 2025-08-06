@@ -11,6 +11,7 @@ app.title = "sea anemone"
 
 
 df_res = pd.read_csv('./prototyping/inversion_results.csv', index_col=0)
+print(df_res.columns)
 df_mod = pd.read_csv('./prototyping/inversion_results_models.csv')
 
 df_overview = df_res.pivot_table(
@@ -20,6 +21,12 @@ df_overview = df_res.pivot_table(
 )
 df_overview['site_id'] = df_overview.index
 
+def calculate_inuse(inuse_auto, inuse_manual):
+    # inuse = inuse_auto.copy()
+    # inuse[inuse_manual.notna()] = inuse_manual[inuse_manual.notna()]
+    return inuse_manual.fillna(inuse_auto)
+
+df_res['include'] = calculate_inuse(df_res['inuse_auto'], df_res['inuse_manual'])
 
 m1 = Map(data=df_overview)
 dbdt1 = dbdtSounding(dataframe=df_res)
@@ -56,7 +63,7 @@ x = html.Div([
 
 
 panels = [u1, m1, dbdt1, t1, t2, dbdt2, mod1, mod2]
-nodes = [node for panel in panels for node in panel.to_nodes()]+[dfl.Tab(id=f'tab-processing_buttons', children=[x])]
+nodes = [node for panel in panels for node in panel.to_nodes()]+[dfl.Tab(id=f'tab-processing_buttons', children=[x]), dfl.Tab(id='tab-panel_list', children=[panel_list])]
 
 
 # config = {
@@ -104,18 +111,22 @@ nodes = [node for panel in panels for node in panel.to_nodes()]+[dfl.Tab(id=f'ta
 
 config = {
   "global": {
-    "tabEnableFloat": False
+    "tabEnableFloat":  False,
+    "tabEnableClose":  True,
+    "tabEnableDrag":   True,
+    "tabEnableResize": True,
+
   },
   "borders": [
     {
       "type": "border",
       "size": 200,
-      "location": "right",
+      "location": "left",
       "children": [
         {
           "type": "tab",
-          "id": "side-1",
-          "name": "One",
+          "id": "tab-panel_list",
+          "name": "Panels",
           "component": "text"
         }
       ]
@@ -148,11 +159,8 @@ config = {
             "id": "#328817bb-4e54-448e-887f-00356fda1ff9",
             "weight": 50,
             "children": [
-              {
-                "type": "tab",
-                "id": "tab-map",
-                "name": "map"
-              }
+              m1.layout_dict,
+              u1.layout_dict,              
             ],
           },
           {
@@ -179,14 +187,15 @@ config = {
             "children": [
               {
                 "type": "tab",
-                "id": "tab-tTEM",
-                "name": "ttem"
+                "id": "tab-sounding",
+                "name": "sounding"
               },
               {
                 "type": "tab",
-                "id": "tab-sounding",
-                "name": "sounding"
-              }
+                "id": "tab-tTEM",
+                "name": "ttem"
+              },
+
             ]
           }
         ]
@@ -230,32 +239,12 @@ def select_from_map(selected_data):
     dbdt1.dataframe = new_df
     dbdt2.dataframe = new_df
     new_mod = df_mod[df_mod['site_id'].isin(selected_points)]
-    mod1.dataframe = new_mod
+    mod1.dataframe = new_mod 
     mod2.dataframe = new_mod
     return dbdt1.render(), dbdt2.render(), mod1.render(), mod2.render()
 
-@app.callback(
-    [ 
-        Output('sounding', 'figure', allow_duplicate=True),
-        Output('tTEM',     'figure', allow_duplicate=True),
-    ],
-    Input('sounding', 'selectedData'),
-    prevent_initial_call="initial_duplicate",
-)
-def disable_points_from_sounding(selected_data):
-    print('selected data: ', selected_data)
-    if not selected_data or 'points' not in selected_data:
-        raise PreventUpdate
-    data_ids = [point['customdata'][1] for point in selected_data['points'] if 'customdata' in point]
 
-    df_prev = dbdt1.dataframe
-    df_prev.loc[df_prev['data_id'].isin(data_ids), 'inuse_auto'] = False
-    dbdt1.dataframe = df_prev
-    dbdt2.dataframe = df_prev
-    return dbdt1.render(), dbdt2.render()
-
-
-from dash import Input, Output, State, ClientsideFunction, html, dcc, ctx
+from dash import Input, Output, State, html, dcc, ctx
 
 app.clientside_callback(
     """
@@ -280,48 +269,37 @@ app.clientside_callback(
 )
 
 @app.callback(
-    Output("output-click", "children"),
+    [
+        Output("output-click", "children"),
+        Output("tTEM", "figure", allow_duplicate=True), Output("sounding", "figure", allow_duplicate=True)
+     ],
     Input("disableButton", "n_clicks"),
     Input("enableButton", "n_clicks"),
-    prevent_initial_call=True
+    State("tTEM", "selectedData"),
+    State("sounding", "selectedData"),
+    prevent_initial_call=True,
+    allow_duplicate=True,
 )
-def show_value(n1, n2):
-    print(ctx.triggered_id)
-    return ctx.triggered_id
+def show_value(n1, n2, ttem_selected, sounding_selected):
+    
+    if str(ctx.triggered_id) == 'disableButton':
+        inuse = False
+    elif str(ctx.triggered_id) == 'enableButton':
+        inuse = True
 
-# @app.callback(
-#     [
-#         Output('sounding', 'figure', allow_duplicate=True),
-#         Output('tTEM',     'figure', allow_duplicate=True),
-#         Output('rhoa',     'figure', allow_duplicate=True),
-#         # Output('map', 'selectedData', allow_duplicate=True)
-#     ],
-#     Input('table', 'selected_data'),
-#     prevent_initial_call="initial_duplicate",
-# )
-# def select_from_table(selected_data):
-#     print('selected data: ', selected_data)
-    # if not selected_data or 'points' not in selected_data:
-    #     raise PreventUpdate
+    if ttem_selected:
+        data_ids = [point['customdata'][1] for point in ttem_selected['points'] if 'customdata' in point]
+    elif sounding_selected:
+        data_ids = [point['customdata'][1] for point in sounding_selected['points'] if 'customdata' in point]
+    else:
+        raise PreventUpdate
+    
+    df_res.loc[df_res['data_id'].isin(data_ids), 'inuse_manual'] = inuse
+    df_res['include'] = calculate_inuse(df_res['inuse_auto'], df_res['inuse_manual'])
+    dbdt1.dataframe = df_res[df_res['site_id'].isin(dbdt1.dataframe['site_id'].unique())]
+    dbdt2.dataframe = df_res[df_res['site_id'].isin(dbdt2.dataframe['site_id'].unique())]
 
-    # row_ids = [cell['row'] for cell in selected_data if 'row' in cell]
-    # # Extract selected points
-    # selected_points = [point['pointIndex'] for point in selected_data['points']]
-
-    # tmp_hm  = ep.hm.data[selected_points]*1.
-    # tmp_lm  = ep.lm.data[selected_points]*1.
-
-    # dbdt1.hm_data = tmp_hm
-    # dbdt1.lm_data = tmp_lm
-
-    # rhoa1.hm_data = tmp_hm
-    # rhoa1.lm_data = tmp_lm
-    # dbdt2.hm_data = tmp_hm
-    # dbdt2.lm_data = tmp_lm
-
-    # dbdt2.hm_time = ep.hm.time[selected_points]*1.
-    # dbdt2.lm_time = ep.lm.time[selected_points]*1.
-    # return dbdt1.render(), dbdt2.render(), rhoa1.render()
+    return ctx.triggered_id, dbdt2.render(), dbdt1.render()
 
 @app.callback(
     Output('flex-layout', 'id', allow_duplicate=True),  # Dummy output since we just want to print
@@ -337,7 +315,6 @@ def print_layout_changes(layout_model):
     print(json.dumps(layout_model, indent=2))
     print("="*50 + "\n")
     
-    # Return the same ID to satisfy the callback requirement
     return 'flex-layout'
 
 from dash import callback_context
@@ -370,6 +347,12 @@ def cross_panel_hover(sounding_hover, ttem_hover):
 
     return m1.render()
 
-app.run(debug=True, port=8050, dev_tools_hot_reload=True)
+try:
+    app.run(debug=True, port=8050, dev_tools_hot_reload=True)
+except Exception as e:
+    print(f"Error running app: {e}")
+finally:
+    print('App has stopped running.')
+
 #start msedge --app=http://127.0.0.1:8050/
 

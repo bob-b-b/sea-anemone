@@ -6,6 +6,9 @@ import numpy as np
 
 import plotly.io as pio
 
+from typing import Literal
+
+
 # Define a custom template
 custom_template = {
     "layout": {
@@ -71,6 +74,7 @@ class Map(Panel):
                     trace
                 )
         fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0},
+                          modebar=dict(add=['drawline', 'drawopenpath', 'eraseshape'], remove=['zoomIn', 'zoomOut']),
                           dragmode='select')
         return fig
 
@@ -87,7 +91,10 @@ class Map(Panel):
 class dbdtSoundingSettings(PanelSettings):
     lm_color: str = '#ff0000'
     hm_color: str = '#0000ff'
+    lm_factor: float = 20.0
+    hm_factor: float = 1.0
     plot_error: bool = False
+    x_axis: Literal['time', 'gate_id'] = 'time'  # or 'site_id', 'longitude', 'latitude'
 
 class dbdtSounding(Panel):
     dataframe = None
@@ -98,49 +105,128 @@ class dbdtSounding(Panel):
         super().__init__(id='sounding', settings=settings)
         for key, value in kwargs.items():
             setattr(self, key, value)
-    
-    def render(self):
-        df_tmp = self.dataframe#.copy()
+
+    def compare_synthetic(self):
+        y_axis                                             = 'dbdt_syn'
+
+        df_tmp                                             = self.dataframe.sort_values(['site_id', 'system_id',  self.settings.x_axis])
+        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt_syn']  *= self.settings.lm_factor
+        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
+        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt_syn']  *= self.settings.hm_factor
+        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
+        df_tmp.loc[df_tmp['site_id'] == -1, 'include']  = False
+
+        df_tmp['system_id']                                = df_tmp['system_id'].map({1: 'hm', 0: 'lm'})
+
+        error_ub,error_lb = 'error_ub', 'error_lb'
+        # if True:
+        #     error_ub = None
+        #     error_lb = None
+        
+        fig = px.scatter(
+            df_tmp,
+            x=self.settings.x_axis,
+            y='dbdt',
+            color_discrete_sequence=["gray", "gray"],
+            color="system_id",
+            title="dbdt vs time by site_id",
+            custom_data=["system_id", "data_id", "site_id"],
+            error_y=error_ub,
+            error_y_minus=error_lb
+        )
+
+        df_tmp.loc[df_tmp['site_id'] == -1, 'include'] = True
+        df_tmp.loc[(~df_tmp['include']), 'dbdt'] = np.nan
+        df_tmp.loc[(~df_tmp['include']), 'dbdt_syn'] = np.nan
+
+
+        
+        fig3 = px.scatter(
+            df_tmp,
+            x=self.settings.x_axis,
+            y='dbdt',
+            color_discrete_sequence=["black", "black"],
+            color="system_id",
+            title="dbdt vs time by site_id",
+            # custom_data=["system_id", "data_id"],
+            error_y=error_ub,
+            error_y_minus=error_lb,
+        )
+
+        fig2 = px.line(
+            df_tmp,
+            x=self.settings.x_axis,
+            y='dbdt_syn',
+            color="system_id",
+            color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
+            title="dbdt vs time by site_id",
+            custom_data=["system_id", "data_id", "site_id"],
+        )
+
+        for trace in fig3.data:
+            fig.add_trace(trace)
+
+        for trace in fig2.data:
+            fig.add_trace(trace)
+
+        return fig    
+
+    def standard_render(self):
+        y_axis = 'dbdt'
+
+        df_tmp = self.dataframe.sort_values(['gate_id', self.settings.x_axis])
+        df_tmp.loc[df_tmp['system_id'] == 'lm', y_axis] *= self.settings.lm_factor
+        df_tmp.loc[df_tmp['system_id'] == 'hm', y_axis] *= self.settings.hm_factor
+
+
         df_tmp.loc[df_tmp['site_id'] == -1, 'inuse_auto'] = False
 
         
         fig = px.line(
             df_tmp,
-            x='time',
-            y="dbdt",
+            x=self.settings.x_axis,
+            y='dbdt',
             color_discrete_sequence=["gray", "gray"],
             color="system_id",
             markers=True,
             title="dbdt vs time by site_id",
-            custom_data=["gate_id", "data_id"],
-            hover_data=["data_id"],
+            custom_data=["system_id", "data_id"],
+
         )
 
         df_tmp.loc[df_tmp['site_id'] == -1, 'inuse_auto'] = True
-        df_tmp.loc[(~df_tmp['inuse_auto']), 'dbdt'] = np.nan
+        df_tmp.loc[(~df_tmp['inuse_auto']), y_axis] = np.nan
+
         fig2 = px.line(
             df_tmp,
-            x='time',
-            y="dbdt",
+            x=self.settings.x_axis,
+            y='dbdt',
             color="system_id",
             color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
             markers=True,
             title="dbdt vs time by site_id",
+            custom_data=["system_id", "data_id"],
         )
 
 
         for trace in fig2.data:
-            fig.add_trace(trace)
+            fig.add_trace(trace)    
+        return fig    
+
+    def render(self):
+        fig = self.compare_synthetic()
+        # fig = self.standard_render()
 
         fig.update_layout(
-            xaxis_type="log",
             yaxis_type="log",
-            xaxis_title='time [s]',
+            xaxis_type="log" if self.settings.x_axis == 'time' else "linear",
+            xaxis_title=self.settings.x_axis,
             yaxis_title="$\\frac{dB}{dt}$ \\[V / m$^2$\\]",
             margin={"l": 50, "r": 50, "t": 50, "b": 50},
             dragmode='select'
         )
         return fig    
+
 
 class rhoaSounding(Panel):
     lm_time: None
@@ -195,7 +281,6 @@ class rhoaSounding(Panel):
         return fig
 
 
-from typing import Literal
 @dataclass
 class dbdtSectionSettings(PanelSettings):
     lm_color: str = '#ff0000'
@@ -222,7 +307,7 @@ class dbdtSection(Panel):
         df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
         df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt_syn']  *= self.settings.hm_factor
         df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
-        df_tmp.loc[df_tmp['site_id'] == -1, 'inuse_auto']  = False
+        df_tmp.loc[df_tmp['site_id'] == -1, 'include']  = False
         df_tmp['system_id']                                = df_tmp['system_id'].map({0: 'hm', 1: 'lm'})
 
         error_ub,error_lb = 'error_ub', 'error_lb'
@@ -242,9 +327,9 @@ class dbdtSection(Panel):
             error_y_minus=error_lb
         )
 
-        df_tmp.loc[df_tmp['site_id'] == -1, 'inuse_auto'] = True
-        df_tmp.loc[(~df_tmp['inuse_auto']), 'dbdt'] = np.nan
-        df_tmp.loc[(~df_tmp['inuse_auto']), 'dbdt_syn'] = np.nan
+        df_tmp.loc[df_tmp['site_id'] == -1, 'include'] = True
+        df_tmp.loc[(~df_tmp['include']), 'dbdt'] = np.nan
+        df_tmp.loc[(~df_tmp['include']), 'dbdt_syn'] = np.nan
 
 
         
@@ -542,115 +627,17 @@ class ModelSection(Panel):
         return fig
 
 
+markdown_text = '''
+# Panels
+## Data
+- [Sounding](#sounding)     [\[+\]](#new_sounding)
+- [Section](#section)       [\[+\]](#new_section)
+## Models
+- [graph](#graph)           [\[+\]](#new_graph)
+- [colorbar](#colorbar)     [\[+\]](#new_colorbar)
+- [table](#table)           [\[+\]](#new_table)
+'''
 
-if __name__ == '__main__':
-    import dash_mantine_components as dmc
-    from dash import Dash
-    app = Dash(__name__, suppress_callback_exceptions=True, assets_folder='assets')
-
-
-
-    from dash import dcc
-    import example_panels as ep
-    m1 = Map(data=ep.df)
-
-    dbdt1 = dbdtSounding(lm_time=ep.lm.time.mean(0),
-                     lm_data=ep.lm.data.mean(0),
-                     hm_time=ep.hm.time.mean(0),
-                     hm_data=ep.hm.data.mean(0))
-    
-    rhoa1 = rhoaSounding(lm_time=ep.lm.time.mean(0),
-                     lm_data=ep.lm.data.mean(0),
-                        hm_time=ep.hm.time.mean(0),
-                        hm_data=ep.hm.data.mean(0))
-    
-
-    dbdt2 = dbdtSection(lm_time=ep.lm.time,
-                lm_data=ep.lm.data,
-                hm_time=ep.hm.time,
-                hm_data=ep.hm.data)
-    u1 = Upload()
-    t1 = Table(dataframe=ep.df, id='overview table')
-
-    panels = [u1, m1, dbdt1, dbdt2, rhoa1, t1]
-    nodes = [node for panel in panels for node in panel.to_nodes()]
-    config = {
-        "global": {"tabEnableClose": True, "tabEnableFloat": True},
-        "borders": [
-            {"type": "border", "location": "right", "size": 200, "children": [                    
-                        {
-                            "type": "tab",
-                            "name": "One",
-                            "component": "text",
-                            "id": "side-1",
-                            "tabEnableClose": False,
-                        },
-            ]},
-        ],
-        "layout": {
-            "type": "row",
-            "weight": 100,
-            "children": [{
-                    "type": "tabset",
-                    "weight": 50,
-                    "children": [
-                        t1.layout_dict,
-                        m1.layout_dict,
-                        u1.layout_dict,
-                    ],
-                },
-                {
-                    "type": "tabset",
-                    "weight": 50,
-                    "children": [
-                        dbdt1.layout_dict,
-                        dbdt2.layout_dict,
-                        rhoa1.layout_dict,
-                    ],
-                },
-            ],
-        },
-    }
-
-    app.layout = html.Div([
-        dcc.Location(id='url', refresh=False),
-        dfl.FlexLayout(
-        id="flex-layout",
-        model=config,
-        children=nodes,
-        useStateForModel=False,
-    )]
-    )
-    
-    for panel in panels:
-        panel.add_callbacks(app)
-
-    @app.callback(
-        [ 
-            Output('sounding', 'figure', allow_duplicate=True),
-            Output('tTEM',     'figure', allow_duplicate=True),
-            Output('rhoa',     'figure', allow_duplicate=True)
-        ],
-        Input('map', 'selectedData'),
-        prevent_initial_call="initial_duplicate",
-        allow_duplicate=True
-    )
-    def update_dbdt(selected_data):
-        if not selected_data or 'points' not in selected_data:
-            raise PreventUpdate
-
-        # Extract selected points
-        selected_points = [point['pointIndex'] for point in selected_data['points']]
-
-        dbdt1.hm_data = ep.hm.data[selected_points]*1.
-        dbdt1.lm_data = ep.lm.data[selected_points]*1.
-        
-        rhoa1.hm_data = ep.hm.data[selected_points]*1.
-        rhoa1.lm_data = ep.lm.data[selected_points]*1.        
-
-        dbdt2.hm_data = ep.hm.data[selected_points]*1.
-        dbdt2.lm_data = ep.lm.data[selected_points]*1.
-        dbdt2.hm_time = ep.hm.time[selected_points]*1.
-        dbdt2.lm_time = ep.lm.time[selected_points]*1.
-        return dbdt1.render(), dbdt2.render(), rhoa1.render()
-    app.run(debug=True, port=8050, dev_tools_hot_reload=True)
+panel_list = html.Div([
+    dcc.Markdown(children=markdown_text)
+])

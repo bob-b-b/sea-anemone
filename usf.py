@@ -175,14 +175,15 @@ def sweep2dataframes(sweeps):
     lm,hm = mega_sweeps
 
     n_sites,n_gates = lm.data.shape
+    n_gates += 1
     day_sort = np.argsort(lm.daytime)
     site_id = np.zeros(n_sites, dtype=int)
     site_id[day_sort] = np.arange(len(lm.daytime))
     site_id = np.insert(site_id, 0, -1)  # insert a dummy site_id for the loop
 
-    lm.data  = np.pad(lm.data, ((1,0), (0,0)), mode='constant', constant_values=np.nan)
-    lm.time  = np.pad(lm.time, ((1,0), (0,0)), mode='constant', constant_values=np.nan)
-    lm.error = np.pad(lm.error, ((1,0), (0,0)), mode='constant', constant_values=np.nan)
+    lm.data  = np.pad(lm.data, ((1,0), (1,0)), mode='constant', constant_values=np.nan)
+    lm.time  = np.pad(lm.time, ((1,0), (1,0)), mode='constant', constant_values=np.nan)
+    lm.error = np.pad(lm.error, ((1,0), (1,0)), mode='constant', constant_values=np.nan)
 
     lm.date     = np.pad(lm.date, (1,0), mode='constant', constant_values=np.nan)
     lm.location = np.pad(lm.location, ((1,0), (0,0)), mode='constant', constant_values=np.nan)
@@ -198,7 +199,7 @@ def sweep2dataframes(sweeps):
         'inuse_auto': [True for _ in lm.data.flatten()],
         'inuse_manual': [np.nan for _ in lm.data.flatten()],
         'time': lm.time.flatten(),
-        'gate_id': np.concatenate([np.arange(n_gates) for i in site_id]),
+        'gate_id': np.concatenate([np.arange(-1, n_gates-1) for i in site_id]),
         'system_id': [0 for _ in lm.data.flatten()],
         'date':     np.concatenate([np.ones(n_gates, dtype=int)*x for x in lm.date]),
         'latitude': np.concatenate([np.ones( n_gates, dtype=float)*x for x in lm.location[:, 1]]),
@@ -209,11 +210,11 @@ def sweep2dataframes(sweeps):
     df_data = pd.DataFrame(data_avg)
 
     n_sites,n_gates = hm.data.shape
-    
-    n_sites,n_gates = hm.data.shape
-    hm.data = np.pad(hm.data, ((1,0), (0,0)), mode='constant', constant_values=np.nan)
-    hm.time = np.pad(hm.time, ((1,0), (0,0)), mode='constant', constant_values=np.nan)
-    hm.error = np.pad(hm.error, ((1,0), (0,0)), mode='constant', constant_values=np.nan)
+    n_gates += 1
+
+    hm.data = np.pad(hm.data, ((1,0), (1,0)), mode='constant', constant_values=np.nan)
+    hm.time = np.pad(hm.time, ((1,0), (1,0)), mode='constant', constant_values=np.nan)
+    hm.error = np.pad(hm.error, ((1,0), (1,0)), mode='constant', constant_values=np.nan)
 
     hm.date = np.pad(hm.date, (1,0), mode='constant', constant_values=np.nan)
     hm.location = np.pad(hm.location, ((1,0), (0,0)), mode='constant', constant_values=np.nan)
@@ -227,7 +228,7 @@ def sweep2dataframes(sweeps):
         'inuse_auto': [True for _ in hm.data.flatten()],
         'inuse_manual': [np.nan for _ in hm.data.flatten()],
         'time': hm.time.flatten(),
-        'gate_id': np.concatenate([np.arange(n_gates) for i in range(-1, n_sites)]),
+        'gate_id': np.concatenate([np.arange(-1, n_gates-1) for i in range(-1, n_sites)]),
         'system_id': [1 for _ in hm.data.flatten()],
         'date': np.concatenate([np.ones(n_gates, dtype=int)*x for x in lm.date]),
         'latitude': np.concatenate([np.ones(n_gates, dtype=float)*x for x in lm.location[:, 1]]),
