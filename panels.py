@@ -45,6 +45,8 @@ pio.templates.default = "custom"
 class MapSettings(PanelSettings):
     zoom: int = 14
     color: str = '#ff0000'
+    highlight_color: str= '#ffff00'  # Default highlight color
+
 
 
 class Map(Panel):
@@ -67,14 +69,15 @@ class Map(Panel):
                     "source": ['https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}']
                 }])
         if self.highlighted is not None:
-            highlight_trace = px.scatter_map(self.data[self.data['site_id'] == self.highlighted], lat="latitude", lon="longitude", color_discrete_sequence=[self.settings.color])
-            highlight_trace.update_traces(marker=dict(size=16))
+            highlight_trace = px.scatter_map(self.data[self.data['site_id'] == self.highlighted], lat="latitude", lon="longitude", color_discrete_sequence=[self.settings.highlight_color])
+            highlight_trace.update_traces(marker=dict(size=14))
             for trace in highlight_trace.data:
                 fig.add_trace(
                     trace
                 )
         fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0},
-                          modebar=dict(add=['drawline', 'drawopenpath', 'eraseshape'], remove=['zoomIn', 'zoomOut']),
+                          modebar=dict(add=['drawline', 'drawopenpath', 'eraseshape'], remove=['zoomIn', 'zoomOut'], location='right'),
+                          newshape=dict(line_color='cyan', line_width=3),
                           dragmode='select')
         return fig
 

@@ -3,7 +3,8 @@ from panels import *
 from dash import dcc
 import pandas as pd
 import dash_mantine_components as dmc
-from dash import Dash
+from dash import Dash, callback_context
+from dash.exceptions import PreventUpdate
 
 app = Dash(__name__, suppress_callback_exceptions=True, assets_folder='assets')
 app.title = "sea anemone"
@@ -226,21 +227,61 @@ for panel in panels:
         Output('model_graph', 'figure', allow_duplicate=True),
         Output('model_section', 'figure', allow_duplicate=True),
     ],
-    Input('map', 'selectedData'),
+    [Input('map', 'relayoutData'), Input('map', 'selectedData')],
     prevent_initial_call="initial_duplicate",
     allow_duplicate=True
 )
-def select_from_map(selected_data):
-    if not selected_data or 'points' not in selected_data:
+def handle_map_interactions(relayout_data, selected_data):
+    """Handle both drawing and selection on the map"""
+    ctx = callback_context
+    if not ctx.triggered:
         raise PreventUpdate
-
-    selected_points = [-1]+[point['pointIndex'] for point in selected_data['points']]
-    new_df = df_res[df_res['site_id'].isin(selected_points)]
+    
+    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    trigger_prop = ctx.triggered[0]['prop_id'].split('.')[1]
+    
+    selected_sites = []
+    
+    # Handle drawing interactions
+    if trigger_prop == 'relayoutData' and relayout_data:
+        # Check if shapes were drawn
+        if 'shapes' in relayout_data:
+            m1.drawn_shapes = relayout_data['shapes']
+            selected_sites = m1.get_selected_sites()
+        # Handle shape deletion
+        elif any(key.startswith('shapes[') and key.endswith('].x0') for key in relayout_data.keys()):
+            # Update shapes if they were modified
+            shapes = []
+            i = 0
+            while f'shapes[{i}].x0' in relayout_data:
+                shape = {
+                    'type': relayout_data.get(f'shapes[{i}].type', 'rect'),
+                    'x0': relayout_data.get(f'shapes[{i}].x0'),
+                    'x1': relayout_data.get(f'shapes[{i}].x1'),
+                    'y0': relayout_data.get(f'shapes[{i}].y0'),
+                    'y1': relayout_data.get(f'shapes[{i}].y1'),
+                }
+                shapes.append(shape)
+                i += 1
+            m1.drawn_shapes = shapes
+            selected_sites = m1.get_selected_sites()
+    
+    # Handle point selection
+    elif trigger_prop == 'selectedData' and selected_data and 'points' in selected_data:
+        selected_sites = [point['pointIndex'] for point in selected_data['points']]
+    
+    # If no sites selected, don't update
+    if not selected_sites:
+        raise PreventUpdate
+    
+    # Update dataframes with selected sites
+    new_df = df_res[df_res['site_id'].isin(selected_sites)]
     dbdt1.dataframe = new_df
     dbdt2.dataframe = new_df
-    new_mod = df_mod[df_mod['site_id'].isin(selected_points)]
+    new_mod = df_mod[df_mod['site_id'].isin(selected_sites)]
     mod1.dataframe = new_mod 
     mod2.dataframe = new_mod
+    
     return dbdt1.render(), dbdt2.render(), mod1.render(), mod2.render()
 
 
@@ -316,8 +357,6 @@ def print_layout_changes(layout_model):
     print("="*50 + "\n")
     
     return 'flex-layout'
-
-from dash import callback_context
 
 @app.callback(
     Output('map', 'figure', allow_duplicate=True),
