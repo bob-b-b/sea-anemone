@@ -347,19 +347,19 @@ def show_value(n1, n2, ttem_selected, sounding_selected):
 
     return ctx.triggered_id, dbdt2.render(), dbdt1.render()
 
-@app.callback(
-    Output('flex-layout', 'id', allow_duplicate=True),  # Dummy output since we just want to print
-    Input('flex-layout', 'model'),
-    prevent_initial_call=True
-)
-def print_layout_changes(layout_model):
-    """Print the layout configuration whenever it changes"""
-    import json
-    print("\n" + "="*50)
-    print("LAYOUT CHANGED:")
-    print("="*50)
-    print(json.dumps(layout_model, indent=2))
-    print("="*50 + "\n")
+# @app.callback(
+#     Output('flex-layout', 'id', allow_duplicate=True),  # Dummy output since we just want to print
+#     Input('flex-layout', 'model'),
+#     prevent_initial_call=True
+# )
+# def print_layout_changes(layout_model):
+#     """Print the layout configuration whenever it changes"""
+#     import json
+#     print("\n" + "="*50)
+#     print("LAYOUT CHANGED:")
+#     print("="*50)
+#     print(json.dumps(layout_model, indent=2))
+#     print("="*50 + "\n")
     
     return 'flex-layout'
 
