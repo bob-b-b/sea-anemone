@@ -5,8 +5,10 @@ import pandas as pd
 import dash_mantine_components as dmc
 from dash import Dash, callback_context
 from dash.exceptions import PreventUpdate
+import dash_bootstrap_components as dbc
 
-app = Dash(__name__, suppress_callback_exceptions=True, assets_folder='assets')
+external_stylesheets = [dbc.themes.BOOTSTRAP]
+app = Dash(__name__, suppress_callback_exceptions=True, assets_folder='assets',  external_stylesheets=external_stylesheets)
 app.title = "sea anemone"
 
 
@@ -63,7 +65,9 @@ x = html.Div([
 , id='processing_buttons')
 
 
-panels = [u1, m1, dbdt1, t1, t2, dbdt2, mod1, mod2]
+stmod = StartingModel.standard()
+
+panels = [u1, m1, dbdt1, t1, t2, dbdt2, mod1, mod2, stmod]
 nodes = [node for panel in panels for node in panel.to_nodes()]+[dfl.Tab(id=f'tab-processing_buttons', children=[x]), dfl.Tab(id='tab-panel_list', children=[panel_list])]
 
 
@@ -186,6 +190,7 @@ config = {
             "id": "#6d729cf5-699f-4fad-bdcb-a1bd30574355",
             "weight": 50,
             "children": [
+              stmod.layout_dict,
               {
                 "type": "tab",
                 "id": "tab-sounding",
@@ -196,7 +201,7 @@ config = {
                 "id": "tab-tTEM",
                 "name": "ttem"
               },
-
+              
             ]
           }
         ]
@@ -268,7 +273,7 @@ def handle_map_interactions(relayout_data, selected_data):
     
     # Handle point selection
     elif trigger_prop == 'selectedData' and selected_data and 'points' in selected_data:
-        selected_sites = [point['pointIndex'] for point in selected_data['points']]
+        selected_sites = [point['pointIndex'] for point in selected_data['points']]+[-1]
     
     # If no sites selected, don't update
     if not selected_sites:
@@ -387,6 +392,7 @@ def cross_panel_hover(sounding_hover, ttem_hover):
     return m1.render()
 
 try:
+
     app.run(debug=True, port=8050, dev_tools_hot_reload=True)
 except Exception as e:
     print(f"Error running app: {e}")

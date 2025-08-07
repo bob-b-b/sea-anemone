@@ -76,7 +76,7 @@ class Map(Panel):
                     trace
                 )
         fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0},
-                          modebar=dict(add=['drawline', 'drawopenpath', 'eraseshape'], remove=['zoomIn', 'zoomOut'], location='right'),
+                          modebar=dict(add=['drawline', 'drawopenpath', 'eraseshape'], remove=['zoomIn', 'zoomOut']),
                           newshape=dict(line_color='cyan', line_width=3),
                           dragmode='select')
         return fig
@@ -305,7 +305,8 @@ class dbdtSection(Panel):
     
     def compare_synthetic(self):
         y_axis                                             = 'dbdt_syn'
-        df_tmp                                             = self.dataframe.sort_values(['gate_id', self.settings.x_axis])
+        df_tmp = self.dataframe[self.dataframe['gate_id']>-1]
+        df_tmp                                             = df_tmp.sort_values(['gate_id', self.settings.x_axis])
         df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt_syn']  *= self.settings.lm_factor
         df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
         df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt_syn']  *= self.settings.hm_factor
@@ -644,3 +645,98 @@ markdown_text = '''
 panel_list = html.Div([
     dcc.Markdown(children=markdown_text)
 ])
+
+import dash_bootstrap_components as dbc
+
+@dataclass
+class StartingModelSettings(PanelSettings):
+    line_color: str='#ff0000'
+
+
+class StartingModel(ModelGraph):
+    starting_rho: float = 40.0
+    def __init__(self, data, **kwargs):
+        starting_model = kwargs.pop('starting_rho', 40.0)
+        settings = StartingModelSettings(id='starting_model', **kwargs)
+        super().__init__(id='starting_model', settings=settings, starting_rho=starting_model)
+        self.data = data
+
+    def render(self):
+        # fig = make_subplots(rows=1, cols=2, shared_yaxes=True)
+        # Add the step plot for resistivity
+        fig = px.line(self.data,
+            x='resistivity',
+            y='depth',
+            markers=True,
+            color_discrete_sequence=[self.settings.line_color, self.settings.line_color],
+            hover_data={'resistivity': ':.2f Ω⋅m', 'depth': False},  # Add tooltip for resistivity values
+            # hover='resistivity'  # Add tooltip for resistivity values
+        )
+        
+        for i in [0.5, 1, 2]:
+            z = self.data['depth']
+            y = 10+90*(1 / (1 + np.exp(-20.*(z-150)/z.max())))**i
+            fig.add_scatter(x=y, y=z, line=dict(color='grey'))#, row=1, col=2)
+
+        # Update layout to match typical resistivity plot conventions
+        fig.update_layout(
+            title='Inversion Starting Model',
+            xaxis_title='resistivity [Ω⋅m]',
+            yaxis_title='depth [m]',
+            xaxis_type='log',  # Resistivity is typically plotted on log scale
+            yaxis_type='linear',
+            yaxis=dict(autorange='reversed'),  # Depth increases downward
+            xaxis=dict(range=[-0.1,3.1]),  # Set x-axis range for resistivity
+            showlegend=True,
+            modebar=dict(remove=['toImage', 'zoom', 'zoomIn', 'zoomOut', 'pan', 'select']),
+        )
+        fig.add_shape(type='line', x0=self.starting_rho, x1=self.starting_rho,
+                      y0=self.data['depth'].min(), y1=self.data['depth'].max(), 
+                      xref='x1', yref='y1',
+                      line=dict(color=self.settings.line_color, dash='dash'),
+                      editable=True)
+
+        return fig
+    
+    # def initialize(self):
+    #     return html.Div([
+    #             dbc.Stack([dcc.Graph(figure=self.render(), id=self.id, mathjax=True, 
+    #                                 config=dict(edits={'shapePosition':True}, displayModeBar=False),
+    #                                 style={'width':'50%'}),
+    #                         html.Button("invert", id='invertButton')
+    #             ], direction='horizontal', gap=2, style={'width': '100%'}),])
+    
+    def initialize(self):
+        init = html.Div([dbc.Container([
+                dbc.Row([
+                    dbc.Col(
+                        dcc.Graph(figure=self.render(), id=self.id, mathjax=True, 
+                                    config=dict(edits={'shapePosition':True}, displayModeBar=False)),
+                            width=10),
+                    dbc.Col(html.Button("invert", id='invertButton'), width=2)
+                ], style={'height':'100%'})], style={'height':'100%', 'padding':'25px'}),
+                 gear_maker(self.id)], style={'height': '100%', 'overflow': 'hidden'},
+                  )
+        return init
+                            
+    
+    def add_callbacks(self, app):
+        super().add_callbacks(app)
+
+        @app.callback(
+            Output(self.id, 'figure', allow_duplicate=True),
+            Input(self.id, 'relayoutData'),
+            prevent_initial_call=True
+        )
+        def update_starting_model(relayoutData):
+            self.starting_rho = int(relayoutData.get('shapes[0].x0', self.starting_rho))
+            self.data['resistivity'] = self.starting_rho
+            return self.render()
+        
+    @classmethod
+    def standard(cls, rho=40.):
+        df = pd.DataFrame({
+            'resistivity': [rho] * 31,  # Default resistivity values
+            'depth': np.logspace(0, np.log10(300), 31)  # Example depth values from 0 to 300 meters
+            })
+        return cls(data=df)
