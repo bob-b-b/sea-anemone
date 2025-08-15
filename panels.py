@@ -711,7 +711,7 @@ class StartingModel(ModelGraph):
 
 
     def render(self):
-        if len(self.misfit) > 0: return self.misfit_render()
+        #if len(self.misfit) > 0: return self.empty_render()
 
         # fig = make_subplots(rows=1, cols=2, shared_yaxes=True)
         # Add the step plot for resistivity

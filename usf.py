@@ -144,11 +144,13 @@ class Sweep:
             data = load(a_file)
         return data
 
-from anemone.forwards import Forward
+from anemone.forwards import Forward, logify_forward
 from anemone.system import Loop, Receiver, Waveform, FilterChain, ButterworthFilter
 import numpy as np
 
-def sweep2fwr(sweeps, fwr=Forward):
+logForward = logify_forward(Forward)
+
+def sweep2fwr(sweeps, fwr=logForward):
     points = set(swp.points for swp in sweeps)
     forwards = []
     for pnts in points:
@@ -161,7 +163,7 @@ def sweep2fwr(sweeps, fwr=Forward):
             filter_chain.append(ButterworthFilter(f_cut))
         fc = FilterChain(filter_chain)
         time = swp.time
-        forwards.append(fwr(tx, rx, time, wv, fc, tolerance=1e-6))
+        forwards.append(fwr(tx, rx, time, wv, None, tolerance=1e-5))
     return forwards
 
 def sweep2dataframes(sweeps):

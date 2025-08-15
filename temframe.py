@@ -11,7 +11,7 @@ def silence(s):
     pass
 
 from anemone.inversion import LogResistivity
-from anemone.inversion import fastJac
+from anemone.inversion import fastJac, SCI
 
 class TEMframe(DataFrame):
     forward_operators = []
@@ -190,7 +190,7 @@ class TEMframe(DataFrame):
         finally:
             self.track_history = original
 
-    def invert(self, res_start, vc=0.4, hc=0.4, max_iterations=50):
+    def invert_individually(self, res_start, vc=0.4, hc=0.4, max_iterations=50):
 #        res_start = LogResistivity.smooth(torch.ones(31)*40., torch.logspace(0, 2.1, 30))
         self._record_op()
         current_history = self.history.copy()
@@ -250,6 +250,117 @@ class TEMframe(DataFrame):
                 row_meta['resistivity'] = rho.detach().cpu().numpy().tolist()
                 row_meta['thickness'] = thick.detach().cpu().numpy().tolist()
                 results.append(row_meta.to_dict())
+                print(f'{i+1:02d} of {len(pivot_multi):02d}', flush=True, end='\r')
+
+            df_resmod = pd.DataFrame(results)
+
+            rows = []
+            for _, row in df_resmod.iterrows():
+                site_id = row['site_id']
+                resistivities = row['resistivity']
+                thicknesses = row['thickness']
+                tops = np.concatenate([[0], np.cumsum(thicknesses)[:-1]])
+                bottoms = np.cumsum(thicknesses)
+                for i, (rho, top, bottom) in enumerate(zip(resistivities, tops, bottoms)):
+                    rows.append({
+                        'site_id': site_id,
+                        'daytime': row['daytime'],
+                        'date': row['date'],
+                        'latitude': row['latitude'],
+                        'longitude': row['longitude'],
+                        'elevation': row['elevation'],
+                        'layer': i,
+                        'resistivity': rho,
+                        'top_depth': top,
+                        'bottom_depth': bottom,
+                        'center_depth': (top + bottom) / 2
+                    })
+
+            df_layers = TEMframe(rows, history=current_history.copy())
+        self.history = current_history[:-1]
+        return df_layers, df_data
+    
+    def invert(self, res_start, vc=0.4, hc=0.4, max_iterations=50):
+#        res_start = LogResistivity.smooth(torch.ones(31)*40., torch.logspace(0, 2.1, 30))
+        self._record_op()
+        current_history = self.history.copy()
+
+        self.forward_operators[0].source     = self.forward_operators[1].source
+        self.forward_operators[0].receiver   = self.forward_operators[1].receiver
+        self.forward_operators[0].filterfunc = self.forward_operators[1].filterfunc
+
+        dmfwr = self.forward_operators[0]+self.forward_operators[1]
+
+        with self._skip_tracking():
+            df_data = self.copy()
+            df_overview = df_data.overview()
+
+
+            # this gives a warning and may need to updated if pandas is updated to pandas 3.0
+            df_data['include'] = df_data['inuse_manual'].fillna(df_data['inuse_auto'])
+
+            df_data['dbdt_syn'] = df_data['dbdt']*np.nan
+            pivot_multi = df_data[(df_data['site_id']>-1)*(df_data['gate_id']>-1)].pivot_table(
+                index=['site_id'],
+                columns=['sys_gate'],
+                values=['dbdt', 'error', 'include', 'data_id'],
+            )
+            
+            pivot_multi.columns = [f'{val}_{col}' for val, col in pivot_multi.columns]
+
+            assert len(pivot_multi) == len(df_overview), "Expected 4 columns in pivot_multi"
+
+            pivot_multi.sort_values(by='site_id', inplace=True)
+            df_overview.sort_values(by='site_id', inplace=True)        
+
+            results  = []
+            inv_list = []
+
+            for i,((id_row, row), (id_meta, row_meta)) in enumerate(zip(pivot_multi.iterrows(), df_overview.iterrows())):
+                assert id_meta == id_row, "Site ID mismatch between row and metadata"
+
+                dbdt_values  = row.filter(like='dbdt_').values
+                error_values = row.filter(like='error_').values
+                include_values = row.filter(like='include_').values
+                data_id = row.filter(like='data_id_').values
+
+                d_obs = torch.from_numpy(dbdt_values).abs().log10()
+                d_err = torch.from_numpy(np.log10(1. + error_values/100.))
+                include_mask = include_values.astype(bool)
+                d_err[~include_mask] = torch.inf  # Set error to zero for included measurements
+
+                inv = fastJac(d_obs, d_err, res_start, dmfwr, logger=silence)
+                inv.setup_matrices()
+                inv_list.append(inv)
+
+            import utm
+            utmx,utmy,zone_number,zone_letter = utm.from_latlon(df_overview['latitude'].values, df_overview['longitude'].values)
+            df_overview['utm_x'] = utmx
+            df_overview['utm_y'] = utmy
+            df_overview['zone_number'] = zone_number
+            df_overview['zone_letter'] = zone_letter
+
+            inv = SCI(inv_list, x= df_overview['utm_x'].values, y=df_overview['utm_y'].values)
+            inv.data_misfit_acceptance_threshold = 0.95
+            inv.smoothness_vert = 0.3
+            inv.smoothness_lat = 0.3
+            res_mods = inv.invert(iter_cap=10)
+
+            for i,((id_row, row), (id_meta, row_meta)) in enumerate(zip(pivot_multi.iterrows(), df_overview.iterrows())):
+                assert id_meta == id_row, "Site ID mismatch between row and metadata"
+
+                data_id = row.filter(like='data_id_').values    
+                res_mod = res_mods[i].copy()
+
+                d_syn = 10**inv_list[i].forward(*res_mod.mod)
+                df_data.loc[data_id, 'dbdt_syn'] = d_syn.numpy()
+
+                rho,thick = res_mod.mod
+                row_meta['site_id'] = id_meta
+                row_meta['resistivity'] = rho.detach().cpu().numpy().tolist()
+                row_meta['thickness'] = thick.detach().cpu().numpy().tolist()
+                results.append(row_meta.to_dict())
+                print(f'Inversion for data_id {i:02d} completed.')
 
             df_resmod = pd.DataFrame(results)
 

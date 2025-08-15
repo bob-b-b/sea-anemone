@@ -12,13 +12,19 @@ app = Dash(__name__, suppress_callback_exceptions=True, assets_folder='assets', 
 app.title = "sea anemone"
 
 import os
-usf_parent_folder = "O:/Nat-Tech_HGG-Projects/Projects/2025_RGRMP/Pilots/DireDawa/Data/profiler_usf/"
-usf_folders = [usf_parent_folder+folder+'/' for folder in os.listdir(usf_parent_folder) if os.path.isdir(os.path.join(usf_parent_folder, folder)) and folder.startswith("USF")]
 
-df_data = TEMframe.from_usf_folder(usf_folders[0])
+global TABLES
+
+df_data = TEMframe.from_usf_folder('/home/matt/geophysics_data/TEM/sTEM_data/2025_0302/USF_Files_dawa river 3/')
 df_overview = df_data.overview()
 df_mods = None
-# df_mods,df_data = df_data.invert()
+
+TABLES = {
+    'data': df_data,
+    'overview': df_overview,
+    'models': df_mods
+}
+
 
 
 
@@ -273,36 +279,6 @@ def handle_map_interactions(relayout_data, selected_data):
 
 from dash import Input, Output, State, html, dcc, ctx
 
-# app.clientside_callback(
-#     """
-#         function(id) {
-#             document.addEventListener("keydown", function(event) {
-#                 if (event.ctrlKey) {
-#                     if (event.key == 'd') {
-#                         document.getElementById('disableButton').click()
-#                         event.stopPropagation()
-#                     }
-#                     if (event.key == 'e') {
-#                         document.getElementById('enableButton').click()
-#                         event.stopPropagation()
-#                     }
-#                     if (event.key == 'ArrowLeft') {
-#                         document.getElementById('highlight_prev').click()
-#                         event.stopPropagation()
-#                     }
-#                     if (event.key == 'ArrowRight') {
-#                         document.getElementById('highlight_next').click()
-#                         event.stopPropagation()
-#                     }   
-#                 }
-#             });
-#             return window.dash_clientside.no_update       
-#         }
-#     """,
-#     Output("disableButton", "id"),
-#     Input("disableButton", "id")
-# )
-
 app.clientside_callback(
     """
         function(id) {
@@ -483,7 +459,9 @@ def cross_panel_click(model_click, ttem_click, map_click):
 
 
 @app.callback(
-    Output('starting_model', 'figure', allow_duplicate=True),
+    [Output('starting_model', 'figure', allow_duplicate=True),
+     Output('model_section', 'figure', allow_duplicate=True),
+     Output('model_graph', 'figure', allow_duplicate=True)],
     Input('invert_all_button', 'n_clicks'),
     prevent_initial_call=True
 )
@@ -494,10 +472,10 @@ def launch_inversion(n_clicks):
         z   = from_numpy(stmod.dataframe['depth'].values[:-1])
 
         res_start = LogResistivity.smooth(rho,z) 
-        df_mods, _ = df_data.invert(res_start)
-        mod1.dataframe = df_mods
-        mod2.dataframe = df_mods
-    return stmod.misfit_render()
+        TABLES['models'], TABLES['data'] = TABLES['data'].invert(res_start)
+        mod1.dataframe = TABLES['models']
+        mod2.dataframe = TABLES['models']
+    return stmod.misfit_render(), mod2.render(), mod1.render()
 
 try:
 
