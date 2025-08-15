@@ -9,10 +9,9 @@ from dataclasses_jsonschema import JsonSchemaMixin
 
 import tkinter as tk
 from tkinter import filedialog
-
 import plotly.express as px
-import plotly.graph_objects as go
-import numpy as np
+
+
 
 
 def gear_maker(id):
@@ -99,13 +98,11 @@ class PanelSettings:
     def special_renders(self):
         color_check = lambda key,prop: 'color' in key.lower()
         def color_render(key, prop):
-            import dash_daq as daq
-            return daq.ColorPicker(
-                id={'type': f'settings-{self.id}', 'key': key},
-                label=key.lower(),
-                value={'hex': eval(f'self.{key}')},
-                size=164,
-                style={'margin': '5px'}
+            return dbc.Input(
+                type='color',
+                id=f'settings-{self.id}-{key}',
+                value=eval(f'self.{key}'),
+                style={'width':'50px', 'height':'30px'}
             )
         enum_check = lambda key, prop: 'enum' in prop
         def enum_render(key, prop):
@@ -331,8 +328,11 @@ class Panel:
                                    style={'height':'98%', 'width': '98%', 'align': 'center'}),
                          gear_maker(self.id)],
                         style={'height': '100%'})
-                         
-    
+
+    def empty_render(self):
+        fig = px.scatter(title='No data available', labels={'x': 'X-axis', 'y': 'Y-axis'})
+        return fig
+
     def to_nodes(self):
         return [dfl.Tab(id=f'tab-{self.id}', children=[self.initialize()]), self.settings.node()]
     

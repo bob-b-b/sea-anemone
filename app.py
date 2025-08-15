@@ -1,73 +1,52 @@
 from panels import *
-# from database_panel_simple import create_database_panel
+
 from dash import dcc
-import pandas as pd
-import dash_mantine_components as dmc
 from dash import Dash, callback_context
 from dash.exceptions import PreventUpdate
 import dash_bootstrap_components as dbc
+
+from temframe import TEMframe
 
 external_stylesheets = [dbc.themes.BOOTSTRAP]
 app = Dash(__name__, suppress_callback_exceptions=True, assets_folder='assets',  external_stylesheets=external_stylesheets)
 app.title = "sea anemone"
 
+import os
+usf_parent_folder = "O:/Nat-Tech_HGG-Projects/Projects/2025_RGRMP/Pilots/DireDawa/Data/profiler_usf/"
+usf_folders = [usf_parent_folder+folder+'/' for folder in os.listdir(usf_parent_folder) if os.path.isdir(os.path.join(usf_parent_folder, folder)) and folder.startswith("USF")]
+
+df_data = TEMframe.from_usf_folder(usf_folders[0])
+df_overview = df_data.overview()
+df_mods = None
+# df_mods,df_data = df_data.invert()
 
 
-df_res = pd.read_csv('./prototyping/inversion_results.csv', index_col=0)
-print(df_res.columns)
-df_mod = pd.read_csv('./prototyping/inversion_results_models.csv')
-
-df_overview = df_res.pivot_table(
-    index=['site_id'],
-    values=['date', 'daytime', 'latitude', 'longitude', 'elevation'],
-    aggfunc='first'
-)
-df_overview['site_id'] = df_overview.index
-
-def calculate_inuse(inuse_auto, inuse_manual):
-    # inuse = inuse_auto.copy()
-    # inuse[inuse_manual.notna()] = inuse_manual[inuse_manual.notna()]
-    return inuse_manual.fillna(inuse_auto)
-
-df_res['include'] = calculate_inuse(df_res['inuse_auto'], df_res['inuse_manual'])
 
 m1 = Map(data=df_overview)
-dbdt1 = dbdtSounding(dataframe=df_res)
-dbdt2 = dbdtSection(dataframe=df_res)
-
-m1.highlighted = 16
+dbdt1 = dbdtSounding(dataframe=df_data)
+dbdt2 = dbdtSection(dataframe=df_data)
 
 u1 = Upload()
-
 t1 = Table(df_overview, id='table_overview')
 
-pivot = df_res.pivot_table(
-    index=['site_id'],
-    columns='sys_gate',
-    values='dbdt'
-)
 
+mod1 = ModelGraph(   dataframe=df_mods )
+mod2 = ModelSection( dataframe=df_mods )
 
-
-t2 = Table(pivot, id='table_dbdt')
-
-# Create database panel
-# db1 = create_database_panel()
-
-mod1 = ModelGraph(dataframe=df_mod)
-mod2 = ModelSection(dataframe=df_mod)
 
 x = html.Div([
-      dcc.Markdown(children='## buttons and hot keys'),
-      html.Button("disable [ctrl+d]", id='disableButton'),
-      html.Button("enable  [ctrl+e]", id='enableButton'),
+      dcc.Markdown(children='### buttons and hot keys'),
+      dbc.Button("disable [ctrl+d]", id='disableButton'),
+      dbc.Button("enable  [ctrl+e]", id='enableButton'),
+      dbc.Button("previous [<-]", id='highlight_prev'),
+      dbc.Button("next [->]", id='highlight_next'),
     ]
 , id='processing_buttons')
 
 
 stmod = StartingModel.standard()
 
-panels = [u1, m1, dbdt1, t1, t2, dbdt2, mod1, mod2, stmod]
+panels = [u1, m1, dbdt1, t1, dbdt2, mod1, mod2, stmod]
 nodes = [node for panel in panels for node in panel.to_nodes()]+[dfl.Tab(id=f'tab-processing_buttons', children=[x]), dfl.Tab(id='tab-panel_list', children=[panel_list])]
 
 
@@ -139,7 +118,7 @@ config = {
     {
       "type": "border",
       "selected": 0,
-      "size": 200,
+      "size": 100,
       "location": "bottom",
       "children": [
         {
@@ -175,14 +154,14 @@ config = {
             "children": [
                 {
                     "type": "tab",
-                    "id": "tab-model_section",
-                    "name": "model section"
+                    "id": "tab-model_graph",
+                    "name": "models"
                 },
                 {
                     "type": "tab",
-                    "id": "tab-model_graph",
-                    "name": "models"
-                }
+                    "id": "tab-model_section",
+                    "name": "model section"
+                },
               ]          
           },
           {
@@ -280,29 +259,85 @@ def handle_map_interactions(relayout_data, selected_data):
         raise PreventUpdate
     
     # Update dataframes with selected sites
-    new_df = df_res[df_res['site_id'].isin(selected_sites)]
+    new_df = df_data[df_data['site_id'].isin(selected_sites)]
     dbdt1.dataframe = new_df
     dbdt2.dataframe = new_df
-    new_mod = df_mod[df_mod['site_id'].isin(selected_sites)]
+    new_mod = df_mods[df_mods['site_id'].isin(selected_sites)]
+    mod1.highlighted = None
     mod1.dataframe = new_mod 
     mod2.dataframe = new_mod
+
     
     return dbdt1.render(), dbdt2.render(), mod1.render(), mod2.render()
 
 
 from dash import Input, Output, State, html, dcc, ctx
 
+# app.clientside_callback(
+#     """
+#         function(id) {
+#             document.addEventListener("keydown", function(event) {
+#                 if (event.ctrlKey) {
+#                     if (event.key == 'd') {
+#                         document.getElementById('disableButton').click()
+#                         event.stopPropagation()
+#                     }
+#                     if (event.key == 'e') {
+#                         document.getElementById('enableButton').click()
+#                         event.stopPropagation()
+#                     }
+#                     if (event.key == 'ArrowLeft') {
+#                         document.getElementById('highlight_prev').click()
+#                         event.stopPropagation()
+#                     }
+#                     if (event.key == 'ArrowRight') {
+#                         document.getElementById('highlight_next').click()
+#                         event.stopPropagation()
+#                     }   
+#                 }
+#             });
+#             return window.dash_clientside.no_update       
+#         }
+#     """,
+#     Output("disableButton", "id"),
+#     Input("disableButton", "id")
+# )
+
 app.clientside_callback(
     """
         function(id) {
             document.addEventListener("keydown", function(event) {
+                // Check if focus is on an input element
+                const activeElement = document.activeElement;
+                const isInputFocused = activeElement && (
+                    activeElement.tagName === 'INPUT' || 
+                    activeElement.tagName === 'TEXTAREA' || 
+                    activeElement.contentEditable === 'true'
+                );
+                
                 if (event.ctrlKey) {
                     if (event.key == 'd') {
                         document.getElementById('disableButton').click()
+                        event.preventDefault()
                         event.stopPropagation()
                     }
                     if (event.key == 'e') {
                         document.getElementById('enableButton').click()
+                        event.preventDefault()
+                        event.stopPropagation()
+                    }
+                }
+                
+                // Arrow keys without Ctrl, but only if not typing in an input
+                if (!isInputFocused) {
+                    if (event.key == 'left') {
+                        document.getElementById('highlight_prev').click()
+                        event.preventDefault()
+                        event.stopPropagation()
+                    }
+                    if (event.key == 'right') {
+                        document.getElementById('highlight_next').click()
+                        event.preventDefault()
                         event.stopPropagation()
                     }
                 }
@@ -313,6 +348,7 @@ app.clientside_callback(
     Output("disableButton", "id"),
     Input("disableButton", "id")
 )
+
 
 @app.callback(
     [
@@ -340,28 +376,44 @@ def show_value(n1, n2, ttem_selected, sounding_selected):
     else:
         raise PreventUpdate
     
-    df_res.loc[df_res['data_id'].isin(data_ids), 'inuse_manual'] = inuse
-    df_res['include'] = calculate_inuse(df_res['inuse_auto'], df_res['inuse_manual'])
-    dbdt1.dataframe = df_res[df_res['site_id'].isin(dbdt1.dataframe['site_id'].unique())]
-    dbdt2.dataframe = df_res[df_res['site_id'].isin(dbdt2.dataframe['site_id'].unique())]
+    df_data.loc[df_data['data_id'].isin(data_ids), 'inuse_manual'] = inuse
+    df_data['include'] = df_data['inuse_manual'].fillna(df_data['inuse_auto'])
+    dbdt1.dataframe = df_data[df_data['site_id'].isin(dbdt1.dataframe['site_id'].unique())]
+    dbdt2.dataframe = df_data[df_data['site_id'].isin(dbdt2.dataframe['site_id'].unique())]
 
     return ctx.triggered_id, dbdt2.render(), dbdt1.render()
 
-# @app.callback(
-#     Output('flex-layout', 'id', allow_duplicate=True),  # Dummy output since we just want to print
-#     Input('flex-layout', 'model'),
-#     prevent_initial_call=True
-# )
-# def print_layout_changes(layout_model):
-#     """Print the layout configuration whenever it changes"""
-#     import json
-#     print("\n" + "="*50)
-#     print("LAYOUT CHANGED:")
-#     print("="*50)
-#     print(json.dumps(layout_model, indent=2))
-#     print("="*50 + "\n")
-    
-    return 'flex-layout'
+@app.callback(
+    [
+        Output("output-click", "children", allow_duplicate=True),
+        Output('map', 'figure', allow_duplicate=True),
+        Output('model_graph', 'figure', allow_duplicate=True),
+        Output('sounding', 'figure', allow_duplicate=True)],
+    Input('highlight_prev', 'n_clicks'),
+    Input('highlight_next', 'n_clicks'),
+    prevent_initial_call=True,
+    allow_duplicate=True
+)
+def highlight_change(n1, n2):
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
+    highlighted = m1.highlighted
+    if trigger_id == 'highlight_prev':
+        highlight_change = -1
+    elif trigger_id == 'highlight_next':
+        highlight_change = 1
+    if highlighted is None:
+        highlighted = 0
+    else:
+        highlighted += highlight_change
+    m1.highlighted = highlighted
+    mod1.highlighted = highlighted
+    dbdt1.dataframe = df_data[df_data['site_id'] == highlighted]
+
+    return ctx.triggered_id, m1.render(), mod1.render(), dbdt1.render()
 
 @app.callback(
     Output('map', 'figure', allow_duplicate=True),
@@ -390,6 +442,62 @@ def cross_panel_hover(sounding_hover, ttem_hover):
         m1.highlighted = site_id
 
     return m1.render()
+
+@app.callback(
+    Output('map', 'figure', allow_duplicate=True),
+    Output('model_graph', 'figure', allow_duplicate=True),
+    Output('sounding', 'figure', allow_duplicate=True),
+    [
+        Input('model_section', 'clickData'),
+        Input('tTEM', 'clickData'),
+        Input('map', 'clickData')
+    ],
+    prevent_initial_call="initial_duplicate",
+    allow_duplicate=True
+)
+def cross_panel_click(model_click, ttem_click, map_click):
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+    click_data = ctx.triggered[0]['value']
+    if not click_data or 'points' not in click_data:
+        raise PreventUpdate
+    if trigger_id == 'tTEM':
+        x_value = click_data['points'][0]['x']
+        site_id = dbdt2.dataframe.query(f'{dbdt2.settings.x_axis} == @x_value')['site_id'].iloc[0]
+    elif trigger_id == 'model_section':
+        x_value = click_data['points'][0]['x']
+        site_id = mod2.dataframe.query(f'{mod2.settings.x_axis} == @x_value')['site_id'].iloc[0]
+    elif trigger_id == 'map':
+        site_id = int(click_data['points'][0]['pointNumber'])
+    else:
+        site_id = None
+  
+    m1.highlighted = site_id
+    mod1.highlighted = site_id
+    dbdt1.dataframe = df_data[df_data['site_id'] == site_id]
+
+    return m1.render(), mod1.render(), dbdt1.render()
+
+
+
+@app.callback(
+    Output('starting_model', 'figure', allow_duplicate=True),
+    Input('invert_all_button', 'n_clicks'),
+    prevent_initial_call=True
+)
+def launch_inversion(n_clicks):
+    if n_clicks:
+        from torch import from_numpy
+        rho = from_numpy(stmod.dataframe['resistivity'].values)
+        z   = from_numpy(stmod.dataframe['depth'].values[:-1])
+
+        res_start = LogResistivity.smooth(rho,z) 
+        df_mods, _ = df_data.invert(res_start)
+        mod1.dataframe = df_mods
+        mod2.dataframe = df_mods
+    return stmod.misfit_render()
 
 try:
 

@@ -7,7 +7,9 @@ import numpy as np
 import plotly.io as pio
 
 from typing import Literal
-
+import plotly.express as px
+import plotly.graph_objects as go
+import numpy as np
 
 # Define a custom template
 custom_template = {
@@ -50,16 +52,18 @@ class MapSettings(PanelSettings):
 
 
 class Map(Panel):
-    data: None
+    dataframe: None
     highlighted: int = None
 
     def __init__(self, data, **kwargs):
         settings = MapSettings(id='map', **kwargs)
         super().__init__(id='map', settings=settings)
-        self.data = data
-        
+        self.dataframe = data
+
     def render(self):
-        fig = px.scatter_map(self.data, lat="latitude", lon="longitude", zoom=self.settings.zoom, color_discrete_sequence=[self.settings.color])
+        if self.dataframe is None: return self.empty_render()
+
+        fig = px.scatter_map(self.dataframe, lat="latitude", lon="longitude", zoom=self.settings.zoom, color_discrete_sequence=[self.settings.color])
         fig.update_layout(map_style="white-bg",
             map_layers=[
                 {
@@ -69,7 +73,7 @@ class Map(Panel):
                     "source": ['https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}']
                 }])
         if self.highlighted is not None:
-            highlight_trace = px.scatter_map(self.data[self.data['site_id'] == self.highlighted], lat="latitude", lon="longitude", color_discrete_sequence=[self.settings.highlight_color])
+            highlight_trace = px.scatter_map(self.dataframe[self.dataframe.index == self.highlighted], lat="latitude", lon="longitude", color_discrete_sequence=[self.settings.highlight_color])
             highlight_trace.update_traces(marker=dict(size=14))
             for trace in highlight_trace.data:
                 fig.add_trace(
@@ -217,8 +221,13 @@ class dbdtSounding(Panel):
         return fig    
 
     def render(self):
-        fig = self.compare_synthetic()
-        # fig = self.standard_render()
+        if self.dataframe is None: return self.empty_render()
+
+
+        if 'dbdt_syn' in self.dataframe.columns:
+            fig = self.compare_synthetic()
+        else:
+            fig = self.standard_render()
 
         fig.update_layout(
             yaxis_type="log",
@@ -257,6 +266,7 @@ class rhoaSounding(Panel):
             setattr(self, key, value)
     
     def render(self):
+        if self.dataframe is None: return self.empty_render()
         fig = go.Figure()
         # print(self.lm_data.ndim)
         lm_data = self.lm_data if self.lm_data.ndim > 1 else self.lm_data[np.newaxis,:]
@@ -290,7 +300,7 @@ class dbdtSectionSettings(PanelSettings):
     hm_color: str = '#2D81FF'
     lm_factor: float = 20.0
     hm_factor: float = 1.0
-    x_axis: Literal['daytime', 'site_id', 'longitude', 'latitude'] = 'daytime'  # or 'site_id', 'longitude', 'latitude'
+    x_axis: Literal['daytime', 'site_id', 'longitude', 'latitude'] = 'site_id'#, 'longitude', 'latitude'
     y_axis: str = 'dbdt_syn'
     plot_disabled: bool = True
 
@@ -304,14 +314,14 @@ class dbdtSection(Panel):
             setattr(self, key, value)
     
     def compare_synthetic(self):
-        y_axis                                             = 'dbdt_syn'
+        y_axis                                             = self.settings.y_axis
         df_tmp = self.dataframe[self.dataframe['gate_id']>-1]
         df_tmp                                             = df_tmp.sort_values(['gate_id', self.settings.x_axis])
         df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt_syn']  *= self.settings.lm_factor
         df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
         df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt_syn']  *= self.settings.hm_factor
         df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
-        df_tmp.loc[df_tmp['site_id'] == -1, 'include']  = False
+        df_tmp.loc[df_tmp['site_id'] ==  -1, 'include']  = False
         df_tmp['system_id']                                = df_tmp['system_id'].map({0: 'hm', 1: 'lm'})
 
         error_ub,error_lb = 'error_ub', 'error_lb'
@@ -409,8 +419,12 @@ class dbdtSection(Panel):
         return fig    
 
     def render(self):
-        fig = self.compare_synthetic()
-        # fig = self.standard_render()
+        if self.dataframe is None: return self.empty_render()
+
+        if 'dbdt_syn' in self.dataframe.columns:
+            fig = self.compare_synthetic()
+        else:
+            fig = self.standard_render()
 
         fig.update_layout(
             yaxis_type="log",
@@ -419,7 +433,9 @@ class dbdtSection(Panel):
             margin={"l": 50, "r": 50, "t": 50, "b": 50},
             dragmode='select'
         )
-        return fig    
+        return fig
+
+
 
 
 @dataclass
@@ -547,6 +563,7 @@ class ModelGraphSettings(PanelSettings):
     color_by: Literal['site_id', 'misfit'] = 'site_id'
 
 class ModelGraph(Panel):
+    highlighted=None
     def __init__(self, **kwargs):
         settings = kwargs.pop('settings', ModelGraphSettings(id='model_graph'))
         super().__init__(id='model_graph', settings=settings)
@@ -554,6 +571,7 @@ class ModelGraph(Panel):
             setattr(self, key, value)
     
     def render(self):
+        if self.dataframe is None: return self.empty_render()
         # ...existing code...
         df_layers_long = pd.melt(
             self.dataframe,
@@ -564,20 +582,44 @@ class ModelGraph(Panel):
         ).sort_values(['daytime', 'layer', 'depth'])
 
         df_layers_long = df_layers_long.drop(columns=['depth_type'])
+        if self.highlighted is None:
+            fig = px.line(
+                df_layers_long,
+                x="resistivity",
+                y="depth",
+                color="site_id",
+                labels={
+                    "resistivity": "ρ [Ω·m]",  # Unicode rho
+                    "site_id": "Site ID"
+                },
+                title="Resistivity vs. Depth by Site"
+            )
+        else:
+            fig = go.Figure()
+            df_highlighted = df_layers_long[df_layers_long['site_id'] == self.highlighted]
+            fig.add_trace(
+                go.Scatter(
+                    x=df_highlighted["resistivity"],
+                    y=df_highlighted["depth"],
+                    mode="lines",
+                    line=dict(width=5, color='red'),
+                    zorder=10,
+                    name=f"Site {self.highlighted}"
+                ), 
+            )
+            dmin = df_layers_long['depth'].min()
+            df_layers_long[df_layers_long['depth'] == dmin] = np.nan
+            fig.add_trace(
+                go.Scatter(
+                    x=df_layers_long["resistivity"],
+                    y=df_layers_long["depth"],
+                    mode="lines",
+                    line=dict(color='gray'),
+                    name='All Sites'
+                ), 
+            )
 
-        fig = px.line(
-            df_layers_long,
-            x="resistivity",
-            y="depth",
-            color="site_id",
-            # markers=True,
-            labels={
-                "resistivity": "Resistivity [Ω·m]",
-                "center_depth": "Depth [m]",
-                "site_id": "Site ID"
-            },
-            title="Resistivity vs. Depth by Site"
-        )
+
 
         # Reverse y-axis so depth increases downward
         fig.update_yaxes(autorange="reversed")
@@ -599,33 +641,33 @@ class ModelSection(Panel):
             setattr(self, key, value)
     
     def render(self):
-        # ...existing code...
-        df_layers_long = pd.melt(
-            self.dataframe,
-            id_vars=['site_id', 'daytime', 'longitude', 'latitude', 'date', 'elevation', 'layer', 'resistivity'],
-            value_vars=['top_depth', 'bottom_depth'],
-            var_name='depth_type',
-            value_name='depth'
-        ).sort_values(['daytime', 'layer', 'depth'])
+        if self.dataframe is None: return self.empty_render()
+        with self.dataframe._skip_tracking():
+            df_layers_long = self.dataframe.melt(
+                id_vars=['site_id', 'daytime', 'longitude', 'latitude', 'date', 'elevation', 'layer', 'resistivity'],
+                value_vars=['top_depth', 'bottom_depth'],
+                var_name='depth_type',
+                value_name='depth'
+            ).sort_values(['daytime', 'layer', 'depth'])
 
-        df_layers_long = df_layers_long.drop(columns=['depth_type'])
-        df_layers_long['log_resistivity'] = np.log10(df_layers_long['resistivity'])
+            df_layers_long = df_layers_long.drop(columns=['depth_type'])
+            df_layers_long['log_resistivity'] = np.log10(df_layers_long['resistivity'])
 
-        heatmap_df = df_layers_long.pivot_table(
-            index='depth', columns=self.settings.x_axis, values='log_resistivity'
-        )        
-        heatmap_df = heatmap_df.sort_index(ascending=True)
+            heatmap_df = df_layers_long.pivot_table(
+                index='depth', columns=self.settings.x_axis, values='log_resistivity'
+            )        
+            heatmap_df = heatmap_df.sort_index(ascending=True)
 
-        fig = px.imshow(
-            heatmap_df,
-            aspect='auto',
-            origin='lower',
-            color_continuous_scale='turbo',
-            labels={'x': self.settings.x_axis, 'y': 'Depth [m]', 'color': 'Resistivity [Ω·m]'},
-            title='Resistivity Heatmap by Site and Depth',
-            zmin=heatmap_df.min().min(),
-            zmax=heatmap_df.max().max(),
-        )
+            fig = px.imshow(
+                heatmap_df,
+                aspect='auto',
+                origin='lower',
+                color_continuous_scale='turbo',
+                labels={'x': self.settings.x_axis, 'y': 'Depth [m]', 'color': 'Resistivity [Ω·m]'},
+                title='Resistivity Heatmap by Site and Depth',
+                zmin=heatmap_df.min().min(),
+                zmax=heatmap_df.max().max(),
+            )
         fig.update_layout(hovermode="x")
         fig.update_yaxes(autorange="reversed")
         return fig
@@ -652,19 +694,28 @@ import dash_bootstrap_components as dbc
 class StartingModelSettings(PanelSettings):
     line_color: str='#ff0000'
 
+from anemone.inversion import LogResistivity
 
 class StartingModel(ModelGraph):
     starting_rho: float = 40.0
+    misfit = None
     def __init__(self, data, **kwargs):
         starting_model = kwargs.pop('starting_rho', 40.0)
         settings = StartingModelSettings(id='starting_model', **kwargs)
         super().__init__(id='starting_model', settings=settings, starting_rho=starting_model)
-        self.data = data
+        self.dataframe = data
+
+    def misfit_render(self):
+        fig = px.line(self.misfit)
+        return fig
+
 
     def render(self):
+        if len(self.misfit) > 0: return self.misfit_render()
+
         # fig = make_subplots(rows=1, cols=2, shared_yaxes=True)
         # Add the step plot for resistivity
-        fig = px.line(self.data,
+        fig = px.line(self.dataframe,
             x='resistivity',
             y='depth',
             markers=True,
@@ -674,7 +725,7 @@ class StartingModel(ModelGraph):
         )
         
         for i in [0.5, 1, 2]:
-            z = self.data['depth']
+            z = self.dataframe['depth']
             y = 10+90*(1 / (1 + np.exp(-20.*(z-150)/z.max())))**i
             fig.add_scatter(x=y, y=z, line=dict(color='grey'))#, row=1, col=2)
 
@@ -691,7 +742,7 @@ class StartingModel(ModelGraph):
             modebar=dict(remove=['toImage', 'zoom', 'zoomIn', 'zoomOut', 'pan', 'select']),
         )
         fig.add_shape(type='line', x0=self.starting_rho, x1=self.starting_rho,
-                      y0=self.data['depth'].min(), y1=self.data['depth'].max(), 
+                      y0=self.dataframe['depth'].min(), y1=self.dataframe['depth'].max(),
                       xref='x1', yref='y1',
                       line=dict(color=self.settings.line_color, dash='dash'),
                       editable=True)
@@ -713,8 +764,12 @@ class StartingModel(ModelGraph):
                         dcc.Graph(figure=self.render(), id=self.id, mathjax=True, 
                                     config=dict(edits={'shapePosition':True}, displayModeBar=False)),
                             width=10),
-                    dbc.Col(html.Button("invert", id='invertButton'), width=2)
-                ], style={'height':'100%'})], style={'height':'100%', 'padding':'25px'}),
+                    dbc.Col([dbc.Button("invert all", id='invert_all_button', style={'width':'100%'}),
+                             html.Div(style={'height':'10px'}),
+                             dbc.Button("invert selected", id='invert_selected_button', style={'width':'100%'})] , width=2),
+                             dbc.Tooltip('The sounding panel shows the selected data', target='invert_selected_button')
+                    # dbc.Col(html.Button("invert selected", id='invert_selected_button'), width=1)
+                ], style={'height':'100%'})], style={'height':'95%', 'padding':'25px'}),
                  gear_maker(self.id)], style={'height': '100%', 'overflow': 'hidden'},
                   )
         return init
@@ -730,9 +785,10 @@ class StartingModel(ModelGraph):
         )
         def update_starting_model(relayoutData):
             self.starting_rho = int(relayoutData.get('shapes[0].x0', self.starting_rho))
-            self.data['resistivity'] = self.starting_rho
+            self.dataframe['resistivity'] = self.starting_rho
             return self.render()
         
+
     @classmethod
     def standard(cls, rho=40.):
         df = pd.DataFrame({
