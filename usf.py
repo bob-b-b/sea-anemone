@@ -49,7 +49,8 @@ class Sweep:
         """parse a sweep block, will return the next sweep"""
         sweep = {}
         sweep_extra = {}
-        lines = txt.lower().split('\n')
+        lines = txt.lower().strip().split('\n')
+        lines  = [line.strip() for line in lines]
         i_head = lines.index('/end')
         for line in lines[:i_head]:
             i_colon = line.index(':')
@@ -101,16 +102,24 @@ class Sweep:
     
     @classmethod
     def from_usf(cls, fname, combine=True):
-        """parse a usf file, will return """
         with open(fname, 'r') as f:
-            txt = f.read()
-            header = txt[txt.index('/DATE:'):txt.index('/VOLTAGE_UNITS:')].replace('//END', '')
-            sweeps = []
-            count = 0
-            while '/SWEEP_NUMBER' in txt:
-                i = txt.index('/SWEEP_NUMBER:')
-                sweeps.append(Sweep.from_usf_text(header+txt[i:]))
-                txt = txt[i+1:]
+            sweep = cls.from_buffer(f, combine=combine)
+        return sweep
+
+    @classmethod
+    def from_buffer(cls, f, combine=True):
+        """parse a usf file, will return """
+        #with open(fname, 'r') as f:
+
+        txt = f.read().decode('utf-8')
+        
+        header = txt[txt.index('/DATE:'):txt.index('/VOLTAGE_UNITS:')].replace('//END', '')
+        sweeps = []
+        count = 0
+        while '/SWEEP_NUMBER' in txt:
+            i = txt.index('/SWEEP_NUMBER:')
+            sweeps.append(Sweep.from_usf_text(header+txt[i:]))
+            txt = txt[i+1:]
 
         if combine:
             points = set([x.points for x in sweeps])
@@ -163,7 +172,7 @@ def sweep2fwr(sweeps, fwr=logForward):
             filter_chain.append(ButterworthFilter(f_cut))
         fc = FilterChain(filter_chain)
         time = swp.time
-        forwards.append(fwr(tx, rx, time, wv, None, tolerance=1e-5))
+        forwards.append(fwr(tx, rx, time, wv, None, tolerance=1e-6))
     return forwards
 
 def sweep2dataframes(sweeps):

@@ -15,9 +15,22 @@ import os
 
 global TABLES
 
-df_data = TEMframe.from_usf_folder('/home/matt/geophysics_data/TEM/sTEM_data/2025_0302/USF_Files_dawa river 3/')
+# df_data = TEMframe.from_usf_folder('/home/matt/geophysics_data/TEM/sTEM_data/2025_0302/USF_Files_dawa river 3/')
+df_data = TEMframe.from_usf_folder('C:/Users/au646858/Downloads/USF_Files_dawa river/')
+import pandas
+
+history = ['df_data = TEMframe.from_usf_folder("C:/Users/au646858/Downloads/USF_Files_dawa river/")',
+ 'df_mods, df_data2 = df_data.invert(res_start, max_iterations=20)']
+
+# df_data = TEMframe(pandas.read_csv('dawa_river_data.csv'),   history=history)
+# df_mods = TEMframe(pandas.read_csv('dawa_river_models.csv'), history=history)
 df_overview = df_data.overview()
+
+
+# df_data = None
 df_mods = None
+# df_overview = None
+
 
 TABLES = {
     'data': df_data,
@@ -50,150 +63,14 @@ x = html.Div([
 , id='processing_buttons')
 
 
-stmod = StartingModel.standard()
+stmod = StartingModel.standard(rho=10.)
 
 panels = [u1, m1, dbdt1, t1, dbdt2, mod1, mod2, stmod]
 nodes = [node for panel in panels for node in panel.to_nodes()]+[dfl.Tab(id=f'tab-processing_buttons', children=[x]), dfl.Tab(id='tab-panel_list', children=[panel_list])]
 
 
-# config = {
-#     "global": {"tabEnableClose": True, "tabEnableFloat": True},
-#     "borders": [
-#         {"type": "border", "location": "right", "size": 200, "children": [                    
-#                     {
-#                         "type": "tab",
-#                         "name": "One",
-#                         "component": "text",
-#                         "id": "side-1",
-#                         "tabEnableClose": False,
-#                     },
-#         ]},
-#     ],
-#     "layout": {
-#         "type": "column",
-#         "weight": 100,
-#         "children": [{
-#             'type': 'row',
-#             "weight": 100,
-#             "children": [{
-#                 "type": "tabset",
-#                 "weight": 50,
-#                 "children": [
-#                     m1.layout_dict,
-#                 ],
-#             }]},
-#             {
-#                 'type': 'row',
-#                 "weight": 100,
-#                 "children": [{
-#                     "type": "tabset",
-#                     "weight": 50,
-#                     "children": [
-#                         dbdt2.layout_dict,
-#                         dbdt1.layout_dict,
-#                     ],
-#                 }]
-#             }
-#         ],
-#     },
-# }
-
-
-config = {
-  "global": {
-    "tabEnableFloat":  False,
-    "tabEnableClose":  True,
-    "tabEnableDrag":   True,
-    "tabEnableResize": True,
-
-  },
-  "borders": [
-    {
-      "type": "border",
-      "size": 200,
-      "location": "left",
-      "children": [
-        {
-          "type": "tab",
-          "id": "tab-panel_list",
-          "name": "Panels",
-          "component": "text"
-        }
-      ]
-    },
-    {
-      "type": "border",
-      "selected": 0,
-      "size": 100,
-      "location": "bottom",
-      "children": [
-        {
-          "type": "tab",
-          "id": "tab-processing_buttons",
-          "name": "buttons",
-        }
-      ],
-      "active": True
-    }    
-  ],
-  "layout": {
-    "type": "column",
-    "id": "#862b2fc6-2ef4-4251-a485-e158ed2bf975",
-    "children": [
-      {
-        "type": "row",
-        "id": "#f38c40d3-e354-4752-8bd8-0f924591ece9",
-        "children": [
-          {
-            "type": "tabset",
-            "id": "#328817bb-4e54-448e-887f-00356fda1ff9",
-            "weight": 50,
-            "children": [
-              m1.layout_dict,
-              u1.layout_dict,              
-            ],
-          },
-          {
-            "type": "tabset",
-            "id": "#b0c1f8d2-3e4a-4c5b-9f6d-7e8f9a0b1c2d",
-            "weight": 50,
-            "children": [
-                {
-                    "type": "tab",
-                    "id": "tab-model_graph",
-                    "name": "models"
-                },
-                {
-                    "type": "tab",
-                    "id": "tab-model_section",
-                    "name": "model section"
-                },
-              ]          
-          },
-          {
-            "type": "tabset",
-            "id": "#6d729cf5-699f-4fad-bdcb-a1bd30574355",
-            "weight": 50,
-            "children": [
-              stmod.layout_dict,
-              {
-                "type": "tab",
-                "id": "tab-sounding",
-                "name": "sounding"
-              },
-              {
-                "type": "tab",
-                "id": "tab-tTEM",
-                "name": "ttem"
-              },
-              
-            ]
-          }
-        ]
-      }
-    ]
-  }
-}
+config = {'global': {}, 
+          'borders': [{'type': 'border', 'size': 200, 'location': 'left', 'children': [{'type': 'tab', 'id': 'tab-panel_list', 'name': 'Panels', 'component': 'text'}]}, {'type': 'border', 'selected': 0, 'size': 100, 'location': 'bottom', 'children': [{'type': 'tab', 'id': 'tab-processing_buttons', 'name': 'buttons'}]}], 'layout': {'type': 'column', 'id': '#862b2fc6-2ef4-4251-a485-e158ed2bf975', 'children': [{'type': 'row', 'id': '#f38c40d3-e354-4752-8bd8-0f924591ece9', 'children': [{'type': 'row', 'id': '#08653c5d-d61d-4327-b886-4f317211fdfe', 'weight': 32.81616953938199, 'children': [{'type': 'tabset', 'id': '#328817bb-4e54-448e-887f-00356fda1ff9', 'weight': 31.43338620142744, 'selected': 1, 'children': [{'type': 'tab', 'id': 'tab-map', 'name': 'map'}, {'type': 'tab', 'id': 'tab-upload', 'name': 'upload'}], 'active': True, 'maximized': True}, {'type': 'tabset', 'id': '#d8d4e938-96d7-478a-8393-66687d22af08', 'weight': 38.105784067666576, 'children': [{'type': 'tab', 'id': 'tab-sounding', 'name': 'sounding'}]}, {'type': 'tabset', 'id': '#7592b363-bc0a-4d12-a473-0a6659bb4f21', 'weight': 30.46082973090599, 'children': [{'type': 'tab', 'id': 'tab-starting_model', 'name': 'starting_model'}]}]}, {'type': 'tabset', 'id': '#66b4df30-1c51-4f0a-a07e-11450466c7b9', 'weight': 36.79929156680697, 'children': [{'type': 'tab', 'id': 'tab-tTEM', 'name': 'ttem'}]}, {'type': 'tabset', 'id': '#b0c1f8d2-3e4a-4c5b-9f6d-7e8f9a0b1c2d', 'weight': 30.384538893811026, 'children': [{'type': 'tab', 'id': 'tab-model_section', 'name': 'model section'}]}]}]}}
 
 app.layout = html.Div([
     dcc.Location(id='url', refresh=False),
@@ -263,7 +140,10 @@ def handle_map_interactions(relayout_data, selected_data):
     # If no sites selected, don't update
     if not selected_sites:
         raise PreventUpdate
-    
+
+    df_data = TABLES['data']
+    df_mods = TABLES['models']
+
     # Update dataframes with selected sites
     new_df = df_data[df_data['site_id'].isin(selected_sites)]
     dbdt1.dataframe = new_df
@@ -351,6 +231,7 @@ def show_value(n1, n2, ttem_selected, sounding_selected):
         data_ids = [point['customdata'][1] for point in sounding_selected['points'] if 'customdata' in point]
     else:
         raise PreventUpdate
+    df_data = TABLES['data']
     
     df_data.loc[df_data['data_id'].isin(data_ids), 'inuse_manual'] = inuse
     df_data['include'] = df_data['inuse_manual'].fillna(df_data['inuse_auto'])
@@ -461,7 +342,9 @@ def cross_panel_click(model_click, ttem_click, map_click):
 @app.callback(
     [Output('starting_model', 'figure', allow_duplicate=True),
      Output('model_section', 'figure', allow_duplicate=True),
-     Output('model_graph', 'figure', allow_duplicate=True)],
+     Output('model_graph', 'figure', allow_duplicate=True),
+     Output('tTEM', 'figure', allow_duplicate=True),
+     Output('sounding', 'figure', allow_duplicate=True)],
     Input('invert_all_button', 'n_clicks'),
     prevent_initial_call=True
 )
@@ -471,15 +354,57 @@ def launch_inversion(n_clicks):
         rho = from_numpy(stmod.dataframe['resistivity'].values)
         z   = from_numpy(stmod.dataframe['depth'].values[:-1])
 
-        res_start = LogResistivity.smooth(rho,z) 
+        res_start                        = LogResistivity.smooth(rho,z) 
         TABLES['models'], TABLES['data'] = TABLES['data'].invert(res_start)
-        mod1.dataframe = TABLES['models']
-        mod2.dataframe = TABLES['models']
-    return stmod.misfit_render(), mod2.render(), mod1.render()
+        mod1.dataframe                   = TABLES['models']
+        mod2.dataframe                   = TABLES['models']
+        dbdt1.dataframe                  = TABLES['data']
+        dbdt2.dataframe                  = TABLES['data']
+    return stmod.misfit_render(), mod2.render(), mod1.render(), dbdt2.render(), dbdt1.render()
+
+@app.callback(
+    [Output('output-data-upload', 'children'),
+     Output('map', 'figure', allow_duplicate=True),
+     Output('sounding', 'figure', allow_duplicate=True),
+     Output('tTEM', 'figure', allow_duplicate=True),
+     Output('model_graph', 'figure', allow_duplicate=True),
+     Output('model_section', 'figure', allow_duplicate=True)
+    ],
+    Input('upload-data', 'contents'),
+    prevent_initial_call=True
+)
+def upload_file(contents):
+    if contents is None:
+        raise PreventUpdate
+    
+    TABLES['data']            = TEMframe.from_zip(contents[0])
+    TABLES['data'].history    = ['df_data = TEMframe.from_zip("uploaded_data_zip.txt")']
+    TABLES['data']['include'] = TABLES['data']['inuse_manual'].fillna(TABLES['data']['inuse_auto'])
+    TABLES['overview']        = TABLES['data'].overview()
+    TABLES['models']          = None
+
+    dbdt1.dataframe = TABLES['data'].copy()
+    dbdt2.dataframe = TABLES['data'].copy()
+    m1.dataframe    = TABLES['overview']
+    mod1.dataframe  = TABLES['models']
+    mod2.dataframe  = TABLES['models']
+
+
+    return html.Div("File uploaded successfully."), m1.render(), dbdt1.render(), dbdt2.render(), mod1.render(), mod2.render()
+
+@app.callback(
+    Output('map', 'figure', allow_duplicate=True),
+    Input('flex-layout', 'model'),
+    prevent_initial_call=True
+
+)
+def print_flex_layout_model(model):
+    print(f"Flex layout model: {model}")
+    return m1.render()
 
 try:
 
-    app.run(debug=True, port=8050, dev_tools_hot_reload=True)
+    app.run(port=8050, debug=True, dev_tools_hot_reload=True)
 except Exception as e:
     print(f"Error running app: {e}")
 finally:

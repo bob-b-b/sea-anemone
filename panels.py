@@ -114,6 +114,7 @@ class dbdtSounding(Panel):
             setattr(self, key, value)
 
     def compare_synthetic(self):
+
         y_axis                                             = 'dbdt_syn'
 
         df_tmp                                             = self.dataframe.sort_values(['site_id', 'system_id',  self.settings.x_axis])
@@ -178,47 +179,68 @@ class dbdtSounding(Panel):
 
         return fig    
 
-    def standard_render(self):
-        y_axis = 'dbdt'
+    def observed_only(self):
 
-        df_tmp = self.dataframe.sort_values(['gate_id', self.settings.x_axis])
-        df_tmp.loc[df_tmp['system_id'] == 'lm', y_axis] *= self.settings.lm_factor
-        df_tmp.loc[df_tmp['system_id'] == 'hm', y_axis] *= self.settings.hm_factor
+        y_axis                                             = 'dbdt_syn'
 
+        df_tmp                                             = self.dataframe.sort_values(['site_id', 'system_id',  self.settings.x_axis])
+        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
+        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
+        df_tmp.loc[df_tmp['site_id'] == -1, 'include']  = False
 
-        df_tmp.loc[df_tmp['site_id'] == -1, 'inuse_auto'] = False
+        df_tmp['system_id']                                = df_tmp['system_id'].map({1: 'hm', 0: 'lm'})
 
+        error_ub,error_lb = 'error_ub', 'error_lb'
+        # if True:
+        #     error_ub = None
+        #     error_lb = None
         
-        fig = px.line(
+        fig = px.scatter(
             df_tmp,
             x=self.settings.x_axis,
             y='dbdt',
             color_discrete_sequence=["gray", "gray"],
             color="system_id",
-            markers=True,
             title="dbdt vs time by site_id",
-            custom_data=["system_id", "data_id"],
-
+            custom_data=["system_id", "data_id", "site_id"],
+            error_y=error_ub,
+            error_y_minus=error_lb
         )
 
-        df_tmp.loc[df_tmp['site_id'] == -1, 'inuse_auto'] = True
-        df_tmp.loc[(~df_tmp['inuse_auto']), y_axis] = np.nan
+        df_tmp.loc[df_tmp['site_id'] == -1, 'include'] = True
+        df_tmp.loc[(~df_tmp['include']), 'dbdt'] = np.nan
 
-        fig2 = px.line(
+
+        
+        # fig3 = px.scatter(
+        #     df_tmp,
+        #     x=self.settings.x_axis,
+        #     y='dbdt',
+        #     color_discrete_sequence=["black", "black"],
+        #     color="system_id",
+        #     title="dbdt vs time by site_id",
+        #     # custom_data=["system_id", "data_id"],
+        #     error_y=error_ub,
+        #     error_y_minus=error_lb,
+        # )
+
+        fig3 = px.line(
             df_tmp,
             x=self.settings.x_axis,
             y='dbdt',
             color="system_id",
             color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
-            markers=True,
             title="dbdt vs time by site_id",
-            custom_data=["system_id", "data_id"],
+            custom_data=["system_id", "data_id", "site_id"],
         )
 
+        for trace in fig3.data:
+            fig.add_trace(trace)
 
-        for trace in fig2.data:
-            fig.add_trace(trace)    
-        return fig    
+        # for trace in fig2.data:
+        #     fig.add_trace(trace)
+
+        return fig     
 
     def render(self):
         if self.dataframe is None: return self.empty_render()
@@ -227,7 +249,7 @@ class dbdtSounding(Panel):
         if 'dbdt_syn' in self.dataframe.columns:
             fig = self.compare_synthetic()
         else:
-            fig = self.standard_render()
+            fig = self.observed_only()
 
         fig.update_layout(
             yaxis_type="log",
@@ -300,7 +322,7 @@ class dbdtSectionSettings(PanelSettings):
     hm_color: str = '#2D81FF'
     lm_factor: float = 20.0
     hm_factor: float = 1.0
-    x_axis: Literal['daytime', 'site_id', 'longitude', 'latitude'] = 'site_id'#, 'longitude', 'latitude'
+    x_axis: Literal['daytime', 'site_id', 'longitude', 'latitude', 'distance'] = 'site_id'#, 'longitude', 'latitude'
     y_axis: str = 'dbdt_syn'
     plot_disabled: bool = True
 
@@ -377,54 +399,69 @@ class dbdtSection(Panel):
 
         return fig    
 
-    def standard_render(self):
-        y_axis = 'dbdt'
+    def observed_only(self):
+        y_axis                                             = self.settings.y_axis
+        df_tmp = self.dataframe[self.dataframe['gate_id']>-1]
+        df_tmp                                             = df_tmp.sort_values(['gate_id', self.settings.x_axis])
+        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
+        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
+        df_tmp.loc[df_tmp['site_id'] ==  -1, 'include']  = False
+        df_tmp['system_id']                                = df_tmp['system_id'].map({0: 'hm', 1: 'lm'})
 
-        df_tmp = self.dataframe.sort_values(['gate_id', self.settings.x_axis])
-        df_tmp.loc[df_tmp['system_id'] == 'lm', y_axis] *= self.settings.lm_factor
-        df_tmp.loc[df_tmp['system_id'] == 'hm', y_axis] *= self.settings.hm_factor
-
-
-        df_tmp.loc[df_tmp['site_id'] == -1, 'inuse_auto'] = False
-
+        error_ub,error_lb = 'error_ub', 'error_lb'
+        if True:
+            error_ub = None
+            error_lb = None
         
-        fig = px.line(
+        fig = px.scatter(
             df_tmp,
             x=self.settings.x_axis,
-            y=y_axis,
+            y='dbdt',
             color_discrete_sequence=["gray", "gray"],
             color="system_id",
-            markers=True,
             title="dbdt vs time by site_id",
-            custom_data=["system_id", "data_id"],
-
+            custom_data=["system_id", "data_id", "site_id"],
+            error_y=error_ub,
+            error_y_minus=error_lb
         )
 
-        df_tmp.loc[df_tmp['site_id'] == -1, 'inuse_auto'] = True
-        df_tmp.loc[(~df_tmp['inuse_auto']), y_axis] = np.nan
-        fig2 = px.line(
+        df_tmp.loc[df_tmp['site_id'] == -1, 'include'] = True
+        df_tmp.loc[(~df_tmp['include']), 'dbdt'] = np.nan
+        
+        # fig3 = px.scatter(
+        #     df_tmp,
+        #     x=self.settings.x_axis,
+        #     y='dbdt',
+        #     color_discrete_sequence=["black", "black"],
+        #     color="system_id",
+        #     title="dbdt vs time by site_id",
+        #     # custom_data=["system_id", "data_id"],
+        #     error_y=error_ub,
+        #     error_y_minus=error_lb,
+        # )
+        fig3 = px.line(
             df_tmp,
             x=self.settings.x_axis,
-            y=y_axis,
+            y='dbdt',
             color="system_id",
             color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
-            markers=True,
             title="dbdt vs time by site_id",
-            custom_data=["system_id", "data_id"],
-        )
+            custom_data=["system_id", "data_id", "site_id"],
+        )        
 
+        for trace in fig3.data:
+            fig.add_trace(trace)
 
-        for trace in fig2.data:
-            fig.add_trace(trace)    
-        return fig    
+        return fig  
 
     def render(self):
         if self.dataframe is None: return self.empty_render()
 
+
         if 'dbdt_syn' in self.dataframe.columns:
             fig = self.compare_synthetic()
         else:
-            fig = self.standard_render()
+            fig = self.observed_only()
 
         fig.update_layout(
             yaxis_type="log",
@@ -433,9 +470,7 @@ class dbdtSection(Panel):
             margin={"l": 50, "r": 50, "t": 50, "b": 50},
             dragmode='select'
         )
-        return fig
-
-
+        return fig    
 
 
 @dataclass
@@ -631,7 +666,7 @@ class ModelGraph(Panel):
 @dataclass
 class ModelSectionSettings(PanelSettings):
     z: Literal['depth', 'elevation'] = 'depth'
-    x_axis: Literal['daytime', 'site_id', 'longitude', 'latitude'] = 'daytime'
+    x_axis: Literal['daytime', 'site_id', 'longitude', 'latitude', 'distance'] = 'daytime'
 
 class ModelSection(Panel):
     def __init__(self, **kwargs):
@@ -697,10 +732,10 @@ class StartingModelSettings(PanelSettings):
 from anemone.inversion import LogResistivity
 
 class StartingModel(ModelGraph):
-    starting_rho: float = 40.0
+    starting_rho: float = 10.
     misfit = None
     def __init__(self, data, **kwargs):
-        starting_model = kwargs.pop('starting_rho', 40.0)
+        starting_model = kwargs.pop('starting_rho', 10.)
         settings = StartingModelSettings(id='starting_model', **kwargs)
         super().__init__(id='starting_model', settings=settings, starting_rho=starting_model)
         self.dataframe = data

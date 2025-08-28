@@ -34,7 +34,7 @@ class TEMframe(DataFrame):
         with tmp_df._skip_tracking():
             df = self.pivot_table(
                 index=['site_id'],
-                values=['date', 'daytime', 'latitude', 'longitude', 'elevation'],
+                values=['date', 'daytime', 'latitude', 'longitude', 'elevation', 'distance'],
                 aggfunc='first'
             )
 
@@ -46,13 +46,36 @@ class TEMframe(DataFrame):
         return res
 
     @classmethod
+    def from_zip(cls, zip_content, track_history=True):
+        import zipfile
+        import io
+        import base64
+
+        if isinstance(zip_content, str):
+            zip_bytes = base64.b64decode(zip_content)
+        else:
+            zip_bytes = zip_content
+
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
+            usf_files = [x for x in z.namelist() if x.endswith('.usf')]
+            sweeps = []
+            for fname in usf_files:
+                with z.open(fname, 'r') as f:
+                    sweeps += usf.Sweep.from_buffer(f, combine=False)
+            return cls.from_sweeps(sweeps, track_history=track_history, folder_path=z.namelist()[0]+'.zip')
+
+    @classmethod
     def from_usf_folder(cls, folder_path, track_history=True):
         sweeps = []
         usf_files = [folder_path+f for f in os.listdir(folder_path) if f.endswith('.usf')]
         for usf_file in usf_files:        
-            sweeps += usf.Sweep.from_usf(usf_file, combine=False)
-        points = set([x.points for x in sweeps])
+            with open(usf_file, 'rb') as f:
+                sweeps += usf.Sweep.from_buffer(f, combine=False)
+        return cls.from_sweeps(sweeps, track_history=track_history, folder_path=folder_path)
 
+    @classmethod
+    def from_sweeps(cls, sweeps, track_history=True, folder_path=None):
+        points = set([x.points for x in sweeps])
         mega_sweeps = []
         for pnts in points:
             mega_sweeps.append(usf.Sweep.combine_sweeps([swp for swp in sweeps if swp.points==pnts]))
@@ -132,6 +155,20 @@ class TEMframe(DataFrame):
 
             df_data['sys_gate'] = df_data['system_id'] + df_data['gate_id']/1e6
             df_data['data_id'] = np.arange(len(df_data))
+            import utm
+            ok = ~np.isnan(df_data['latitude']) & ~np.isnan(df_data['longitude'])
+            utmx,utmy,zone_number,zone_letter = utm.from_latlon(df_data['latitude'].values[ok], df_data['longitude'].values[ok])
+            df_data['utm_x'] = np.nan
+            df_data['utm_y'] = np.nan
+            df_data['zone_number'] = np.nan
+            df_data['zone_letter'] = np.nan
+            df_data.loc[ok, 'utm_x'] = utmx
+            df_data.loc[ok, 'utm_y'] = utmy
+            df_data.loc[ok, 'zone_number'] = zone_number
+            df_data.loc[ok, 'zone_letter'] = zone_letter
+            ds = np.cumsum(np.sqrt(np.diff(utmx, prepend=utmx[0])**2 + np.diff(utmy, prepend=utmy[0])**2))
+            df_data['distance'] = np.nan
+            df_data.loc[ok, 'distance'] = ds
 
         source_line = df_data._record_op()
         output_name = source_line.split('=')[0].strip()
@@ -215,7 +252,8 @@ class TEMframe(DataFrame):
                 columns=['sys_gate'],
                 values=['dbdt', 'error', 'include', 'data_id'],
             )
-            
+            pivot_multi['site_id'] = pivot_multi.index
+
             pivot_multi.columns = [f'{val}_{col}' for val, col in pivot_multi.columns]
 
             assert len(pivot_multi) == len(df_overview), "Expected 4 columns in pivot_multi"
@@ -305,6 +343,7 @@ class TEMframe(DataFrame):
                 columns=['sys_gate'],
                 values=['dbdt', 'error', 'include', 'data_id'],
             )
+            pivot_multi['site_id'] = pivot_multi.index
             
             pivot_multi.columns = [f'{val}_{col}' for val, col in pivot_multi.columns]
 
@@ -344,7 +383,7 @@ class TEMframe(DataFrame):
             inv.data_misfit_acceptance_threshold = 0.95
             inv.smoothness_vert = 0.3
             inv.smoothness_lat = 0.3
-            res_mods = inv.invert(iter_cap=10)
+            res_mods = inv.invert(iter_cap=max_iterations)
 
             for i,((id_row, row), (id_meta, row_meta)) in enumerate(zip(pivot_multi.iterrows(), df_overview.iterrows())):
                 assert id_meta == id_row, "Site ID mismatch between row and metadata"
