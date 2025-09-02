@@ -216,16 +216,18 @@ def handle_map_interactions(relayout_data, selected_data):
         raise PreventUpdate
 
     df_data = TABLES['data']
-    df_mods = TABLES['models']
 
     # Update dataframes with selected sites
     new_df = df_data[df_data['site_id'].isin(selected_sites)]
     dbdt1.dataframe = new_df
     dbdt2.dataframe = new_df
-    new_mod = df_mods[df_mods['site_id'].isin(selected_sites)]
-    mod1.highlighted = None
-    mod1.dataframe = new_mod 
-    mod2.dataframe = new_mod
+
+    df_mods = TABLES['models']
+    if df_mods is not None:
+        new_mod = df_mods[df_mods['site_id'].isin(selected_sites)]
+        mod1.highlighted = None
+        mod1.dataframe = new_mod 
+        mod2.dataframe = new_mod
 
     
     return dbdt1.render(), dbdt2.render(), mod1.render(), mod2.render()
