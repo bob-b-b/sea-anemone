@@ -73,6 +73,39 @@ def update_tabset(json_data, target_tab_id, settings_tab_id, change_order=False)
     exec(f'json_data{accessor_string}[\'selected\'] = {tabset.index(settings_tab_id)}')
     return json_data
 
+def add_tabset(json_data, new_tab):
+    accessor_chain = find_tab_by_id(json_data, new_tab)
+    accessor_string = ''
+    for key in accessor_chain[:-1]:
+        if isinstance(key, int):
+            accessor_string += f'[{key}]'
+        else:
+            accessor_string += f'["{key}\"]'
+    tablist = eval('json_data' + accessor_string)
+    tabset = [x['id'] for x in eval('json_data' + accessor_string)]
+    idx = tabset.index(new_tab)
+    if new_tab not in tabset:
+        tablist.insert(idx+1, {
+            'type': 'tab',
+            'id': settings_tab_id,
+            'name': target_tab_id.replace('tab-', '')+' settings',
+            'component': 'text',
+        })
+        tabset.insert(idx+1, settings_tab_id)
+    elif change_order:
+        ctab = tablist.pop(tabset.index(settings_tab_id))
+        tablist.insert(idx+1, ctab)
+
+    accessor_string = ''
+    for key in accessor_chain[:-2]:
+        if isinstance(key, int):
+            accessor_string += f'[{key}]'
+        else:
+            accessor_string += f'["{key}\"]'
+    exec(f'json_data{accessor_string}[\'selected\'] = {tabset.index(settings_tab_id)}')
+    return json_data
+
+
 
 
 @dataclass
@@ -343,3 +376,6 @@ class Panel:
             'id': f'tab-{self.id}',
             'name': f'{self.id.lower()}',
         }
+     
+        
+        

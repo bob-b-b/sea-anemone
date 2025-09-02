@@ -118,6 +118,7 @@ class dbdtSounding(Panel):
         y_axis                                             = 'dbdt_syn'
 
         df_tmp                                             = self.dataframe.sort_values(['site_id', 'system_id',  self.settings.x_axis])
+        df_tmp['include'] = df_tmp['inuse_manual'].fillna(df_tmp['inuse_auto']).astype(bool)
         df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt_syn']  *= self.settings.lm_factor
         df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
         df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt_syn']  *= self.settings.hm_factor
@@ -144,8 +145,8 @@ class dbdtSounding(Panel):
         )
 
         df_tmp.loc[df_tmp['site_id'] == -1, 'include'] = True
-        df_tmp.loc[(~df_tmp['include']), 'dbdt'] = np.nan
-        df_tmp.loc[(~df_tmp['include']), 'dbdt_syn'] = np.nan
+        df_tmp.loc[(~df_tmp['include']), 'dbdt']       = np.nan
+        df_tmp.loc[(~df_tmp['include']), 'dbdt_syn']   = np.nan
 
 
         
@@ -182,8 +183,8 @@ class dbdtSounding(Panel):
     def observed_only(self):
 
         y_axis                                             = 'dbdt_syn'
-
         df_tmp                                             = self.dataframe.sort_values(['site_id', 'system_id',  self.settings.x_axis])
+        df_tmp['include'] = df_tmp['inuse_manual'].fillna(df_tmp['inuse_auto']).astype(bool)
         df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
         df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
         df_tmp.loc[df_tmp['site_id'] == -1, 'include']  = False
@@ -212,17 +213,17 @@ class dbdtSounding(Panel):
 
 
         
-        # fig3 = px.scatter(
-        #     df_tmp,
-        #     x=self.settings.x_axis,
-        #     y='dbdt',
-        #     color_discrete_sequence=["black", "black"],
-        #     color="system_id",
-        #     title="dbdt vs time by site_id",
-        #     # custom_data=["system_id", "data_id"],
-        #     error_y=error_ub,
-        #     error_y_minus=error_lb,
-        # )
+        fig2 = px.scatter(
+            df_tmp,
+            x=self.settings.x_axis,
+            y='dbdt',
+            color_discrete_sequence=["black", "black"],
+            color="system_id",
+            title="dbdt vs time by site_id",
+            # custom_data=["system_id", "data_id"],
+            error_y=error_ub,
+            error_y_minus=error_lb,
+        )
 
         fig3 = px.line(
             df_tmp,
@@ -233,12 +234,14 @@ class dbdtSounding(Panel):
             title="dbdt vs time by site_id",
             custom_data=["system_id", "data_id", "site_id"],
         )
+        
+        for trace in fig2.data:
+            fig.add_trace(trace)
 
         for trace in fig3.data:
             fig.add_trace(trace)
 
-        # for trace in fig2.data:
-        #     fig.add_trace(trace)
+
 
         return fig     
 
@@ -339,6 +342,8 @@ class dbdtSection(Panel):
         y_axis                                             = self.settings.y_axis
         df_tmp = self.dataframe[self.dataframe['gate_id']>-1]
         df_tmp                                             = df_tmp.sort_values(['gate_id', self.settings.x_axis])
+        df_tmp['include'] = df_tmp['inuse_manual'].fillna(df_tmp['inuse_auto']).astype(bool)
+
         df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt_syn']  *= self.settings.lm_factor
         df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
         df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt_syn']  *= self.settings.hm_factor
@@ -403,7 +408,10 @@ class dbdtSection(Panel):
         y_axis                                             = self.settings.y_axis
         df_tmp = self.dataframe[self.dataframe['gate_id']>-1]
         df_tmp                                             = df_tmp.sort_values(['gate_id', self.settings.x_axis])
+        df_tmp['include'] = df_tmp['inuse_manual'].fillna(df_tmp['inuse_auto']).astype(bool)
+        # df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt_syn']  *= self.settings.lm_factor
         df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
+        # df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt_syn']  *= self.settings.hm_factor
         df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
         df_tmp.loc[df_tmp['site_id'] ==  -1, 'include']  = False
         df_tmp['system_id']                                = df_tmp['system_id'].map({0: 'hm', 1: 'lm'})
@@ -427,19 +435,23 @@ class dbdtSection(Panel):
 
         df_tmp.loc[df_tmp['site_id'] == -1, 'include'] = True
         df_tmp.loc[(~df_tmp['include']), 'dbdt'] = np.nan
+        # df_tmp.loc[(~df_tmp['include']), 'dbdt_syn'] = np.nan
+
+
         
-        # fig3 = px.scatter(
-        #     df_tmp,
-        #     x=self.settings.x_axis,
-        #     y='dbdt',
-        #     color_discrete_sequence=["black", "black"],
-        #     color="system_id",
-        #     title="dbdt vs time by site_id",
-        #     # custom_data=["system_id", "data_id"],
-        #     error_y=error_ub,
-        #     error_y_minus=error_lb,
-        # )
-        fig3 = px.line(
+        fig3 = px.scatter(
+            df_tmp,
+            x=self.settings.x_axis,
+            y='dbdt',
+            color_discrete_sequence=["black", "black"],
+            color="system_id",
+            title="dbdt vs time by site_id",
+            # custom_data=["system_id", "data_id"],
+            error_y=error_ub,
+            error_y_minus=error_lb,
+        )
+
+        fig2 = px.line(
             df_tmp,
             x=self.settings.x_axis,
             y='dbdt',
@@ -447,17 +459,18 @@ class dbdtSection(Panel):
             color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
             title="dbdt vs time by site_id",
             custom_data=["system_id", "data_id", "site_id"],
-        )        
+        )
 
         for trace in fig3.data:
+            fig.add_trace(trace)
+
+        for trace in fig2.data:
             fig.add_trace(trace)
 
         return fig  
 
     def render(self):
         if self.dataframe is None: return self.empty_render()
-
-
         if 'dbdt_syn' in self.dataframe.columns:
             fig = self.compare_synthetic()
         else:
@@ -722,6 +735,41 @@ markdown_text = '''
 panel_list = html.Div([
     dcc.Markdown(children=markdown_text)
 ])
+
+# panel_list = html.Div([
+#     html.H1("Panels"),
+#     html.H2("Data"),
+#     html.Ul([
+#         html.Li([
+#             dcc.Link("Sounding", href="#sounding"),
+#             " ",
+#             dcc.Link("[+]", href="#new_sounding")
+#         ]),
+#         html.Li([
+#             dcc.Link("Section", href="#section"),
+#             " ",
+#             dcc.Link("[+]", href="#new_section")
+#         ]),
+#     ]),
+#     html.H2("Models"),
+#     html.Ul([
+#         html.Li([
+#             dcc.Link("Graph", href="#graph"),
+#             " ",
+#             dcc.Link("[+]", href="#new_graph")
+#         ]),
+#         html.Li([
+#             dcc.Link("Colorbar", href="#colorbar"),
+#             " ",
+#             dcc.Link("[+]", href="#new_colorbar")
+#         ]),
+#         html.Li([
+#             dcc.Link("Table", href="#table"),
+#             " ",
+#             dcc.Link("[+]", href="#new_table")
+#         ]),
+#     ]),
+# ])
 
 import dash_bootstrap_components as dbc
 
