@@ -374,7 +374,8 @@ class TEMframe(DataFrame):
 
             import utm
             utmx,utmy,zone_number,zone_letter = utm.from_latlon(df_overview['latitude'].values, df_overview['longitude'].values)
-            if np.any(zone_number != zone_number[0]) or np.any(zone_letter != zone_letter[0]):
+            if not isinstance(zone_number, int):
+            # if np.any(zone_number != zone_number[0]) or np.any(zone_letter != zone_letter[0]):
                 values,counts = np.unique(zone_number, return_counts=True)
                 zone_number = values[np.argmax(counts)]
                 values,counts = np.unique(zone_letter, return_counts=True)
