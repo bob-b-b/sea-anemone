@@ -1,15 +1,22 @@
+import sys, os
+
+fpath = os.path.dirname(os.path.abspath(__file__))
+if fpath not in sys.path:
+    sys.path.append(fpath)
 from panels import *
 
 from dash import dcc
 from dash import Dash, callback_context
 from dash.exceptions import PreventUpdate
+from dash_bootstrap_components import Button, ButtonGroup, themes
 import dash_bootstrap_components as dbc
 
 from temframe import TEMframe
 
-external_stylesheets = [dbc.themes.BOOTSTRAP]
+external_stylesheets = [themes.BOOTSTRAP]
 app = Dash(__name__, suppress_callback_exceptions=True, assets_folder='assets',  external_stylesheets=external_stylesheets)
 app.title = "sea anemone"
+
 
 import os
 
@@ -524,11 +531,18 @@ def update_layout(model, load_clicks, process_clicks, invert_clicks, review_clic
         return layout_review, 'secondary', 'secondary', 'secondary', 'primary'
     return model, 'secondary', 'secondary', 'secondary', 'secondary'
 
-tab_hash = {'#sounding': dbdt1,
-            '#section': dbdt2,
-            '#model_graph': mod1,
-            '#model_section': mod2,
-            '#map': m1}
+# tab_hash = {'#sounding': dbdt1,
+#             '#section': dbdt2,
+#             '#model_graph': mod1,
+#             '#model_section': mod2,
+#             '#map': m1}
+
+import signal
+
+@app.server.route("/shutdown", methods=["POST"])
+def shutdown():
+    os.kill(os.getpid(), signal.SIGINT)  # Send a signal to the process to terminate
+
 
 # @app.callback(
 #     Output('flex-layout', 'model', allow_duplicate=True),

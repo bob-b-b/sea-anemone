@@ -7,8 +7,8 @@ import dash_flexlayout as dfl
 from dataclasses import dataclass
 from dataclasses_jsonschema import JsonSchemaMixin
 
-import tkinter as tk
-from tkinter import filedialog
+# import tkinter as tk
+# from tkinter import filedialog
 import plotly.express as px
 
 

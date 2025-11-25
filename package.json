@@ -1,0 +1,14 @@
+{
+  "name": "Anemone",
+  "version": "1.0.0",
+  "description": "",
+  "main": "app/app.py",
+  "scripts": {
+    "start": "python app/app.py",
+    "setup": "setup.bat"
+  },
+  "dependencies": {},
+  "devDependencies": {},
+  "author": "MyCompany",
+  "license": "MIT"
+}
