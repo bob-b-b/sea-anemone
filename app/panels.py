@@ -392,7 +392,7 @@ class dbdtSection(Panel):
             y='dbdt_syn',
             color="system_id",
             color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
-            title="dbdt vs time by site_id",
+            title="field data versus simulated data",
             custom_data=["system_id", "data_id", "site_id"],
         )
 
@@ -485,6 +485,20 @@ class dbdtSection(Panel):
         )
         return fig    
 
+markdown_text = '''
+# Panels
+## Data
+- [Sounding](#sounding)     [[+]](#new_sounding)
+- [Section](#section)       [[+]](#new_section)
+## Models
+- [graph](#graph)           [[+]](#new_graph)
+- [colorbar](#colorbar)     [[+]](#new_colorbar)
+- [table](#table)           [[+]](#new_table)
+'''
+
+panel_list = html.Div([
+    dcc.Markdown(children=markdown_text)
+])
 
 @dataclass
 class AutoProcessing(PanelSettings):
@@ -521,10 +535,15 @@ class Upload(Panel):
         )
     
     def initialize(self):
+        session_text = "### Recent sessions\n"
+        for f in self.session_files:
+            session_text += f"- [{f}](#load={f})\n"
         return html.Div([
-            dcc.Markdown("# welcome to sea anemone", style={'textAlign': 'center'}),
-            dcc.Markdown("Upload your data to get started."),
+            dcc.Markdown("# Welcome to sea anemone", style={'textAlign': 'center'}),
+            dcc.Markdown("### Upload your data to get started."),
             self.render(),
+            dcc.Markdown("---"),
+            dcc.Markdown(session_text),
             gear_maker(self.id)],
             style={'margin':'10px'}#,'height': 'calc(100%-30px)', 'overflow': 'hidden'} 
         )
@@ -721,20 +740,7 @@ class ModelSection(Panel):
         return fig
 
 
-markdown_text = '''
-# Panels
-## Data
-- [Sounding](#sounding)     [\[+\]](#new_sounding)
-- [Section](#section)       [\[+\]](#new_section)
-## Models
-- [graph](#graph)           [\[+\]](#new_graph)
-- [colorbar](#colorbar)     [\[+\]](#new_colorbar)
-- [table](#table)           [\[+\]](#new_table)
-'''
 
-panel_list = html.Div([
-    dcc.Markdown(children=markdown_text)
-])
 
 # panel_list = html.Div([
 #     html.H1("Panels"),

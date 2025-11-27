@@ -10,6 +10,7 @@ from dash import Dash, callback_context
 from dash.exceptions import PreventUpdate
 from dash_bootstrap_components import Button, ButtonGroup, themes
 import dash_bootstrap_components as dbc
+import tempfile, shutil, zipfile
 
 from temframe import TEMframe
 
@@ -18,25 +19,23 @@ app = Dash(__name__, suppress_callback_exceptions=True, assets_folder='assets', 
 app.title = "sea anemone"
 
 
+
 import os
 
 global TABLES
 
-# df_data = TEMframe.from_usf_folder('/home/matt/geophysics_data/TEM/sTEM_data/2025_0302/USF_Files_dawa river 3/')
-df_data = TEMframe.from_usf_folder('C:/Users/au646858/Downloads/USF_Files_dawa river/')
-import pandas
-
-history = ['df_data = TEMframe.from_usf_folder("C:/Users/au646858/Downloads/USF_Files_dawa river/")',
- 'df_mods, df_data2 = df_data.invert(res_start, max_iterations=20)']
-
-# df_data = TEMframe(pandas.read_csv('dawa_river_data.csv'),   history=history)
-# df_mods = TEMframe(pandas.read_csv('dawa_river_models.csv'), history=history)
-df_overview = df_data.overview()
-
-
-# df_data = None
+df_data = None
 df_mods = None
-# df_overview = None
+df_overview = None
+
+front_page = 'load'
+
+if os.path.exists('anemone_backup'):
+    session_files = [f for f in os.listdir('anemone_backup') if f.endswith('.zip')]
+    print(session_files)
+else:
+    os.mkdir('anemone_backup')
+
 
 
 TABLES = {
@@ -51,9 +50,8 @@ TABLES = {
 m1 = Map(data=df_overview)
 dbdt1 = dbdtSounding(dataframe=df_data)
 dbdt2 = dbdtSection(dataframe=df_data)
-
-u1 = Upload()
-t1 = Table(df_overview, id='table_overview')
+u1 = Upload(session_files=session_files)
+# t1 = Table(df_overview, id='table_overview', settings=TableSettings('table_overview'))
 
 
 mod1 = ModelGraph(   dataframe=df_mods )
@@ -73,62 +71,21 @@ x = html.Div([
               dbc.Button("next [->]", id='highlight_next'),
             ])
           ], style={'padding': '10px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between'}
-      )]
+      ),
+      dcc.Location(id='url_button'),
+      ]
 , id='processing_buttons')
 
 
 stmod = StartingModel.standard(rho=10.)
 
-panels = [u1, m1, dbdt1, t1, dbdt2, mod1, mod2, stmod]
+panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, stmod]
 nodes = [node for panel in panels for node in panel.to_nodes()]+[dfl.Tab(id=f'tab-processing_buttons', children=[x]), dfl.Tab(id='tab-panel_list', children=[panel_list])]
 
-# class LayoutManager:
-#     def __init__(self, panel_list, hidden_panels=None):
-#         self.panel_list = panel_list
-#         self.hidden_panels = hidden_panels if hidden_panels is not None else []
-
-#     @property
-#     def config(self):
-#         config = {'global': {}, 'borders': [{'type': 'border', 'size': 200, 'location': 'left', 'children': [{'type': 'tab', 'id': 'tab-panel_list', 'name': 'Panels', 'component': 'text'}]}, {'type': 'border', 'selected': 0, 'size': 100, 'location': 'bottom', 'children': [{'type': 'tab', 'id': 'tab-processing_buttons', 'name': 'buttons'}, {'type': 'tab', 'id': 'tab-model_section', 'name': 'model section'}]}]}
-        
-#         layout = {}
-#         for col in self.panel_list:
-#             col_dict = {'type': 'column',  'children': []}
-#             for row in col:
-#                 row_dict = {'type': 'row', 'children': []}
-#                 for tab in row:
-
-
-
-#         config['layout'] = 
-
-# panel_nest = [
-#     [[m1, u1], [dbdt1]],
-#     [[dbdt2]],
-# ]
-# layout_upload = {'global': {}, 'borders': [{'type': 'border', 'size': 200, 'location': 'left', 'children': [{'type': 'tab', 'id': 'tab-panel_list', 'name': 'Panels', 'component': 'text'}]}, {'type': 'border', 'selected': 0, 'size': 100, 'location': 'bottom', 'children': [{'type': 'tab', 'id': 'tab-processing_buttons', 'name': 'buttons'}, {'type': 'tab', 'id': 'tab-model_section', 'name': 'model section'}]}], 'layout': {'type': 'column', 'id': '#862b2fc6-2ef4-4251-a485-e158ed2bf975', 'children': [{'type': 'tabset', 'id': '#328817bb-4e54-448e-887f-00356fda1ff9', 'weight': 45.20241768745649, 'children': [{'type': 'tab', 'id': 'tab-upload', 'name': 'upload'}], 'active': True}]}}
 
 html_header = html.H1('Sea Anemone', style={'width': '100%'})
 
-layout_upload = {'global': {"tabEnableClose":False}, 'borders': [{'type': 'border', 'selected': 0, 'size': 25, 'location': 'top', 'children': [{'type': 'Tab', 'id': '#16ae2179-565c-43e6-a343-bf9c33d810c7'}]}, {'type': 'border', 'selected': 0, 'size': 100, 'location': 'bottom', 'children': [{'type': 'tab', 'id': 'tab-processing_buttons', 'name': 'buttons'}, {'type': 'tab', 'id': 'tab-model_section', 'name': 'model section'}]}], 'layout': {'type': 'column', 'id': '#862b2fc6-2ef4-4251-a485-e158ed2bf975', 'children': [{'type': 'tabset', 'id': '#328817bb-4e54-448e-887f-00356fda1ff9', 'weight': 45.20241768745649, 'children': [{'type': 'tab', 'id': 'tab-upload', 'name': 'upload'}], 'active': True}]}}
-
-layout_data = {'global': {"tabEnableClose":False}, 'borders': [{'type': 'border', 'selected': 0, 'size': 25, 'location': 'top', 'children': [{'type': 'Tab', 'id': '#16ae2179-565c-43e6-a343-bf9c33d810c7'}]}, {'type': 'border', 'selected': 0, 'size': 100, 'location': 'bottom', 'children': [{'type': 'tab', 'id': 'tab-processing_buttons', 'name': 'buttons'}, {'type': 'tab', 'id': 'tab-model_section', 'name': 'model section'}]}], 'layout': {'type': 'column', 'id': '#862b2fc6-2ef4-4251-a485-e158ed2bf975', 'children': [{'type': 'row', 'id': '#f38c40d3-e354-4752-8bd8-0f924591ece9', 'children': [{'type': 'row', 'id': '#08653c5d-d61d-4327-b886-4f317211fdfe', 'weight': 33.93857200182815, 'children': [{'type': 'tabset', 'id': '#328817bb-4e54-448e-887f-00356fda1ff9', 'weight': 31.43338620142744, 'children': [{'type': 'tab', 'id': 'tab-map', 'name': 'map'}], 'active': True}, {'type': 'tabset', 'id': '#d8d4e938-96d7-478a-8393-66687d22af08', 'weight': 38.105784067666576, 'children': [{'type': 'tab', 'id': 'tab-sounding', 'name': 'sounding'}]}]}, {'type': 'tabset', 'id': '#66b4df30-1c51-4f0a-a07e-11450466c7b9', 'weight': 35.67688910433081, 'children': [{'type': 'tab', 'id': 'tab-tTEM', 'name': 'ttem'}]}]}]}}
-
-layout_invert = {'global': {"tabEnableClose":False}, 'borders': [{'type': 'border', 'selected': 0, 'size': 25, 'location': 'top', 'children': [{'type': 'Tab', 'id': '#16ae2179-565c-43e6-a343-bf9c33d810c7'}]}, {'type': 'border', 'selected': 0, 'size': 100, 'location': 'bottom', 'children': [{'type': 'tab', 'id': 'tab-processing_buttons', 'name': 'buttons'}, {'type': 'tab', 'id': 'tab-model_section', 'name': 'model section'}]}], 'layout': {'type': 'column', 'id': '#862b2fc6-2ef4-4251-a485-e158ed2bf975', 'children': [{'type': 'tabset', 'id': '#328817bb-4e54-448e-887f-00356fda1ff9', 'weight': 45.20241768745649, 'children': [{'type': 'tab', 'id': 'tab-map', 'name': 'map'}, {'type': 'tab', 'id': 'tab-upload', 'name': 'upload'}]}, {'type': 'tabset', 'id': '#d8d4e938-96d7-478a-8393-66687d22af08', 'weight': 54.79758231254351, 'children': [{'type': 'tab', 'id': 'tab-starting_model', 'name': 'starting_model'}], 'active': True}]}}
-
-layout_review = {'global': {"tabEnableClose":False}, 'borders': [{'type': 'border', 'selected': 0, 'size': 25, 'location': 'top', 'children': [{'type': 'Tab', 'id': '#16ae2179-565c-43e6-a343-bf9c33d810c7'}]}, {'type': 'border', 'selected': 0, 'size': 100, 'location': 'bottom', 'children': [{'type': 'tab', 'id': 'tab-processing_buttons', 'name': 'buttons'}]}], 'layout': {'type': 'column', 'id': '#862b2fc6-2ef4-4251-a485-e158ed2bf975', 'children': [{'type': 'row', 'id': '#f38c40d3-e354-4752-8bd8-0f924591ece9', 'children': [{'type': 'row', 'id': '#08653c5d-d61d-4327-b886-4f317211fdfe', 'weight': 34.67833378522416, 'children': [{'type': 'tabset', 'id': '#328817bb-4e54-448e-887f-00356fda1ff9', 'weight': 31.43338620142744, 'children': [{'type': 'tab', 'id': 'tab-map', 'name': 'map'}, {'type': 'tab', 'id': 'tab-upload', 'name': 'upload'}]}, {'type': 'tabset', 'id': '#d8d4e938-96d7-478a-8393-66687d22af08', 'weight': 38.105784067666576, 'children': [{'type': 'tab', 'id': 'tab-sounding', 'name': 'sounding'}]}]}, {'type': 'tabset', 'id': '#66b4df30-1c51-4f0a-a07e-11450466c7b9', 'weight': 34.9371273209348, 'children': [{'type': 'tab', 'id': 'tab-model_section', 'name': 'model section'}], 'active': True}]}]}}
-
-# app.layout = html.Div(children=[
-#     dcc.Location(id='url', refresh='callback-nav'),
-#     html_header,
-#     dfl.FlexLayout(
-#         id="flex-layout",
-#         model=layout_data,
-#         children=nodes,
-#         useStateForModel=True,        
-#     ),
-#     html.Div(id='output-click')
-# ])
+import layouts
 
 app.layout = html.Div([
     dcc.Location(id='url', refresh='callback-nav'),
@@ -157,7 +114,7 @@ app.layout = html.Div([
     html.Div([
         dfl.FlexLayout(
             id="flex-layout",
-            model=layout_upload,
+            model=layouts.upload,
             children=nodes,
             useStateForModel=False,        
         ),
@@ -351,7 +308,7 @@ def highlight_change(n1, n2):
         highlighted = 0
     else:
         highlighted += highlight_change
-    
+    df_data = TABLES['data']
     m1.highlighted = highlighted
     mod1.highlighted = highlighted
     dbdt1.dataframe = df_data[df_data['site_id'] == highlighted]
@@ -416,7 +373,7 @@ def cross_panel_click(model_click, ttem_click, map_click):
         site_id = int(click_data['points'][0]['pointNumber'])
     else:
         site_id = None
-  
+    df_data = TABLES['data']
     m1.highlighted = site_id
     mod1.highlighted = site_id
     dbdt1.dataframe = df_data[df_data['site_id'] == site_id]
@@ -522,53 +479,106 @@ def update_layout(model, load_clicks, process_clicks, invert_clicks, review_clic
     button_id = ctx.triggered[0]['prop_id'].split('.')[0]
     
     if button_id == "upload_layout":
-        return layout_upload, 'primary', 'secondary', 'secondary', 'secondary'
+        return layouts.upload, 'primary', 'secondary', 'secondary', 'secondary'
     elif button_id == "process_layout":
-        return layout_data, 'secondary', 'primary', 'secondary', 'secondary'
+        return layouts.data, 'secondary', 'primary', 'secondary', 'secondary'
     elif button_id == "invert_layout":
-        return layout_invert, 'secondary', 'secondary', 'primary', 'secondary'
+        return layouts.invert, 'secondary', 'secondary', 'primary', 'secondary'
     elif button_id == "review_layout":
-        return layout_review, 'secondary', 'secondary', 'secondary', 'primary'
+        return layouts.review, 'secondary', 'secondary', 'secondary', 'primary'
     return model, 'secondary', 'secondary', 'secondary', 'secondary'
 
-# tab_hash = {'#sounding': dbdt1,
-#             '#section': dbdt2,
-#             '#model_graph': mod1,
-#             '#model_section': mod2,
-#             '#map': m1}
+@app.callback(
+    [
+        Output('flex-layout',    'model', allow_duplicate=True),
 
-import signal
+        Output('upload_layout',  'color',  allow_duplicate=True),
+        Output('process_layout', 'color', allow_duplicate=True),
+        Output('invert_layout',  'color', allow_duplicate=True),
+        Output('review_layout',  'color', allow_duplicate=True), #Output('review_layout', 'disabled', allow_duplicate=True)
 
-@app.server.route("/shutdown", methods=["POST"])
-def shutdown():
-    os.kill(os.getpid(), signal.SIGINT)  # Send a signal to the process to terminate
+        Output('upload_layout',  'disabled',  allow_duplicate=True),
+        Output('process_layout', 'disabled', allow_duplicate=True),
+        Output('invert_layout',  'disabled', allow_duplicate=True),
+        Output('review_layout',  'disabled', allow_duplicate=True), #Output('review_layout', 'disabled', allow_duplicate=True)
+
+        Output('map', 'figure', allow_duplicate=True),
+        Output('sounding', 'figure', allow_duplicate=True),
+        Output('tTEM', 'figure', allow_duplicate=True),
+        Output('model_section', 'figure', allow_duplicate=True),
+    ],        
+    Input('url', 'hash'),
+    State('flex-layout', 'model'),
+    prevent_initial_call=True,
+    
+)
+def handle_url_hash(url_hash, model):
+    layout=model
+    print(f'url hash: {url_hash}')
+    if url_hash.startswith('#load'):
+        fname = url_hash.split('=')[1]
+        tmpTables = TEMframe.from_session(f'anemone_backup/{fname}')
+        TABLES['data']            = tmpTables['data']
+        TABLES['overview']        = tmpTables['overview']
+        TABLES['models']          = tmpTables['models']
+        dbdt1.dataframe = TABLES['data'].copy()
+        dbdt2.dataframe = TABLES['data'].copy()
+        m1.dataframe    = TABLES['overview'].copy()
+        mod1.dataframe  = TABLES['models'].copy()
+        mod2.dataframe  = TABLES['models'].copy()
+        figures = [m1.render(), dbdt1.render(), dbdt2.render(), mod2.render()]
+
+        if TABLES['models'] is not None:
+            res_list  = [layouts.review]
+            res_list += ['secondary', 'secondary', 'secondary', 'primary']
+            res_list += [False, False, False, False]
+            res_list += figures
+        else:
+            res_list  = [layouts.data]
+            res_list += ['secondary', 'primary', 'secondary', 'secondary']
+            res_list += [False, False, False, True]
+            res_list += figures
+        return res_list
+    else:
+        print('no valid hash found')
+        raise PreventUpdate
 
 
-# @app.callback(
-#     Output('flex-layout', 'model', allow_duplicate=True),
-#     Input('url', 'hash'),
-#     State('flex-layout', 'model'),
-#     prevent_initial_call=True
-# )
-# def update_flex_layout(hash, model):
-#     print(f'hash: {hash}')
-#     if not hash in tab_hash:
-#         raise PreventUpdate
-
-#     tab_id = tab_hash[hash].layout_dict['id']
-#     print('tab id is: ', tab_id)
-#     return update_tabset(model, 'tab-map', tab_id)
+# import signal
+# @app.server.route("/shutdown", methods=["POST"])
+# def shutdown():
+#     os.kill(os.getpid(), signal.SIGINT)  # Send a signal to the process to terminate
 
 
 try:
-
-    app.run(port=8050, debug=True, dev_tools_hot_reload=True)
+    app.run(port=8050)
 except Exception as e:
     print(f"Error running app: {e}")
 finally:
-    print('App has stopped running.')
+    print('closing app, saving data to zip...')
+    tmpdir = tempfile.mkdtemp(prefix='anemone_backup_')
+    try:
+        # Save data (assumes TEMframe.save(directory) writes backup files into directory)
+        if TABLES['data'] is not None:
+            TABLES['data'].save(tmpdir)
 
+        # Save models.csv if present
+        if TABLES['models'] is not None:
+            TABLES['models'].to_csv(os.path.join(tmpdir, 'models.csv'), index=False)
 
+        # Create zip archive next to this script
+        zip_path = os.path.join('anemone_backup', 'session1.zip')
+        with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+            for root, _, files in os.walk(tmpdir):
+                print(files)
+                for f in files:
+                    full = os.path.join(root, f)
+                    arcname = os.path.relpath(full, tmpdir)
+                    zf.write(full, arcname)
+
+        print(f'data saved to {zip_path}')
+    finally:
+        shutil.rmtree(tmpdir)
 
 #start msedge --app=http://127.0.0.1:8050/
 

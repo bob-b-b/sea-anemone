@@ -166,7 +166,7 @@ def sweep2fwr(sweeps, fwr=logForward):
         swp = next(swp for swp in sweeps if swp.points == pnts)
         tx = Loop.square(swp.loop_size[0])
         rx = Receiver(x=swp.coil_location[0], y=swp.coil_location[1])
-        wv = Waveform(swp.tx_ramp_time, -swp.tx_ramp)
+        wv = Waveform(swp.tx_ramp_time, swp.tx_ramp)
         filter_chain = []
         for f_cut, order in swp.low_pass[::2], swp.low_pass[1::2]:
             filter_chain.append(ButterworthFilter(f_cut))

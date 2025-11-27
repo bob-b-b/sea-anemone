@@ -34,7 +34,7 @@ class TEMframe(DataFrame):
         with tmp_df._skip_tracking():
             df = self.pivot_table(
                 index=['site_id'],
-                values=['date', 'daytime', 'latitude', 'longitude', 'elevation', 'distance'],
+                values=['date', 'daytime', 'latitude', 'longitude', 'elevation', 'utm_x', 'utm_y', 'distance'],
                 aggfunc='first'
             )
 
@@ -63,6 +63,51 @@ class TEMframe(DataFrame):
                 with z.open(fname, 'r') as f:
                     sweeps += usf.Sweep.from_buffer(f, combine=False)
             return cls.from_sweeps(sweeps, track_history=track_history, folder_path=z.namelist()[0]+'.zip')
+
+    @classmethod
+    def from_session(cls, session_zip):
+        import zipfile
+        import io
+        import base64
+
+        df_data = None
+        df_overview = None
+        df_models = None
+
+        if isinstance(session_zip, str) and session_zip.endswith('.zip'):
+            with open(session_zip, 'rb') as f:
+                zip_bytes = f.read()
+        elif isinstance(session_zip, str):
+            zip_bytes = base64.b64decode(session_zip)
+        else:
+            zip_bytes = session_zip
+
+        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
+            
+            with z.open('tem_data.csv', 'r') as f:
+                df = pd.read_csv(f)
+            with z.open('history.py', 'r') as f:
+                history = f.readlines()
+            history = [line.strip().decode('utf-8') for line in history]
+            
+            saved_forwards = [x for x in z.namelist() if x.endswith('.em1')]
+            forward_operators = None
+            if len(saved_forwards) > 0:
+                from anemone.forwards import Forward, logify_forward
+                lg_FWR = logify_forward(Forward)
+                forward_operators = []
+                for i in range(len(saved_forwards)):
+                    with z.open(saved_forwards[i], 'r') as f:
+                        fwr = lg_FWR.load(f)
+                        fwr.tolerance=1e-6
+                        forward_operators.append(fwr)
+            df_data = cls.from_pandas(df, history=history, forward_operators=forward_operators)
+            df_overview = df_data.overview()
+            if 'models.csv' in z.namelist():
+                with z.open('models.csv', 'r') as f:
+                    df_models = pd.read_csv(f)
+                    df_models = cls.from_pandas(df_models, history=history, forward_operators=forward_operators)
+        return {'data': df_data, 'models': df_models, 'overview':df_overview}
 
     @classmethod
     def from_usf_folder(cls, folder_path, track_history=True):
@@ -269,18 +314,18 @@ class TEMframe(DataFrame):
                 include_values = row.filter(like='include_').values
                 data_id = row.filter(like='data_id_').values
 
-                d_obs = torch.from_numpy(dbdt_values).abs().log10()
-                d_err = torch.from_numpy(np.log10(1. + error_values/100.))
+                d_obs = torch.from_numpy(dbdt_values).abs().log()
+                d_err = torch.from_numpy(np.log1p(error_values/100.))
                 include_mask = include_values.astype(bool)
                 d_err[~include_mask] = torch.inf  # Set error to zero for included measurements
 
-                inv = fastJac(d_obs, d_err, res_start, dmfwr, logger=silence)
+                inv = fastJac(d_obs, d_err, res_start, dmfwr, logger=print)
                 inv.data_misfit_acceptance_threshold = 0.95
                 res_mod = inv.invert(iter_cap=10)
 
 
 
-                d_syn = 10**inv.forward(*res_mod.mod)
+                d_syn = inv.forward(*res_mod.mod).exp()
                 df_data.loc[data_id, 'dbdt_syn'] = d_syn.numpy()
 
                 rho,thick = res_mod.mod
@@ -354,6 +399,7 @@ class TEMframe(DataFrame):
 
             results  = []
             inv_list = []
+            x_list,y_list = [],[]
 
             for i,((id_row, row), (id_meta, row_meta)) in enumerate(zip(pivot_multi.iterrows(), df_overview.iterrows())):
                 assert id_meta == id_row, "Site ID mismatch between row and metadata"
@@ -363,33 +409,19 @@ class TEMframe(DataFrame):
                 include_values = row.filter(like='include_').values
                 data_id = row.filter(like='data_id_').values
 
-                d_obs = torch.from_numpy(dbdt_values).abs().log10()
-                d_err = torch.from_numpy(np.log10(1. + error_values/100.))
+                d_obs = torch.from_numpy(dbdt_values).abs().log()
+                d_err = torch.from_numpy(np.log1p(error_values/100.))
                 include_mask = include_values.astype(bool)
                 d_err[~include_mask] = torch.inf  # Set error to zero for included measurements
 
-                inv = fastJac(d_obs, d_err, res_start, dmfwr, logger=silence)
+                inv = fastJac(d_obs, d_err, res_start.copy(), dmfwr.copy(), logger=silence)
                 inv.setup_matrices()
                 inv_list.append(inv)
+                x_list.append(row_meta['utm_x'])
+                y_list.append(row_meta['utm_y'])
 
-            import utm
-            utmx,utmy,zone_number,zone_letter = utm.from_latlon(df_overview['latitude'].values, df_overview['longitude'].values)
-            if not isinstance(zone_number, int):
-            # if np.any(zone_number != zone_number[0]) or np.any(zone_letter != zone_letter[0]):
-                values,counts = np.unique(zone_number, return_counts=True)
-                zone_number = values[np.argmax(counts)]
-                values,counts = np.unique(zone_letter, return_counts=True)
-                zone_letter = values[np.argmax(counts)]
-                utmx,utmy,zone_number,zone_letter = utm.from_latlon(df_overview['latitude'].values, df_overview['longitude'].values, force_zone_number=zone_number, force_zone_letter=zone_letter)
-            df_overview['utm_x'] = utmx
-            df_overview['utm_y'] = utmy
-            df_overview['zone_number'] = zone_number
-            df_overview['zone_letter'] = zone_letter
-
-            inv = SCI(inv_list, x= df_overview['utm_x'].values, y=df_overview['utm_y'].values)
+            inv = SCI(inv_list, x=np.array(x_list), y=np.array(y_list))
             inv.data_misfit_acceptance_threshold = 0.95
-            inv.smoothness_vert = 0.3
-            inv.smoothness_lat = 0.3
             res_mods = inv.invert(iter_cap=max_iterations)
 
             for i,((id_row, row), (id_meta, row_meta)) in enumerate(zip(pivot_multi.iterrows(), df_overview.iterrows())):
@@ -398,7 +430,7 @@ class TEMframe(DataFrame):
                 data_id = row.filter(like='data_id_').values    
                 res_mod = res_mods[i].copy()
 
-                d_syn = 10**inv_list[i].forward(*res_mod.mod)
+                d_syn = inv_list[i].forward(*res_mod.mod).exp()
                 df_data.loc[data_id, 'dbdt_syn'] = d_syn.numpy()
 
                 rho,thick = res_mod.mod
@@ -436,6 +468,44 @@ class TEMframe(DataFrame):
         self.history = current_history[:-1]
         return df_layers, df_data
     
+    def save(self, save_folder):
+        tem_data = os.path.join(save_folder, 'tem_data.csv')
+        self.to_csv(tem_data, index=False)
+        with open(os.path.join(save_folder, 'history.py'), 'w') as f:
+            for line in self.history:
+                f.write(f'{line}\n')
+        for i,fwr in enumerate(self.forward_operators):
+            save_folder_fwr = os.path.join(save_folder, f'fwr{i}')
+            fwr.save(save_folder_fwr)
+    
+    @classmethod
+    def load(cls, load_folder):
+        tem_data = os.path.join(load_folder, 'tem_data.csv')
+        df = pd.read_csv(tem_data)
+        history = []
+        history_file = os.path.join(load_folder, 'history.py')
+        if os.path.exists(history_file):
+            with open(history_file, 'r') as f:
+                history = f.readlines()
+            history = [line.strip() for line in history]
+        forward_operators = []
+        i = 0
+        from anemone.forwards import Forward, logify_forward
+        lg_FWR = logify_forward(Forward)
+        while True:
+            save_folder_fwr = os.path.join(load_folder, f'fwr{i}')
+            if os.path.exists(save_folder_fwr):
+                fwr = lg_FWR.load(save_folder_fwr)
+                fwr.tolerance=1e-6
+                forward_operators.append(fwr)
+                i += 1
+            else:
+                break
+        return cls.from_pandas(df, history=history, forward_operators=forward_operators)
+
+
+
+
     def __post_init__(self):
         def wrapped_method(func):
             def wrapped(*args, **kwargs):
