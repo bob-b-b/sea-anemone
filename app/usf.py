@@ -168,11 +168,11 @@ def sweep2fwr(sweeps, fwr=logForward):
         rx = Receiver(x=swp.coil_location[0], y=swp.coil_location[1])
         wv = Waveform(swp.tx_ramp_time, swp.tx_ramp)
         filter_chain = []
-        for f_cut, order in swp.low_pass[::2], swp.low_pass[1::2]:
-            filter_chain.append(ButterworthFilter(f_cut))
+        for f_cut, order in zip(swp.low_pass[::2], swp.low_pass[1::2]):
+            filter_chain.append(ButterworthFilter(f_cut, order))
         fc = FilterChain(filter_chain)
         time = swp.time
-        forwards.append(fwr(tx, rx, time, wv, None, tolerance=1e-6))
+        forwards.append(fwr(tx, rx, time, wv, fc, tolerance=1e-6, do_setup=False))
     return forwards
 
 def sweep2dataframes(sweeps):

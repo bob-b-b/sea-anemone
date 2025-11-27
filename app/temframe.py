@@ -372,7 +372,12 @@ class TEMframe(DataFrame):
         self.forward_operators[0].receiver   = self.forward_operators[1].receiver
         self.forward_operators[0].filterfunc = self.forward_operators[1].filterfunc
 
+        print('fwr1 : ', self.forward_operators[0].omega.shape, self.forward_operators[0].lmb.shape)
+        print('fwr2 : ', self.forward_operators[1].omega.shape, self.forward_operators[1].lmb.shape)
         dmfwr = self.forward_operators[0]+self.forward_operators[1]
+        # print('fwr1 : ', self.forward_operators[0].omega.shape, self.forward_operators[0].lmb)
+        # print('fwr2 : ', self.forward_operators[1].omega.shape, self.forward_operators[1].lmb)
+        print('dmfwr: ', dmfwr.omega.shape, dmfwr.lmb.shape)
 
         with self._skip_tracking():
             df_data = self.copy()
@@ -496,7 +501,7 @@ class TEMframe(DataFrame):
             save_folder_fwr = os.path.join(load_folder, f'fwr{i}')
             if os.path.exists(save_folder_fwr):
                 fwr = lg_FWR.load(save_folder_fwr)
-                fwr.tolerance=1e-6
+                fwr.tolerance=1e-5
                 forward_operators.append(fwr)
                 i += 1
             else:

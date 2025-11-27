@@ -28,7 +28,7 @@ df_data = None
 df_mods = None
 df_overview = None
 
-front_page = 'load'
+
 
 if os.path.exists('anemone_backup'):
     session_files = [f for f in os.listdir('anemone_backup') if f.endswith('.zip')]
@@ -544,10 +544,10 @@ def handle_url_hash(url_hash, model):
         raise PreventUpdate
 
 
-# import signal
-# @app.server.route("/shutdown", methods=["POST"])
-# def shutdown():
-#     os.kill(os.getpid(), signal.SIGINT)  # Send a signal to the process to terminate
+import signal
+@app.server.route("/shutdown", methods=["POST"])
+def shutdown():
+    os.kill(os.getpid(), signal.SIGINT)  # Send a signal to the process to terminate
 
 
 try:
