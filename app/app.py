@@ -544,10 +544,10 @@ def handle_url_hash(url_hash, model):
         raise PreventUpdate
 
 
-import signal
-@app.server.route("/shutdown", methods=["POST"])
-def shutdown():
-    os.kill(os.getpid(), signal.SIGINT)  # Send a signal to the process to terminate
+# import signal
+# @app.server.route("/shutdown", methods=["POST"])
+# def shutdown():
+#     os.kill(os.getpid(), signal.SIGINT)  # Send a signal to the process to terminate
 
 
 try:

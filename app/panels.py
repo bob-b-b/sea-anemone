@@ -709,32 +709,32 @@ class ModelSection(Panel):
     
     def render(self):
         if self.dataframe is None: return self.empty_render()
-        with self.dataframe._skip_tracking():
-            df_layers_long = self.dataframe.melt(
-                id_vars=['site_id', 'daytime', 'longitude', 'latitude', 'date', 'elevation', 'layer', 'resistivity'],
-                value_vars=['top_depth', 'bottom_depth'],
-                var_name='depth_type',
-                value_name='depth'
-            ).sort_values(['daytime', 'layer', 'depth'])
+        # with self.dataframe._skip_tracking():
+        df_layers_long = self.dataframe.melt(
+            id_vars=['site_id', 'daytime', 'longitude', 'latitude', 'date', 'elevation', 'layer', 'resistivity'],
+            value_vars=['top_depth', 'bottom_depth'],
+            var_name='depth_type',
+            value_name='depth'
+        ).sort_values(['daytime', 'layer', 'depth'])
 
-            df_layers_long = df_layers_long.drop(columns=['depth_type'])
-            df_layers_long['log_resistivity'] = np.log10(df_layers_long['resistivity'])
+        df_layers_long = df_layers_long.drop(columns=['depth_type'])
+        df_layers_long['log_resistivity'] = np.log10(df_layers_long['resistivity'])
 
-            heatmap_df = df_layers_long.pivot_table(
-                index='depth', columns=self.settings.x_axis, values='log_resistivity'
-            )        
-            heatmap_df = heatmap_df.sort_index(ascending=True)
+        heatmap_df = df_layers_long.pivot_table(
+            index='depth', columns=self.settings.x_axis, values='log_resistivity'
+        )        
+        heatmap_df = heatmap_df.sort_index(ascending=True)
 
-            fig = px.imshow(
-                heatmap_df,
-                aspect='auto',
-                origin='lower',
-                color_continuous_scale='turbo',
-                labels={'x': self.settings.x_axis, 'y': 'Depth [m]', 'color': 'Resistivity [Ω·m]'},
-                title='Resistivity Heatmap by Site and Depth',
-                zmin=heatmap_df.min().min(),
-                zmax=heatmap_df.max().max(),
-            )
+        fig = px.imshow(
+            heatmap_df,
+            aspect='auto',
+            origin='lower',
+            color_continuous_scale='turbo',
+            labels={'x': self.settings.x_axis, 'y': 'Depth [m]', 'color': 'Resistivity [Ω·m]'},
+            title='Resistivity Heatmap by Site and Depth',
+            zmin=heatmap_df.min().min(),
+            zmax=heatmap_df.max().max(),
+        )
         fig.update_layout(hovermode="x")
         fig.update_yaxes(autorange="reversed")
         return fig
