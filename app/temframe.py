@@ -515,7 +515,7 @@ class TEMframe(DataFrame):
         def wrapped_method(func):
             def wrapped(*args, **kwargs):
                 result = func(*args, **kwargs)
-                return TEMframe.from_pandas(result, history=self.history.copy(), forward_operators=self.forward_operators.copy())
+                return TEMframe.from_pandas(result, history=self.history, forward_operators=self.forward_operators)
             return wrapped
         # This is the code to figure out what to wrap. leaving these loops takes considerably longer to run.
         
