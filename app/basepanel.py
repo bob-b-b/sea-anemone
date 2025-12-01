@@ -120,7 +120,10 @@ class PanelSettings:
         for key in self.schema.get('properties', {}).keys():
             try:
                 if self.schema['properties'][key]['type'] == 'array':
-                    exec(f'self.{key}_len = len(self.{key})')
+                    if eval(f'self.{key}') is not None:
+                        exec(f'self.{key}_len = len(self.{key})')
+                    else:
+                        exec(f'self.{key}_len = 0')
             except KeyError:
                 pass
 
@@ -133,7 +136,7 @@ class PanelSettings:
         def color_render(key, prop):
             return dbc.Input(
                 type='color',
-                id=f'settings-{self.id}-{key}',
+                id={'type': f'settings-{self.id}', 'key': key},
                 value=eval(f'self.{key}'),
                 style={'width':'50px', 'height':'30px'}
             )
@@ -147,7 +150,7 @@ class PanelSettings:
             )
         return [
             (color_check, color_render),
-            (enum_check, enum_render)
+            (enum_check,  enum_render)
         ]
 
     def render(self):

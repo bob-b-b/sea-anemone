@@ -118,7 +118,7 @@ class dbdtSounding(Panel):
         y_axis                                             = 'dbdt_syn'
 
         df_tmp                                             = self.dataframe.sort_values(['site_id', 'system_id',  self.settings.x_axis])
-        df_tmp['include'] = df_tmp['inuse_manual'].fillna(df_tmp['inuse_auto']).astype(bool)
+        df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto'])
         df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt_syn']  *= self.settings.lm_factor
         df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
         df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt_syn']  *= self.settings.hm_factor
@@ -184,7 +184,7 @@ class dbdtSounding(Panel):
 
         y_axis                                             = 'dbdt_syn'
         df_tmp                                             = self.dataframe.sort_values(['site_id', 'system_id',  self.settings.x_axis])
-        df_tmp['include'] = df_tmp['inuse_manual'].fillna(df_tmp['inuse_auto']).astype(bool)
+        df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto']).astype(bool)
         df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
         df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
         df_tmp.loc[df_tmp['site_id'] == -1, 'include']  = False
@@ -342,7 +342,7 @@ class dbdtSection(Panel):
         y_axis                                             = self.settings.y_axis
         df_tmp = self.dataframe[self.dataframe['gate_id']>-1]
         df_tmp                                             = df_tmp.sort_values(['gate_id', self.settings.x_axis])
-        df_tmp['include'] = df_tmp['inuse_manual'].fillna(df_tmp['inuse_auto']).astype(bool)
+        df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto'])
 
         df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt_syn']  *= self.settings.lm_factor
         df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
@@ -350,6 +350,11 @@ class dbdtSection(Panel):
         df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
         df_tmp.loc[df_tmp['site_id'] ==  -1, 'include']  = False
         df_tmp['system_id']                                = df_tmp['system_id'].map({0: 'hm', 1: 'lm'})
+
+        x_axis = df_tmp[self.settings.x_axis].unique()#.values
+        if self.settings.x_axis == 'site_id':
+            x_axis = x_axis[x_axis>-1]
+        xmin,xmax = np.nanmin(x_axis), np.nanmax(x_axis)
 
         error_ub,error_lb = 'error_ub', 'error_lb'
         if True:
@@ -372,7 +377,7 @@ class dbdtSection(Panel):
         df_tmp.loc[(~df_tmp['include']), 'dbdt'] = np.nan
         df_tmp.loc[(~df_tmp['include']), 'dbdt_syn'] = np.nan
 
-
+        
         
         fig3 = px.scatter(
             df_tmp,
@@ -401,20 +406,25 @@ class dbdtSection(Panel):
 
         for trace in fig2.data:
             fig.add_trace(trace)
-
+        dx = xmax - xmin
+        fig.update_xaxes(range=[xmin-0.1*dx, xmax+0.1*dx])
         return fig    
 
     def observed_only(self):
         y_axis                                             = self.settings.y_axis
         df_tmp = self.dataframe[self.dataframe['gate_id']>-1]
         df_tmp                                             = df_tmp.sort_values(['gate_id', self.settings.x_axis])
-        df_tmp['include'] = df_tmp['inuse_manual'].fillna(df_tmp['inuse_auto']).astype(bool)
-        # df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt_syn']  *= self.settings.lm_factor
+        df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto']).astype(bool)
         df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
-        # df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt_syn']  *= self.settings.hm_factor
         df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
         df_tmp.loc[df_tmp['site_id'] ==  -1, 'include']  = False
         df_tmp['system_id']                                = df_tmp['system_id'].map({0: 'hm', 1: 'lm'})
+
+        x_axis = df_tmp[self.settings.x_axis].unique()#.values
+        if self.settings.x_axis == 'site_id':
+            x_axis = x_axis[x_axis>-1]
+        xmin,xmax = np.nanmin(x_axis), np.nanmax(x_axis)
+
 
         error_ub,error_lb = 'error_ub', 'error_lb'
         if True:
@@ -435,9 +445,6 @@ class dbdtSection(Panel):
 
         df_tmp.loc[df_tmp['site_id'] == -1, 'include'] = True
         df_tmp.loc[(~df_tmp['include']), 'dbdt'] = np.nan
-        # df_tmp.loc[(~df_tmp['include']), 'dbdt_syn'] = np.nan
-
-
         
         fig3 = px.scatter(
             df_tmp,
@@ -466,7 +473,10 @@ class dbdtSection(Panel):
 
         for trace in fig2.data:
             fig.add_trace(trace)
-
+        dx = xmax - xmin
+        
+        fig.update_xaxes(range=[xmin-0.1*dx, xmax+0.1*dx])
+        
         return fig  
 
     def render(self):
@@ -551,7 +561,7 @@ class Upload(Panel):
 
 @dataclass
 class TableSettings(PanelSettings):
-    max_rows: int = 6
+    max_rows: int = 50
     visible_columns: list[bool] = None
 
     def special_renders(self):
@@ -591,17 +601,17 @@ class Table(Panel):
         settings = kwargs.pop('settings', TableSettings(id, visible_columns=[True for _ in dataframe.columns.tolist()]))
         settings.column_names = dataframe.columns.tolist()
         super().__init__(id=id, settings=settings, childname='children')
-        self.df = dataframe
+        self.dataframe = dataframe
         self.dashtable = None
 
         for key, value in kwargs.items():
             setattr(self, key, value)      
 
     def render(self):
-        # if self.dashtable is None:
+        # colums = 
         self.dashtable = dash_table.DataTable(
-            data=self.df.to_dict('records'),
-            columns=[{"name": i, "id": i} for i in self.df.columns[self.settings.visible_columns]],
+            data=self.dataframe.to_dict('records'),
+            columns=[{"name": name, "id": name} for i,name in enumerate(self.dataframe.columns) if self.settings.visible_columns[i]],
             page_size=self.settings.max_rows,
             sort_action="native",
             style_table={'height': '400px', 'overflowY': 'auto'},
@@ -609,7 +619,7 @@ class Table(Panel):
             style_header={'backgroundColor': 'rgb(230, 230, 230)', 'fontWeight': 'bold'},
         )
         # self.dashtable.SelectedCells = self.dashtable.SelectedCells if hasattr(self.dashtable, 'SelectedCells') else None
-        return html.Div(self.dashtable)
+        return html.Div(self.dashtable, id=self.id)
                 
     def initialize(self):
         if hasattr(self, 'name'):
@@ -617,7 +627,6 @@ class Table(Panel):
         else:
             name = self.id
         return html.Div([
-            dcc.Markdown(f"## {name}"),
             self.render(),
             gear_maker(self.id)],
             style={'margin':'10px'}#,'height': 'calc(100%-30px)', 'overflow': 'hidden'} 
@@ -628,6 +637,8 @@ import pandas as pd
 class ModelGraphSettings(PanelSettings):
     z: Literal['depth', 'elevation'] = 'depth'
     color_by: Literal['site_id', 'misfit'] = 'site_id'
+    rho_min: float = 1.0
+    rho_max: float = 1000.0
 
 class ModelGraph(Panel):
     highlighted=None
@@ -646,7 +657,7 @@ class ModelGraph(Panel):
             value_vars=['top_depth', 'bottom_depth'],
             var_name='depth_type',
             value_name='depth'
-        ).sort_values(['daytime', 'layer', 'depth'])
+        ).sort_values(['site_id', 'daytime', 'layer', 'depth'])
 
         df_layers_long = df_layers_long.drop(columns=['depth_type'])
         if self.highlighted is None:
@@ -669,13 +680,11 @@ class ModelGraph(Panel):
                     x=df_highlighted["resistivity"],
                     y=df_highlighted["depth"],
                     mode="lines",
-                    line=dict(width=5, color='red'),
+                    line=dict(width=2, color='red'),
                     zorder=10,
                     name=f"Site {self.highlighted}"
                 ), 
             )
-            dmin = df_layers_long['depth'].min()
-            df_layers_long[df_layers_long['depth'] == dmin] = np.nan
             fig.add_trace(
                 go.Scatter(
                     x=df_layers_long["resistivity"],
@@ -690,9 +699,7 @@ class ModelGraph(Panel):
 
         # Reverse y-axis so depth increases downward
         fig.update_yaxes(autorange="reversed")
-        fig.update_layout(
-            xaxis_type="log",
-        )
+        fig.update_xaxes(type="log", range=[np.log10(self.settings.rho_min), np.log10(self.settings.rho_max)])
         return fig        
     
 @dataclass

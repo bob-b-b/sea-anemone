@@ -206,7 +206,7 @@ class TEMframe(DataFrame):
         df_data['utm_x'] = np.nan
         df_data['utm_y'] = np.nan
         df_data['zone_number'] = np.nan
-        df_data['zone_letter'] = np.nan
+        # df_data['zone_letter'] = np.nan
         df_data.loc[ok, 'utm_x'] = utmx
         df_data.loc[ok, 'utm_y'] = utmy
         df_data.loc[ok, 'zone_number'] = zone_number
@@ -220,6 +220,11 @@ class TEMframe(DataFrame):
         # df_data.history[0] = df_data.history[0].replace('place_holder', output_name)
         # df_data.history.pop()  # remove the initial placeholder history entry
         df_data.track_history = track_history
+        
+        df_data.forward_operators[0].source     = df_data.forward_operators[1].source
+        df_data.forward_operators[0].receiver   = df_data.forward_operators[1].receiver
+        df_data.forward_operators[0].filterfunc = df_data.forward_operators[1].filterfunc        
+        df_data.dmfwr = df_data.forward_operators[0]+df_data.forward_operators[1]
 
         return df_data
     
@@ -276,12 +281,7 @@ class TEMframe(DataFrame):
 #        res_start = LogResistivity.smooth(torch.ones(31)*40., torch.logspace(0, 2.1, 30))
         self._record_op()
         current_history = self.history.copy()
-
-        self.forward_operators[0].source     = self.forward_operators[1].source
-        self.forward_operators[0].receiver   = self.forward_operators[1].receiver
-        self.forward_operators[0].filterfunc = self.forward_operators[1].filterfunc
-
-        dmfwr = self.forward_operators[0]+self.forward_operators[1]
+        dmfwr = self.dmfwr
 
         # with self._skip_tracking():
         df_data = self.copy()
@@ -289,7 +289,7 @@ class TEMframe(DataFrame):
 
 
         # this gives a warning and may need to updated if pandas is updated to pandas 3.0
-        df_data['include'] = df_data['inuse_manual'].fillna(df_data['inuse_auto'])
+        df_data['include'] = df_data['inuse_manual'].astype(bool, copy=False).fillna(df_data['inuse_auto'])
 
         df_data['dbdt_syn'] = df_data['dbdt']*np.nan
         pivot_multi = df_data[(df_data['site_id']>-1)*(df_data['gate_id']>-1)].pivot_table(
@@ -319,7 +319,7 @@ class TEMframe(DataFrame):
             include_mask = include_values.astype(bool)
             d_err[~include_mask] = torch.inf  # Set error to zero for included measurements
 
-            inv = fastJac(d_obs, d_err, res_start, dmfwr, logger=print)
+            inv = fastJac(d_obs, d_err, res_start, self.dmfwr, logger=print)
             inv.data_misfit_acceptance_threshold = 0.95
             res_mod = inv.invert(iter_cap=10)
 
@@ -344,6 +344,7 @@ class TEMframe(DataFrame):
             thicknesses = row['thickness']
             tops = np.concatenate([[0], np.cumsum(thicknesses)[:-1]])
             bottoms = np.cumsum(thicknesses)
+            bottoms[-1] = bottoms[-1]*1.1
             for i, (rho, top, bottom) in enumerate(zip(resistivities, tops, bottoms)):
                 rows.append({
                     'site_id': site_id,
@@ -363,29 +364,35 @@ class TEMframe(DataFrame):
         self.history = current_history[:-1]
         return df_layers, df_data
     
+
+    def get_site_data(self, site_id):
+        df_data     = self[self['site_id']==site_id].copy()
+        df_data     = df_data[df_data['gate_id']>-1]
+        df_data['include'] = df_data['inuse_manual'].astype(bool, copy=False).fillna(df_data['inuse_auto'].astype(bool))
+        
+        df_data.sort_values('data_id', inplace=True)
+        dbdt=df_data['dbdt'].values
+        d_obs = torch.from_numpy(np.abs(dbdt)).log()
+        d_err = torch.from_numpy(np.log1p(df_data['error'].values/100))
+        include_values = torch.from_numpy(df_data['include'].values.astype(bool))
+        
+        d_err[include_values==0] = torch.inf
+        d_err[dbdt<0] = torch.inf
+        return d_obs, d_err, self.__class__.from_pandas(df_data, history=self.history.copy(), forward_operators=self.forward_operators)
+    
+
     def invert(self, res_start, vc=0.4, hc=0.4, max_iterations=50):
 #        res_start = LogResistivity.smooth(torch.ones(31)*40., torch.logspace(0, 2.1, 30))
         # self._record_op()
         current_history = self.history.copy()
+        dmfwr = self.dmfwr
 
-        self.forward_operators[0].source     = self.forward_operators[1].source
-        self.forward_operators[0].receiver   = self.forward_operators[1].receiver
-        self.forward_operators[0].filterfunc = self.forward_operators[1].filterfunc
-
-        # print('fwr1 : ', self.forward_operators[0].omega.shape, self.forward_operators[0].lmb.shape)
-        # print('fwr2 : ', self.forward_operators[1].omega.shape, self.forward_operators[1].lmb.shape)
-        dmfwr = self.forward_operators[0]+self.forward_operators[1]
-        # print('fwr1 : ', self.forward_operators[0].omega.shape, self.forward_operators[0].lmb)
-        # print('fwr2 : ', self.forward_operators[1].omega.shape, self.forward_operators[1].lmb)
-        # print('dmfwr: ', dmfwr.omega.shape, dmfwr.lmb.shape)
-
-        # with self._skip_tracking():
         df_data = self.copy()
         df_overview = df_data.overview()
 
 
         # this gives a warning and may need to updated if pandas is updated to pandas 3.0
-        df_data['include'] = df_data['inuse_manual'].fillna(df_data['inuse_auto'])
+        df_data['include'] = df_data['inuse_manual'].astype(bool, copy=False).fillna(df_data['inuse_auto'])
 
         df_data['dbdt_syn'] = df_data['dbdt']*np.nan
         pivot_multi = df_data[(df_data['site_id']>-1)*(df_data['gate_id']>-1)].pivot_table(
@@ -435,7 +442,7 @@ class TEMframe(DataFrame):
             data_id = row.filter(like='data_id_').values    
             res_mod = res_mods[i].copy()
 
-            d_syn = inv_list[i].forward(*res_mod.mod).exp()
+            d_syn = inv._dpredgrid[i].exp()
             df_data.loc[data_id, 'dbdt_syn'] = d_syn.numpy()
 
             rho,thick = res_mod.mod
@@ -472,7 +479,53 @@ class TEMframe(DataFrame):
         df_layers = TEMframe(rows, history=current_history.copy())
         # self.history = current_history[:-1]
         return df_layers, df_data
-    
+
+
+    def invert_site(self, site_id, vc=0.4, res_start=100., max_iterations=50):
+        t_max = max([fwr.times.max().item() for fwr in self.forward_operators])
+        d_max = (t_max*4e6)**0.5
+        n_layers = 30
+
+        if res_start is None:
+            thk = 1.+torch.logspace(-0.5, np.log10(d_max-n_layers+1), n_layers).diff()
+            z = thk.cumsum()
+            res_start=LogResistivity.smooth(torch.ones(n_layers)*40., z)
+
+        elif isinstance(res_start, float):
+            thk = 1.+torch.logspace(-0.5, np.log10(d_max-n_layers+1), n_layers).diff()
+            z = thk.cumsum(0)
+            res_start=LogResistivity.smooth(torch.ones(n_layers)*res_start, z)
+        d_obs, d_err, df_site = self.get_site_data(site_id)
+
+        inv1 = fastJac(d_obs, d_err, res_start, self.dmfwr)
+        inv1.vertical_smoothness=vc
+        res_mod=inv1.invert(iter_cap=10)
+        i,row = df_site.overview().iterrows().__next__()
+        d_syn = inv1.data_predicted.exp()
+        df_site.loc[:, 'dbdt_syn'] = d_syn.numpy()
+
+        rho,thick = res_mod.mod
+        rows = []
+        tops = np.concatenate([[0], np.cumsum(thick)[:-1]])
+        bottoms = np.cumsum(thick)
+
+        for i, (rho, top, bottom) in enumerate(zip(rho, tops, bottoms)):
+            rows.append({
+                'site_id': df_site['site_id'].values[0],
+                'daytime': row['daytime'],
+                'date': row['date'],
+                'latitude': row['latitude'],
+                'longitude': row['longitude'],
+                'elevation': row['elevation'],
+                'layer': i,
+                'resistivity': rho,
+                'top_depth': top,
+                'bottom_depth': bottom,
+                'center_depth': (top + bottom) / 2
+            })
+        df_layers = self.__class__(rows, history=self.history, forward_operators=self.forward_operators)
+        return df_layers, df_site
+
     def save(self, save_folder):
         tem_data = os.path.join(save_folder, 'tem_data.csv')
         self.to_csv(tem_data, index=False)

@@ -26,7 +26,9 @@ global TABLES
 
 df_data = None
 df_mods = None
-df_overview = None
+
+import pandas as pd
+df_overview = pd.DataFrame(columns=['date', 'daytime', 'latitude', 'longitude', 'elevation', 'utm_x', 'utm_y', 'distance'])
 
 
 
@@ -35,6 +37,7 @@ if os.path.exists('anemone_backup'):
     print(session_files)
 else:
     os.mkdir('anemone_backup')
+    session_files = None
 
 
 
@@ -51,7 +54,7 @@ m1 = Map(data=df_overview)
 dbdt1 = dbdtSounding(dataframe=df_data)
 dbdt2 = dbdtSection(dataframe=df_data)
 u1 = Upload(session_files=session_files)
-# t1 = Table(df_overview, id='table_overview', settings=TableSettings('table_overview'))
+t1 = Table(df_overview, id='table_overview', settings=TableSettings('table_overview', visible_columns=[True]*len(df_overview.columns)))
 
 
 mod1 = ModelGraph(   dataframe=df_mods )
@@ -79,7 +82,7 @@ x = html.Div([
 
 stmod = StartingModel.standard(rho=10.)
 
-panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, stmod]
+panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, stmod, t1]
 nodes = [node for panel in panels for node in panel.to_nodes()]+[dfl.Tab(id=f'tab-processing_buttons', children=[x]), dfl.Tab(id='tab-panel_list', children=[panel_list])]
 
 
@@ -274,7 +277,7 @@ def show_value(n1, n2, ttem_selected, sounding_selected):
     df_data = TABLES['data']
     
     df_data.loc[df_data['data_id'].isin(data_ids), 'inuse_manual'] = inuse
-    df_data['include'] = df_data['inuse_manual'].fillna(df_data['inuse_auto'])
+    df_data['include'] = df_data['inuse_manual'].astype(bool, copy=False).fillna(df_data['inuse_auto'])
     dbdt1.dataframe = df_data[df_data['site_id'].isin(dbdt1.dataframe['site_id'].unique())]
     dbdt2.dataframe = df_data[df_data['site_id'].isin(dbdt2.dataframe['site_id'].unique())]
 
@@ -285,14 +288,16 @@ def show_value(n1, n2, ttem_selected, sounding_selected):
         Output("output-click", "children", allow_duplicate=True),
         Output('map', 'figure', allow_duplicate=True),
         Output('model_graph', 'figure', allow_duplicate=True),
-        Output('sounding', 'figure', allow_duplicate=True)
+        Output('sounding', 'figure', allow_duplicate=True),
+        Output('starting_model', 'figure', allow_duplicate=True)
     ],
     Input('highlight_prev', 'n_clicks'),
     Input('highlight_next', 'n_clicks'),
+    State('invert_layout',  'color'),
     prevent_initial_call=True,
     allow_duplicate=True
 )
-def highlight_change(n1, n2):
+def highlight_change(n1, n2, invert_layout_color):
     ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
@@ -312,8 +317,12 @@ def highlight_change(n1, n2):
     m1.highlighted = highlighted
     mod1.highlighted = highlighted
     dbdt1.dataframe = df_data[df_data['site_id'] == highlighted]
+    print('invert layout color:', invert_layout_color)
+    if invert_layout_color == 'primary':
+        print('will launch an inversion next time')
+    
 
-    return ctx.triggered_id, m1.render(), mod1.render(), dbdt1.render()
+    return ctx.triggered_id, m1.render(), mod1.render(), dbdt1.render(), stmod.render()
 
 @app.callback(
     Output('map', 'figure', allow_duplicate=True),
@@ -347,15 +356,17 @@ def cross_panel_hover(sounding_hover, ttem_hover):
     Output('map', 'figure', allow_duplicate=True),
     Output('model_graph', 'figure', allow_duplicate=True),
     Output('sounding', 'figure', allow_duplicate=True),
+    Output('starting_model', 'figure', allow_duplicate=True),
     [
         Input('model_section', 'clickData'),
         Input('tTEM', 'clickData'),
-        Input('map', 'clickData')
+        Input('map', 'clickData'),
+        State('invert_layout',  'color'),
     ],
     prevent_initial_call="initial_duplicate",
     allow_duplicate=True
 )
-def cross_panel_click(model_click, ttem_click, map_click):
+def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color):
     ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
@@ -377,8 +388,13 @@ def cross_panel_click(model_click, ttem_click, map_click):
     m1.highlighted = site_id
     mod1.highlighted = site_id
     dbdt1.dataframe = df_data[df_data['site_id'] == site_id]
-
-    return m1.render(), mod1.render(), dbdt1.render()
+    if invert_layout_color == 'primary':
+        df_layers,df_site = df_data.invert_site(site_id)
+        # if mod1.dataframe is not None:
+        #     df_layers = pd.concat([mod1.dataframe[df_data['site_id'] != site_id], df_layers], ignore_index=True)
+        mod1.dataframe = df_layers
+        dbdt1.dataframe = df_site
+    return m1.render(), mod1.render(), dbdt1.render(), mod1.render()
 
 
 
@@ -403,10 +419,10 @@ def launch_inversion(n_clicks, current_review_clicks):
 
         res_start                        = LogResistivity.smooth(rho,z) 
         TABLES['models'], TABLES['data'] = TABLES['data'].invert(res_start)
-        mod1.dataframe                   = TABLES['models']
-        mod2.dataframe                   = TABLES['models']
-        dbdt1.dataframe                  = TABLES['data']
-        dbdt2.dataframe                  = TABLES['data']
+        mod1.dataframe                   = TABLES['models'].copy()
+        mod2.dataframe                   = TABLES['models'].copy()
+        dbdt1.dataframe                  = TABLES['data'].copy()
+        dbdt2.dataframe                  = TABLES['data'].copy()
         new_review_clicks = (current_review_clicks or 0) + 1
         return stmod.render(), mod2.render(), dbdt1.render(), new_review_clicks, False
     raise PreventUpdate
@@ -418,7 +434,8 @@ def launch_inversion(n_clicks, current_review_clicks):
      Output('tTEM', 'figure', allow_duplicate=True),
      Output('process_layout', 'disabled', allow_duplicate=True),
      Output('invert_layout', 'disabled', allow_duplicate=True),
-     Output('process_layout', 'n_clicks', allow_duplicate=True)
+     Output('process_layout', 'n_clicks', allow_duplicate=True),
+     Output(t1.id, 'children', allow_duplicate=True),
     ],
     Input('upload-data', 'contents'),
     State('process_layout', 'n_clicks'),
@@ -430,7 +447,7 @@ def upload_file(contents, current_process_clicks):
     
     TABLES['data']            = TEMframe.from_zip(contents[0])
     TABLES['data'].history    = ['df_data = TEMframe.from_zip("uploaded_data_zip.txt")']
-    TABLES['data']['include'] = TABLES['data']['inuse_manual'].fillna(TABLES['data']['inuse_auto'])
+    TABLES['data']['include'] = TABLES['data']['inuse_manual'].astype(bool, copy=False).fillna(TABLES['data']['inuse_auto'])
     TABLES['overview']        = TABLES['data'].overview()
     TABLES['models']          = None
 
@@ -439,9 +456,10 @@ def upload_file(contents, current_process_clicks):
     m1.dataframe    = TABLES['overview']
     mod1.dataframe  = TABLES['models']
     mod2.dataframe  = TABLES['models']
+    t1.dataframe = TABLES['overview'].copy()
     new_process_clicks = (current_process_clicks or 0) + 1
 
-    return html.Div("File uploaded successfully."), m1.render(), dbdt1.render(), dbdt2.render(), False, False, new_process_clicks
+    return html.Div("File uploaded successfully."), m1.render(), dbdt1.render(), dbdt2.render(), False, False, new_process_clicks, t1.render()
 
 @app.callback(
     Output('map', 'figure', allow_duplicate=True),
@@ -551,34 +569,33 @@ def handle_url_hash(url_hash, model):
 
 
 try:
-    app.run(port=8050)
+    app.run(port=8050, debug=True)
 except Exception as e:
     print(f"Error running app: {e}")
 finally:
     print('closing app, saving data to zip...')
-    tmpdir = tempfile.mkdtemp(prefix='anemone_backup_')
-    try:
-        # Save data (assumes TEMframe.save(directory) writes backup files into directory)
-        if TABLES['data'] is not None:
-            TABLES['data'].save(tmpdir)
+    # tmpdir = tempfile.mkdtemp(prefix='anemone_backup_')
+    # try:
+    #     # Save data (assumes TEMframe.save(directory) writes backup files into directory)
+    #     if TABLES['data'] is not None:
+    #         TABLES['data'].save(tmpdir)
 
-        # Save models.csv if present
-        if TABLES['models'] is not None:
-            TABLES['models'].to_csv(os.path.join(tmpdir, 'models.csv'), index=False)
+    #     # Save models.csv if present
+    #     if TABLES['models'] is not None:
+    #         TABLES['models'].to_csv(os.path.join(tmpdir, 'models.csv'), index=False)
 
-        # Create zip archive next to this script
-        zip_path = os.path.join('anemone_backup', 'session1.zip')
-        with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
-            for root, _, files in os.walk(tmpdir):
-                print(files)
-                for f in files:
-                    full = os.path.join(root, f)
-                    arcname = os.path.relpath(full, tmpdir)
-                    zf.write(full, arcname)
+    #     # Create zip archive next to this script
+    #     zip_path = os.path.join('anemone_backup', 'session1.zip')
+    #     with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
+    #         for root, _, files in os.walk(tmpdir):
+    #             print(files)
+    #             for f in files:
+    #                 full = os.path.join(root, f)
+    #                 arcname = os.path.relpath(full, tmpdir)
+    #                 zf.write(full, arcname)
 
-        print(f'data saved to {zip_path}')
-    finally:
-        shutil.rmtree(tmpdir)
+    #     print(f'data saved to {zip_path}')
+    # finally:
+    #     shutil.rmtree(tmpdir)
 
 #start msedge --app=http://127.0.0.1:8050/
-
