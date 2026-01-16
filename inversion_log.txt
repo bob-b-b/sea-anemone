@@ -1,0 +1,17 @@
+001	Data misfit:	16.84	Vertical misfit:	0.15	Horizontal misfit:	0.46	Total misfit:	7.53	Step size:	1.10
+
+002	Data misfit:	9.78	Vertical misfit:	0.51	Horizontal misfit:	1.56	Total misfit:	4.48	Step size:	1.10
+
+003	Data misfit:	7.54	Vertical misfit:	0.64	Horizontal misfit:	2.08	Total misfit:	3.56	Step size:	1.10
+
+004	Data misfit:	5.76	Vertical misfit:	0.71	Horizontal misfit:	2.58	Total misfit:	2.88	Step size:	1.10
+
+005	Data misfit:	4.71	Vertical misfit:	0.71	Horizontal misfit:	2.86	Total misfit:	2.50	Step size:	1.10
+
+006	Data misfit:	4.36	Vertical misfit:	0.70	Horizontal misfit:	2.93	Total misfit:	2.38	Step size:	1.10
+
+007	Data misfit:	3.96	Vertical misfit:	0.72	Horizontal misfit:	2.94	Total misfit:	2.24	Step size:	1.10
+
+008	Data misfit:	3.65	Vertical misfit:	0.80	Horizontal misfit:	2.86	Total misfit:	2.12	Step size:	1.10
+
+reached iteration cap..

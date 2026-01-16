@@ -31,10 +31,11 @@ import pandas as pd
 df_overview = pd.DataFrame(columns=['date', 'daytime', 'latitude', 'longitude', 'elevation', 'utm_x', 'utm_y', 'distance'])
 
 
-
+session_files = None
 if os.path.exists('anemone_backup'):
     session_files = [f for f in os.listdir('anemone_backup') if f.endswith('.zip')]
-    print(session_files)
+    if len(session_files) == 0:
+        session_files = None
 else:
     os.mkdir('anemone_backup')
     session_files = None
@@ -79,10 +80,27 @@ x = html.Div([
       ]
 , id='processing_buttons')
 
+# html.Div(
+#     id="invert-controls",
+#     style={"display": "none"},  # hidden by default
+#     children=[
+#         dbc.ButtonGroup(
+#             [
+#                 dbc.Button("Invert All", id="invert_all_button", color="danger"),
+#                 dbc.Button("Invert Selected", id="invert_selected_button", color="warning"),
+#             ]
+#         )
+#     ]
+# )
+
 
 stmod = StartingModel.standard(rho=10.)
 
-panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, stmod, t1]
+Inv_it = Inversion_iterations.standard(misfit=None,rho=10.)
+
+
+panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, stmod, Inv_it, t1]
+
 nodes = [node for panel in panels for node in panel.to_nodes()]+[dfl.Tab(id=f'tab-processing_buttons', children=[x]), dfl.Tab(id='tab-panel_list', children=[panel_list])]
 
 
@@ -92,6 +110,7 @@ import layouts
 
 app.layout = html.Div([
     dcc.Location(id='url', refresh='callback-nav'),
+    dcc.Interval(id= "inv-log-poll", interval=3000, n_intervals=0, disabled=True),  # Poll every 2 seconds
     html.Div([
         dbc.ButtonGroup([
             dbc.Button("1. Load Data", id="upload_layout",    color="primary"),
@@ -289,7 +308,7 @@ def show_value(n1, n2, ttem_selected, sounding_selected):
         Output('map', 'figure', allow_duplicate=True),
         Output('model_graph', 'figure', allow_duplicate=True),
         Output('sounding', 'figure', allow_duplicate=True),
-        Output('starting_model', 'figure', allow_duplicate=True)
+        Output('inv_it', 'figure', allow_duplicate=True)
     ],
     Input('highlight_prev', 'n_clicks'),
     Input('highlight_next', 'n_clicks'),
@@ -322,7 +341,10 @@ def highlight_change(n1, n2, invert_layout_color):
         print('will launch an inversion next time')
     
 
-    return ctx.triggered_id, m1.render(), mod1.render(), dbdt1.render(), stmod.render()
+    return ctx.triggered_id, m1.render(), mod1.render(), dbdt1.render(), Inv_it.render()
+
+
+
 
 @app.callback(
     Output('map', 'figure', allow_duplicate=True),
@@ -357,6 +379,7 @@ def cross_panel_hover(sounding_hover, ttem_hover):
     Output('model_graph', 'figure', allow_duplicate=True),
     Output('sounding', 'figure', allow_duplicate=True),
     Output('starting_model', 'figure', allow_duplicate=True),
+    #Output('inv_it', 'figure', allow_duplicate=True),
     [
         Input('model_section', 'clickData'),
         Input('tTEM', 'clickData'),
@@ -396,19 +419,28 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color):
         dbdt1.dataframe = df_site
     return m1.render(), mod1.render(), dbdt1.render(), mod1.render()
 
-
-
+# @app.callback(
+#     [Output('inv-log-poll', 'disabled'),
+#     Output('inv_it', 'figure', allow_duplicate=True)],
+#     Input('invert_all_button', 'n_clicks'),
+#     prevent_initial_call="initial_duplicate",
+# )
+# def enable_inv_log_poll(n_clicks):
+#     if n_clicks:
+#         return False, Inv_it.render()
+#     raise PreventUpdate
 @app.callback(
     [
-        Output('starting_model', 'figure', allow_duplicate=True),
+       # Output('starting_model', 'figure', allow_duplicate=True),
+        #Output('inv_it', 'figure', allow_duplicate=True),
         Output('model_section', 'figure', allow_duplicate=True),
         Output('sounding', 'figure', allow_duplicate=True),
         Output('review_layout', 'n_clicks', allow_duplicate=True),
-        Output('review_layout', 'disabled', allow_duplicate=True)
+        Output('review_layout', 'disabled', allow_duplicate=True),
     ],
     Input('invert_all_button', 'n_clicks'),
     State('review_layout', 'n_clicks'),  # Add this state to get current value
-
+    running=[(Output("invert_all_button", "disabled"), True, False),(Output("invert_selected_button", "disabled"), True, False), (Output("inv-log-poll", "disabled"), False, True)],
     prevent_initial_call=True
 )
 def launch_inversion(n_clicks, current_review_clicks):
@@ -424,7 +456,7 @@ def launch_inversion(n_clicks, current_review_clicks):
         dbdt1.dataframe                  = TABLES['data'].copy()
         dbdt2.dataframe                  = TABLES['data'].copy()
         new_review_clicks = (current_review_clicks or 0) + 1
-        return stmod.render(), mod2.render(), dbdt1.render(), new_review_clicks, False
+        return mod2.render(), dbdt1.render(), new_review_clicks, False
     raise PreventUpdate
 
 @app.callback(
@@ -439,6 +471,7 @@ def launch_inversion(n_clicks, current_review_clicks):
     ],
     Input('upload-data', 'contents'),
     State('process_layout', 'n_clicks'),
+    running=[(Output("upload-data", "disabled"), True, False)],
     prevent_initial_call=True
 )
 def upload_file(contents, current_process_clicks):
@@ -569,7 +602,7 @@ def handle_url_hash(url_hash, model):
 
 
 try:
-    app.run(port=8050, debug=True)
+    app.run(port=8050, debug=True, use_reloader=True)
 except Exception as e:
     print(f"Error running app: {e}")
 finally:

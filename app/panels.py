@@ -10,6 +10,7 @@ from typing import Literal
 import plotly.express as px
 import plotly.graph_objects as go
 import numpy as np
+import os
 
 # Define a custom template
 custom_template = {
@@ -546,8 +547,11 @@ class Upload(Panel):
     
     def initialize(self):
         session_text = "### Recent sessions\n"
-        for f in self.session_files:
-            session_text += f"- [{f}](#load={f})\n"
+        if self.session_files is not None:
+            for f in self.session_files:
+                session_text += f"- [{f}](#load={f})\n"
+        else:
+            session_text += "No recent sessions found."
         return html.Div([
             dcc.Markdown("# Welcome to sea anemone", style={'textAlign': 'center'}),
             dcc.Markdown("### Upload your data to get started."),
@@ -793,7 +797,7 @@ class StartingModelSettings(PanelSettings):
 from anemone.inversion import LogResistivity
 
 class StartingModel(ModelGraph):
-    starting_rho: float = 10.
+    
     misfit = None
     def __init__(self, data, **kwargs):
         starting_model = kwargs.pop('starting_rho', 10.)
@@ -860,9 +864,9 @@ class StartingModel(ModelGraph):
                         dcc.Graph(figure=self.render(), id=self.id, mathjax=True, 
                                     config=dict(edits={'shapePosition':True}, displayModeBar=False)),
                             width=10),
-                    dbc.Col([dbc.Button("invert all", id='invert_all_button', style={'width':'100%'}),
-                             html.Div(style={'height':'10px'}),
-                             dbc.Button("invert selected", id='invert_selected_button', style={'width':'100%'})] , width=2),
+                    #dbc.Col([dbc.Button("invert all", id='invert_all_button', style={'width':'100%'}),
+                   #          html.Div(style={'height':'10px'}),
+                   #          dbc.Button("invert selected", id='invert_selected_button', style={'width':'100%'})] , width=2),
                              dbc.Tooltip('The sounding panel shows the selected data', target='invert_selected_button')
                     # dbc.Col(html.Button("invert selected", id='invert_selected_button'), width=1)
                 ], style={'height':'100%'})], style={'height':'95%', 'padding':'25px'}),
@@ -892,3 +896,171 @@ class StartingModel(ModelGraph):
             'depth': np.logspace(0, np.log10(300), 31)  # Example depth values from 0 to 300 meters
             })
         return cls(data=df)
+        
+class Inversion_iterations(Panel):
+    iterations = [1]
+    misfit = [10]
+    def __init__(self, data,rho=10., **kwargs):
+        self.rho = rho
+        settings = StartingModelSettings(id='inv_it', **kwargs)
+        super().__init__(id='inv_it', settings=settings)
+        self.dataframe = data
+
+    # def misfit_render(self):
+    #     fig = px.line(self.misfit)
+    #     return fig
+
+    def render_init(self):
+        
+        df = pd.DataFrame({
+            'resistivity': [self.rho] * 31,  # Default resistivity values
+            'depth': np.logspace(0, np.log10(300), 31)  # Example depth values from 0 to 300 meters
+            })
+        fig = px.line(df,
+            x='resistivity',
+            y='depth',
+            markers=True,
+            color_discrete_sequence=[self.settings.line_color, self.settings.line_color],
+            hover_data={'resistivity': ':.2f Ω⋅m', 'depth': False},  # Add tooltip for resistivity values
+            # hover='resistivity'  # Add tooltip for resistivity values
+        )
+        
+        for i in [0.5, 1, 2]:
+            z = df['depth']
+            y = 10+90*(1 / (1 + np.exp(-20.*(z-150)/z.max())))**i
+            fig.add_scatter(x=y, y=z, line=dict(color='grey'))#, row=1, col=2)
+
+        # Update layout to match typical resistivity plot conventions
+        fig.update_layout(
+            title='Inversion Starting Model',
+            xaxis_title='resistivity [Ω⋅m]',
+            yaxis_title='depth [m]',
+            xaxis_type='log',  # Resistivity is typically plotted on log scale
+            yaxis_type='linear',
+            yaxis=dict(autorange='reversed'),  # Depth increases downward
+            xaxis=dict(range=[-0.1,3.1]),  # Set x-axis range for resistivity
+            showlegend=True,
+            modebar=dict(remove=['toImage', 'zoom', 'zoomIn', 'zoomOut', 'pan', 'select']),
+        )
+        fig.add_shape(type='line', x0=self.rho, x1=self.rho,
+                      y0=df['depth'].min(), y1=df['depth'].max(),
+                      xref='x1', yref='y1',
+                      line=dict(color=self.settings.line_color, dash='dash'),
+                      editable=True)
+
+        return fig
+        # fig = go.Figure()
+        # fig.update_layout(
+        # title='Inversion',
+        # xaxis_title='Iterations',
+        # yaxis_title='Misfit',
+        # xaxis_type='linear',  # Resistivity is typically plotted on log scale
+        # yaxis_type='log',
+        # yaxis=dict(range=[-1,3]),  # Depth increases downward
+        # xaxis=dict(range=[-0.1,20.1]),  # Set x-axis range for resistivity
+        # showlegend=False)
+    def render(self):
+        #if len(self.misfit) > 0: return self.empty_render()
+
+        # fig = make_subplots(rows=1, cols=2, shared_yaxes=True)
+        # Add the step plot for resistivity
+        if len(self.iterations) == 0 or len(self.misfit) == 0 or isinstance(self.misfit[0], int):
+            #return self.empty_render()
+            fig = self.render_init()
+            # fig = go.Figure()
+            # fig.update_layout(
+            # title='Inversion',
+            # xaxis_title='Iterations',
+            # yaxis_title='Misfit',
+            # xaxis_type='linear',  # Resistivity is typically plotted on log scale
+            # yaxis_type='log',
+            # yaxis=dict(range=[-1,3]),  # Depth increases downward
+            # xaxis=dict(range=[-0.1,20.1]),  # Set x-axis range for resistivity
+            # showlegend=False,
+            #modebar=dict(remove=['toImage', 'zoom', 'zoomIn', 'zoomOut', 'pan', 'select']),
+# )
+        else:
+            fig = px.line(
+                x=self.iterations,
+                y=self.misfit,
+                markers=True,
+                color_discrete_sequence=[self.settings.line_color, self.settings.line_color],
+
+            )
+
+
+            # Update layout to match typical resistivity plot conventions
+            fig.update_layout(
+                title='Inversion',
+                xaxis_title='Iterations',
+                yaxis_title='Misfit',
+                xaxis_type='linear',  # Resistivity is typically plotted on log scale
+                yaxis_type='log',
+                yaxis=dict(range=[-1,3]),  # Depth increases downward
+                xaxis=dict(range=[-0.1,20.1]),  # Set x-axis range for resistivity
+                showlegend=False,
+                #modebar=dict(remove=['toImage', 'zoom', 'zoomIn', 'zoomOut', 'pan', 'select']),
+            )
+        return fig
+    
+
+    def initialize(self):
+        init = html.Div([dbc.Container([
+                dbc.Row([
+                    dbc.Col(
+                        dcc.Graph(figure=self.render_init(), id=self.id, mathjax=True, 
+                                    config=dict(edits={'shapePosition':True}, displayModeBar=False)),
+                            width=10),
+                    dbc.Col([dbc.Button("invert all", id='invert_all_button', style={'width':'100%'}),
+                             html.Div(style={'height':'10px'}),
+                             dbc.Button("invert selected", id='invert_selected_button', style={'width':'100%'})] , width=2),
+                             dbc.Tooltip('The sounding panel shows the selected data', target='invert_selected_button')
+                ], style={'height':'100%'})], style={'height':'95%', 'padding':'25px'}),
+                 gear_maker(self.id)], style={'height': '100%', 'overflow': 'hidden'},
+                  )
+        return init
+                            
+    
+    def add_callbacks(self, app):
+        super().add_callbacks(app)
+
+        @app.callback(
+            Output(self.id, 'figure', allow_duplicate=True),
+            Input('inv-log-poll', 'n_intervals'),
+            prevent_initial_call=True
+        )
+
+        def update_misfit(_):
+            #self.iterations, self.misfit =  int(relayoutData.get('shapes[0].x0', self.starting_rho))
+            self.iterations = []
+            self.misfit = []
+            log_path = "inversion_log.txt"
+
+            mtime = os.path.getmtime(log_path)
+            if not os.path.exists("inversion_log.txt") or os.path.getsize("inversion_log.txt") == 0:
+                return self.render()
+
+            with open("inversion_log.txt", "r") as file:
+                for line in file:
+                    if not line.strip():
+                        continue  # skip empty lines
+
+                    parts = line.split()
+
+                    # Iteration number is the first token
+                    if not parts[0].isdigit():
+                        continue  # skip lines that don't start with an iteration number
+                    iteration = int(parts[0])
+
+                    # Find "Total misfit:" and take the number after it
+                    total_misfit_index = parts.index("Total") + 2
+                    total_misfit = float(parts[total_misfit_index])
+
+                    self.iterations.append(iteration)
+                    self.misfit.append(total_misfit)
+            return self.render()
+        
+
+    @classmethod
+    def standard(cls, misfit=10., rho=10.):
+        return cls(data=misfit, rho=rho)#cls(data=df)

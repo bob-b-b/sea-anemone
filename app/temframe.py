@@ -13,6 +13,21 @@ def silence(s):
 from anemone.inversion import LogResistivity
 from anemone.inversion import fastJac, SCI
 
+def make_log():
+    """Initialize a log file by creating it empty or clearing if it exists."""
+    try:
+        with open('inversion_log.txt', 'w') as f:
+            f.write('')
+    except IOError as e:
+        print(f"Error creating log file: {e}")
+    
+
+def write_log(message):
+    print(message)
+    with open('inversion_log.txt', 'a') as f:
+        f.write(message+'\n')
+    
+
 class TEMframe(DataFrame):
     forward_operators = []
     history = []
@@ -59,9 +74,13 @@ class TEMframe(DataFrame):
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
             usf_files = [x for x in z.namelist() if x.endswith('.usf')]
             sweeps = []
-            for fname in usf_files:
+            for i, fname in enumerate(usf_files):
                 with z.open(fname, 'r') as f:
-                    sweeps += usf.Sweep.from_buffer(f, combine=False)
+                    new_sweeps = usf.Sweep.from_buffer(f, combine=False)
+                    if set([x.points for x in new_sweeps]) == {6,22}:
+                        sweeps += new_sweeps
+                    else:
+                        print(f'Ignoring {fname} because it does not contain both low and high moment data.')                    
             return cls.from_sweeps(sweeps, track_history=track_history, folder_path=z.namelist()[0]+'.zip')
 
     @classmethod
@@ -115,7 +134,11 @@ class TEMframe(DataFrame):
         usf_files = [folder_path+f for f in os.listdir(folder_path) if f.endswith('.usf')]
         for usf_file in usf_files:        
             with open(usf_file, 'rb') as f:
-                sweeps += usf.Sweep.from_buffer(f, combine=False)
+                new_sweeps = usf.Sweep.from_buffer(f, combine=False)
+                if set([x.points for x in new_sweeps]) == {6,22}:
+                    sweeps += new_sweeps
+                else:
+                    print(f'Ignoring {usf_file} because it does not contain both low and high moment data.')
         return cls.from_sweeps(sweeps, track_history=track_history, folder_path=folder_path)
 
     @classmethod
@@ -124,7 +147,12 @@ class TEMframe(DataFrame):
         mega_sweeps = []
         for pnts in points:
             mega_sweeps.append(usf.Sweep.combine_sweeps([swp for swp in sweeps if swp.points==pnts]))
-        lm,hm = mega_sweeps
+        try:
+            lm,hm = mega_sweeps
+        except:
+            print(len(mega_sweeps))
+            print(points)
+            print(folder_path)
 
         n_sites,n_gates = lm.data.shape
         n_gates += 1
@@ -381,7 +409,7 @@ class TEMframe(DataFrame):
         return d_obs, d_err, self.__class__.from_pandas(df_data, history=self.history.copy(), forward_operators=self.forward_operators)
     
 
-    def invert(self, res_start, vc=0.4, hc=0.4, max_iterations=50):
+    def invert(self, res_start, vc=0.5, hc=0.8, max_iterations=8):
 #        res_start = LogResistivity.smooth(torch.ones(31)*40., torch.logspace(0, 2.1, 30))
         # self._record_op()
         current_history = self.history.copy()
@@ -431,8 +459,8 @@ class TEMframe(DataFrame):
             inv_list.append(inv)
             x_list.append(row_meta['utm_x'])
             y_list.append(row_meta['utm_y'])
-
-        inv = SCI(inv_list, x=np.array(x_list), y=np.array(y_list))
+        make_log()
+        inv = SCI(inv_list, x=np.array(x_list), y=np.array(y_list), log=write_log)
         inv.data_misfit_acceptance_threshold = 0.95
         res_mods = inv.invert(iter_cap=max_iterations)
 
