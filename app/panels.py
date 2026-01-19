@@ -3,13 +3,12 @@ from basepanel import *
 #from database_panel import DatabasePanel
 from dash import dash_table
 import numpy as np
+from nosj import nosj
 
 import plotly.io as pio
-
 from typing import Literal
 import plotly.express as px
 import plotly.graph_objects as go
-import numpy as np
 
 # Define a custom template
 custom_template = {
@@ -36,14 +35,10 @@ custom_template = {
         },
     }
 }
-
-# Register the custom template
 pio.templates["custom"] = custom_template
-
-# Set the custom template as the default
 pio.templates.default = "custom"
 
-@dataclass
+@nosj
 class MapSettings(PanelSettings):
     zoom: int = 14
     color: str = '#ff0000'
@@ -94,7 +89,7 @@ class Map(Panel):
 
 
 
-@dataclass
+@nosj
 class dbdtSoundingSettings(PanelSettings):
     lm_color: str = '#ff0000'
     hm_color: str = '#0000ff'
@@ -319,7 +314,7 @@ class rhoaSounding(Panel):
         return fig
 
 
-@dataclass
+@nosj
 class dbdtSectionSettings(PanelSettings):
     lm_color: str = '#ff0000'
     hm_color: str = '#2D81FF'
@@ -510,7 +505,7 @@ panel_list = html.Div([
     dcc.Markdown(children=markdown_text)
 ])
 
-@dataclass
+@nosj
 class AutoProcessing(PanelSettings):
     sign_correction:  bool = False
     remove_negatives: bool = False
@@ -546,8 +541,11 @@ class Upload(Panel):
     
     def initialize(self):
         session_text = "### Recent sessions\n"
-        for f in self.session_files:
-            session_text += f"- [{f}](#load={f})\n"
+        if self.session_files is not None:
+            session_text += "no previous session:\n"
+        else:
+            for f in self.session_files:
+                session_text += f"- [{f}](#load={f})\n"
         return html.Div([
             dcc.Markdown("# Welcome to sea anemone", style={'textAlign': 'center'}),
             dcc.Markdown("### Upload your data to get started."),
@@ -559,7 +557,7 @@ class Upload(Panel):
         )
 
 
-@dataclass
+@nosj
 class TableSettings(PanelSettings):
     max_rows: int = 50
     visible_columns: list[bool] = None
@@ -633,7 +631,7 @@ class Table(Panel):
         )
 
 import pandas as pd
-@dataclass
+@nosj
 class ModelGraphSettings(PanelSettings):
     z: Literal['depth', 'elevation'] = 'depth'
     color_by: Literal['site_id', 'misfit'] = 'site_id'
@@ -702,7 +700,7 @@ class ModelGraph(Panel):
         fig.update_xaxes(type="log", range=[np.log10(self.settings.rho_min), np.log10(self.settings.rho_max)])
         return fig        
     
-@dataclass
+@nosj
 class ModelSectionSettings(PanelSettings):
     z: Literal['depth', 'elevation'] = 'depth'
     x_axis: Literal['daytime', 'site_id', 'longitude', 'latitude', 'distance'] = 'daytime'
@@ -786,7 +784,7 @@ class ModelSection(Panel):
 
 import dash_bootstrap_components as dbc
 
-@dataclass
+@nosj
 class StartingModelSettings(PanelSettings):
     line_color: str='#ff0000'
 
