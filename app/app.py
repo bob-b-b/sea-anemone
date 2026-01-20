@@ -1,8 +1,13 @@
 import sys, os
+from tkinter import filedialog, Tk
+
 
 fpath = os.path.dirname(os.path.abspath(__file__))
 if fpath not in sys.path:
     sys.path.append(fpath)
+
+session_tracker = fpath+'/recent_projects.txt'
+
 from panels import *
 
 from dash import dcc
@@ -10,56 +15,43 @@ from dash import Dash, callback_context
 from dash.exceptions import PreventUpdate
 from dash_bootstrap_components import Button, ButtonGroup, themes
 import dash_bootstrap_components as dbc
-import tempfile, shutil, zipfile
+from dash.dash import no_update
 
 from temframe import TEMframe
 
 external_stylesheets = [themes.BOOTSTRAP]
 app = Dash(__name__, suppress_callback_exceptions=True, assets_folder='assets',  external_stylesheets=external_stylesheets)
-app.title = "sea anemone"
-
+app.title = "Sea Anemone"
 
 
 import os
 
-global TABLES
 
-df_data = None
-df_mods = None
-df_overview = None
 
 import pandas as pd
 # df_overview = pd.DataFrame(columns=['date', 'daytime', 'latitude', 'longitude', 'elevation', 'utm_x', 'utm_y', 'distance'])
 
+import session
+
+global sesh
+sesh = session.Session()
 
 
-if os.path.exists('anemone_backup'):
-    session_files = [f for f in os.listdir('anemone_backup') if f.endswith('.zip')]
-    print(session_files)
+if os.path.exists(session_tracker):
+    with open(session_tracker, 'rt') as f:
+        session_files = f.readlines()
 else:
-    os.mkdir('anemone_backup')
-    session_files = None
+    session_files = []
 
 
-
-TABLES = {
-    'data': df_data,
-    'overview': df_overview,
-    'models': df_mods
-}
-
-
-
-
-m1    = Map(data=df_overview)
-dbdt1 = dbdtSounding(dataframe=df_data)
-dbdt2 = dbdtSection(dataframe=df_data)
+pyInt = PyInterpretter()
+m1    = Map(data=sesh.overview)
+dbdt1 = dbdtSounding(dataframe=sesh.data)
+dbdt2 = dbdtSection(dataframe=sesh.data)
 u1    = Upload(session_files=session_files)
 # t1    = Table(df_overview, id='table_overview', settings=TableSettings('table_overview', visible_columns=[True]*len(df_overview.columns)))
-
-
-mod1 = ModelGraph(   dataframe=df_mods )
-mod2 = ModelSection( dataframe=df_mods )
+mod1 = ModelGraph(   dataframe=sesh.models )
+mod2 = ModelSection( dataframe=sesh.models )
 
 
 x = html.Div([
@@ -76,19 +68,17 @@ x = html.Div([
             ]),
             dbc.ButtonGroup([
                 dbc.Button("save [ctrl+s]", id='saveButton'),
-                dbc.Button("save as [ctrl+shift+s]", id='saveAsButton'),
-                dbc.Button("open [ctrl+o]", id='openButton'),
             ])
           ], style={'padding': '10px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between'}
-      ),
-      dcc.Location(id='url_button'),
+        ),
+        dcc.Location(id='url_button'),
       ]
 , id='processing_buttons')
 
 
 stmod = StartingModel.standard(rho=10.)
 
-panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, stmod]
+panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, stmod, pyInt]
 nodes = [node for panel in panels for node in panel.to_nodes()]+[dfl.Tab(id=f'tab-processing_buttons', children=[x]), dfl.Tab(id='tab-panel_list', children=[panel_list])]
 
 
@@ -96,14 +86,22 @@ html_header = html.H1('Sea Anemone', style={'width': '100%'})
 
 import layouts
 
+flex_layout = dfl.FlexLayout(
+            id="flex-layout",
+            model=layouts.upload,
+            children=nodes,
+            useStateForModel=False,        
+        )
+
 app.layout = html.Div([
     dcc.Location(id='url', refresh='callback-nav'),
     html.Div([
         dbc.ButtonGroup([
-            dbc.Button("1. Load Data", id="upload_layout",    color="primary"),
-            dbc.Button("2. Process",   id="process_layout", disabled=True, color="secondary"),
-            dbc.Button("3. Invert",    id="invert_layout",  disabled=True, color="secondary"),
-            dbc.Button("4. Review",    id="review_layout",  disabled=True, color="secondary"),
+            dbc.Button("1. Load Data",  id="upload_layout",    color="primary"),
+            dbc.Button("2. Process",    id="process_layout",   disabled=True, color="secondary"),
+            dbc.Button("3. Invert",     id="invert_layout",    disabled=True, color="secondary"),
+            dbc.Button("4. QC",         id="review_layout",    disabled=True, color="secondary"),
+            dbc.Button("5. Interpret",  id="interpret_layout", disabled=True, color="secondary"),
         ], style={'width': '100%'})
     ], style={
         'position': 'fixed',
@@ -117,17 +115,9 @@ app.layout = html.Div([
         'zIndex': '1000',
         'display': 'flex',
         'alignItems': 'center',
-        # 'justifyContent': 'space-between',
         'padding': '0 10px'
     }),
-    html.Div([
-        dfl.FlexLayout(
-            id="flex-layout",
-            model=layouts.upload,
-            children=nodes,
-            useStateForModel=False,        
-        ),
-    ], style={'marginTop': '60px'}),  # Push content below fixed header
+    html.Div([flex_layout], style={'marginTop': '60px'}),  # Push content below fixed header
     html.Div(id='output-click')
 ])
 
@@ -188,14 +178,14 @@ def handle_map_interactions(relayout_data, selected_data):
     if not selected_sites:
         raise PreventUpdate
 
-    df_data = TABLES['data']
+    df_data = sesh.data
 
     # Update dataframes with selected sites
     new_df = df_data[df_data['site_id'].isin(selected_sites)]
     dbdt1.dataframe = new_df
     dbdt2.dataframe = new_df
 
-    df_mods = TABLES['models']
+    df_mods = sesh.models
     if df_mods is not None:
         new_mod = df_mods[df_mods['site_id'].isin(selected_sites)]
         mod1.highlighted = None
@@ -231,6 +221,7 @@ app.clientside_callback(
                         event.preventDefault()
                         event.stopPropagation()
                     }
+                    
                     if (event.key == 's') {
                         if (event.shiftKey) {
                             document.getElementById('saveAsButton').click()
@@ -244,12 +235,12 @@ app.clientside_callback(
                 
                 // Arrow keys without Ctrl, but only if not typing in an input
                 if (!isInputFocused) {
-                    if (event.key == 'left') {
+                    if (event.key == 'ArrowLeft') {
                         document.getElementById('highlight_prev').click()
                         event.preventDefault()
                         event.stopPropagation()
                     }
-                    if (event.key == 'right') {
+                    if (event.key == 'ArrowRight') {
                         document.getElementById('highlight_next').click()
                         event.preventDefault()
                         event.stopPropagation()
@@ -262,12 +253,11 @@ app.clientside_callback(
     Output("disableButton", "id"),
     Input("disableButton", "id")
 )
-
-
 @app.callback(
     [
         Output("output-click", "children"),
-        Output("tTEM", "figure", allow_duplicate=True), Output("sounding", "figure", allow_duplicate=True)
+        Output("tTEM", "figure", allow_duplicate=True), 
+        Output("sounding", "figure", allow_duplicate=True)
      ],
     Input("disableButton", "n_clicks"),
     Input("enableButton", "n_clicks"),
@@ -288,7 +278,7 @@ def show_value(n1, n2, ttem_selected, sounding_selected):
         data_ids = [point['customdata'][1] for point in sounding_selected['points'] if 'customdata' in point]
     else:
         raise PreventUpdate
-    df_data = TABLES['data']
+    df_data = sesh.data
     
     df_data.loc[df_data['data_id'].isin(data_ids), 'inuse_manual'] = inuse
     df_data['include'] = df_data['inuse_manual'].astype(bool, copy=False).fillna(df_data['inuse_auto'])
@@ -299,50 +289,28 @@ def show_value(n1, n2, ttem_selected, sounding_selected):
 @app.callback(
     Output('output-click', 'children', allow_duplicate=True),
     Input('saveButton', 'n_clicks'),
-    Input('saveAsButton', 'n_clicks'),
     prevent_initial_call=True,
     allow_duplicate=True
 )
-def save_session(n1, n2):
-    ctx = callback_context
-    if not ctx.triggered:
-        raise PreventUpdate
-    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+def save_session(n1):
+    if sesh.save_dir is None:
+        root = Tk()
+        root.withdraw()  # Hide the root window
+        folder_path = filedialog.askdirectory(title="Select Save Directory")
+        print(folder_path)
+        root.destroy()  # Destroy the root window after selection
+        if not folder_path:
+            raise PreventUpdate
+        sesh.save_dir = folder_path + '/' if not folder_path.endswith('/') else folder_path
+    if sesh.save_dir not in u1.session_files:
+        u1.session_files.append(sesh.save_dir)
+        with open(session_tracker, 'w') as f:
+            for item in u1.session_files:
+                f.write(f"{item}\n")
 
-    import datetime
-    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-    if trigger_id == 'saveButton':
-        print('triggered saveButton')
-    elif trigger_id == 'saveAsButton':
-        print('triggered saveAsButton')
-    else:
-        raise PreventUpdate
-
-    # tmpdir = tempfile.mkdtemp(prefix='anemone_backup_')
-    # try:
-    #     # Save data (assumes TEMframe.save(directory) writes backup files into directory)
-    #     if TABLES['data'] is not None:
-    #         TABLES['data'].save(tmpdir)
-
-    #     # Save models.csv if present
-    #     if TABLES['models'] is not None:
-    #         TABLES['models'].to_csv(os.path.join(tmpdir, 'models.csv'), index=False)
-
-    #     # Create zip archive next to this script
-    #     zip_path = os.path.join('anemone_backup', fname)
-    #     with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
-    #         for root, _, files in os.walk(tmpdir):
-    #             print(files)
-    #             for f in files:
-    #                 full = os.path.join(root, f)
-    #                 arcname = os.path.relpath(full, tmpdir)
-    #                 zf.write(full, arcname)
-
-    #     print(f'data saved to {zip_path}')
-    # finally:
-    #     shutil.rmtree(tmpdir)
-
-    return f'Session saved as {fname}'
+    sesh.save(folder=sesh.save_dir)
+    print(f'Session saved to {sesh.save_dir}')
+    return f'Session saved to {sesh.save_dir}'
 
 @app.callback(
     [
@@ -371,10 +339,10 @@ def highlight_change(n1, n2, invert_layout_color):
         highlight_change = 1
 
     if highlighted is None:
-        highlighted = 0
+        PreventUpdate
     else:
         highlighted += highlight_change
-    df_data = TABLES['data']
+    df_data = sesh.data
     m1.highlighted = highlighted
     mod1.highlighted = highlighted
     dbdt1.dataframe = df_data[df_data['site_id'] == highlighted]
@@ -445,7 +413,7 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color):
         site_id = int(click_data['points'][0]['pointNumber'])
     else:
         site_id = None
-    df_data = TABLES['data']
+    df_data = sesh.data
     m1.highlighted = site_id
     mod1.highlighted = site_id
     dbdt1.dataframe = df_data[df_data['site_id'] == site_id]
@@ -479,11 +447,11 @@ def launch_inversion(n_clicks, current_review_clicks):
         z   = from_numpy(stmod.dataframe['depth'].values[:-1])
 
         res_start                        = LogResistivity.smooth(rho,z) 
-        TABLES['models'], TABLES['data'] = TABLES['data'].invert(res_start)
-        mod1.dataframe                   = TABLES['models'].copy()
-        mod2.dataframe                   = TABLES['models'].copy()
-        dbdt1.dataframe                  = TABLES['data'].copy()
-        dbdt2.dataframe                  = TABLES['data'].copy()
+        sesh.models, sesh.data = sesh.data.invert(res_start)
+        mod1.dataframe                   = sesh.models.copy()
+        mod2.dataframe                   = sesh.models.copy()
+        dbdt1.dataframe                  = sesh.data.copy()
+        dbdt2.dataframe                  = sesh.data.copy()
         new_review_clicks = (current_review_clicks or 0) + 1
         return stmod.render(), mod2.render(), dbdt1.render(), new_review_clicks, False
     raise PreventUpdate
@@ -505,18 +473,16 @@ def launch_inversion(n_clicks, current_review_clicks):
 def upload_file(contents, current_process_clicks):
     if contents is None:
         raise PreventUpdate
-    
-    TABLES['data']            = TEMframe.from_zip_content(contents[0])
-    TABLES['data'].history    = ['df_data = TEMframe.from_zip_content("uploaded_data_zip.txt")']
-    TABLES['data']['include'] = TABLES['data']['inuse_manual'].astype(bool, copy=False).fillna(TABLES['data']['inuse_auto'])
-    TABLES['overview']        = TABLES['data'].overview()
-    TABLES['models']          = None
+    sesh.data            = TEMframe.from_zip_content(contents[0])
+    sesh.data.history    = ['df_data = TEMframe.from_zip_content("uploaded_data_zip.txt")']
+    sesh.data['include'] = sesh.data['inuse_manual'].astype(bool, copy=False).fillna(sesh.data['inuse_auto'])
+    sesh.models          = None
 
-    dbdt1.dataframe = TABLES['data'].copy()
-    dbdt2.dataframe = TABLES['data'].copy()
-    m1.dataframe    = TABLES['overview']
-    mod1.dataframe  = TABLES['models']
-    mod2.dataframe  = TABLES['models']
+    dbdt1.dataframe = sesh.data.copy()
+    dbdt2.dataframe = sesh.data.copy()
+    m1.dataframe    = sesh.overview
+    mod1.dataframe  = sesh.models
+    mod2.dataframe  = sesh.models
     # t1.dataframe = TABLES['overview'].copy()
     new_process_clicks = (current_process_clicks or 0) + 1
 
@@ -567,8 +533,33 @@ def update_layout(model, load_clicks, process_clicks, invert_clicks, review_clic
         return layouts.review, 'secondary', 'secondary', 'secondary', 'primary'
     return model, 'secondary', 'secondary', 'secondary', 'secondary'
 
-@app.callback(
-    [
+# @app.callback(
+#     [
+#         
+#         Output('url', 'hash', allow_duplicate=True)
+#     ],
+#     Input('url', 'hash'),
+#     State("current-working-directory", "children"),
+#     prevent_initial_call=True,
+# )
+# def handle_url_hash(url_hash, current_working_directory):
+#     if url_hash.startswith('#change_working'):
+#         root = Tk()
+#         root.withdraw()  # Hide the root window
+#         folder_path = filedialog.askdirectory(title="Select Working Directory")
+#         print(folder_path)
+#         root.destroy()  # Destroy the root window after selection
+#         sesh.save_dir = folder_path + '/' if not folder_path.endswith('/') else folder_path
+#         return folder_path, ''
+#     else:
+#         return current_working_directory, ''
+
+layout_output_list = [
+        Output('map', 'figure', allow_duplicate=True),
+        Output('sounding', 'figure', allow_duplicate=True),
+        Output('tTEM', 'figure', allow_duplicate=True),
+        Output('model_section', 'figure', allow_duplicate=True),
+        
         Output('flex-layout',    'model', allow_duplicate=True),
 
         Output('upload_layout',  'color',  allow_duplicate=True),
@@ -579,54 +570,128 @@ def update_layout(model, load_clicks, process_clicks, invert_clicks, review_clic
         Output('upload_layout',  'disabled',  allow_duplicate=True),
         Output('process_layout', 'disabled', allow_duplicate=True),
         Output('invert_layout',  'disabled', allow_duplicate=True),
-        Output('review_layout',  'disabled', allow_duplicate=True), #Output('review_layout', 'disabled', allow_duplicate=True)
+        Output('review_layout',  'disabled', allow_duplicate=True), #Output
+        Output("current-working-directory", "children"),
+        Output('url', 'hash', allow_duplicate=True),
+]
 
-        Output('map', 'figure', allow_duplicate=True),
-        Output('sounding', 'figure', allow_duplicate=True),
-        Output('tTEM', 'figure', allow_duplicate=True),
-        Output('model_section', 'figure', allow_duplicate=True),
-    ],        
+def no_update_factory(n):
+    return [no_update for _ in range(n)]
+
+@app.callback(
+    layout_output_list,     
     Input('url', 'hash'),
     State('flex-layout', 'model'),
     prevent_initial_call=True,
     
 )
 def handle_url_hash(url_hash, model):
+    global sesh
+    res = no_update_factory(len(layout_output_list))
+    res[-1] = ''
     layout=model
     print(f'url hash: {url_hash}')
     if url_hash.startswith('#load'):
-        fname = url_hash.split('=')[1]
-        tmpTables = TEMframe.from_session(f'anemone_backup/{fname}')
-        TABLES['data']            = tmpTables['data']
-        TABLES['overview']        = tmpTables['overview']
-        TABLES['models']          = tmpTables['models']
-        dbdt1.dataframe = TABLES['data'].copy()
-        dbdt2.dataframe = TABLES['data'].copy()
-        m1.dataframe    = TABLES['overview'].copy()
-        mod1.dataframe  = TABLES['models'].copy()
-        mod2.dataframe  = TABLES['models'].copy()
-        figures = [m1.render(), dbdt1.render(), dbdt2.render(), mod2.render()]
+        folder = url_hash.split('=')[1].replace('%20', ' ').replace('%22', '')
+        print(f'loading session from folder: {folder}')
+        sesh = session.Session.from_folder(folder)
+        #sesh.
+        dbdt1.dataframe = sesh.data.copy()     if sesh.data is not None else None
+        dbdt2.dataframe = sesh.data.copy()     if sesh.data is not None else None
+        m1.dataframe    = sesh.overview.copy() if sesh.data is not None else None
+        mod1.dataframe  = sesh.models.copy()   if sesh.models is not None else None
+        mod2.dataframe  = sesh.models.copy()   if sesh.models is not None else None
 
-        if TABLES['models'] is not None:
-            res_list  = [layouts.review]
-            res_list += ['secondary', 'secondary', 'secondary', 'primary']
-            res_list += [False, False, False, False]
-            res_list += figures
+        res[0] = m1.render()
+        res[1] = dbdt1.render()
+        res[2] = dbdt2.render()
+        res[3] = mod2.render()
+
+        if sesh.models is not None:
+            res[4]   = layouts.review
+            res[5]   = 'secondary'
+            res[6]   = 'secondary'
+            res[7]   = 'secondary'
+            res[8]   = 'primary'
+            res[9]   = False
+            res[10]  = False
+            res[11]  = False
+            res[12]  = False
         else:
-            res_list  = [layouts.data]
-            res_list += ['secondary', 'primary', 'secondary', 'secondary']
-            res_list += [False, False, False, True]
-            res_list += figures
-        return res_list
-    else:
-        print('no valid hash found')
-        raise PreventUpdate
+            res[4]   = layouts.data
+            res[5]   = 'secondary'
+            res[6]   = 'primary'
+            res[7]   = 'secondary'
+            res[8]   = 'secondary'
+            res[9]   = False
+            res[10]  = False
+            res[11]  = False
+            res[12]  = True
+    elif url_hash.startswith('#change_working'):
+        root = Tk()
+        root.withdraw()  # Hide the root window
+        folder_path = filedialog.askdirectory(title="Select Working Directory")
+        print(folder_path)
+        root.destroy()  # Destroy the root window after selection
+        if folder_path:
+            sesh.save_dir = folder_path + '/' if not folder_path.endswith('/') else folder_path
+            print(f'Working directory changed to: {sesh.save_dir}')
+            res[-2] = sesh.save_dir
+    return res
 
 
-import signal
-@app.server.route("/shutdown", methods=["POST"])
-def shutdown():
-    os.kill(os.getpid(), signal.SIGINT)  # Send a signal to the process to terminate
+import sys
+import io
+import traceback
+@app.callback(
+    Output('code-output', 'children'),
+    Input('run-btn', 'n_clicks'),
+    State('code-input', 'value')
+)
+def run_python_code(n_clicks, code):
+    if not code:
+        return "No code entered."
+
+    # Redirect stdout and stderr
+    old_stdout = sys.stdout
+    old_stderr = sys.stderr
+    redirected_output = sys.stdout = io.StringIO()
+    redirected_error = sys.stderr = io.StringIO()
+
+    try:
+        # Execute the code in a restricted namespace
+        exec(code)#, {"__builtins__": __builtins__}, {})
+        output = redirected_output.getvalue()
+        errors = redirected_error.getvalue()
+        return output + errors if output or errors else "Code executed successfully (no output)."
+    except Exception:
+        return traceback.format_exc()
+    finally:
+        # Restore stdout and stderr
+        sys.stdout = old_stdout
+        sys.stderr = old_stderr
+
+# @app.callback(
+#     Output("current-working-directory", "children"),
+#     Input("working-directory-link", "n_clicks"),
+#     prevent_initial_call=True
+# )
+# def select_working_directory(n_clicks):
+
+
+    # if folder_path:
+    #     # Update the working directory
+    #     # os.chdir(folder_path)
+    #     return f"Working Directory: {folder_path}"
+    # else:
+    #     print('no valid hash found')
+    #     raise PreventUpdate
+
+
+# import signal
+# @app.server.route("/shutdown", methods=["POST"])
+# def shutdown():
+#     os.kill(os.getpid(), signal.SIGINT)  # Send a signal to the process to terminate
 
 
 try:
@@ -635,28 +700,6 @@ except Exception as e:
     print(f"Error running app: {e}")
 # finally:
 #     print('closing app, saving data to zip...')
-#     tmpdir = tempfile.mkdtemp(prefix='anemone_backup_')
-#     try:
-#         # Save data (assumes TEMframe.save(directory) writes backup files into directory)
-#         if TABLES['data'] is not None:
-#             TABLES['data'].save(tmpdir)
-
-#         # Save models.csv if present
-#         if TABLES['models'] is not None:
-#             TABLES['models'].to_csv(os.path.join(tmpdir, 'models.csv'), index=False)
-
-#         # Create zip archive next to this script
-#         zip_path = os.path.join('anemone_backup', 'session1.zip')
-#         with zipfile.ZipFile(zip_path, 'w', compression=zipfile.ZIP_DEFLATED) as zf:
-#             for root, _, files in os.walk(tmpdir):
-#                 print(files)
-#                 for f in files:
-#                     full = os.path.join(root, f)
-#                     arcname = os.path.relpath(full, tmpdir)
-#                     zf.write(full, arcname)
-
-#         print(f'data saved to {zip_path}')
-#     finally:
-#         shutil.rmtree(tmpdir)
+#     sesh.save()
 
 #start msedge --app=http://127.0.0.1:8050/

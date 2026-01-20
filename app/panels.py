@@ -541,15 +541,21 @@ class Upload(Panel):
     
     def initialize(self):
         session_text = "### Recent sessions\n"
-        if self.session_files is not None:
+        if self.session_files is None or len(self.session_files) == 0:
             session_text += "no previous session:\n"
         else:
             for f in self.session_files:
-                session_text += f"- [{f}](#load={f})\n"
+                cfolder = f.strip().replace('\\', '/')
+                session_text += f"- [{cfolder}](#load=\"{cfolder.replace(' ', '%20')}\")\n"
+        session_text += "- [open session](#open_session)\n"
         return html.Div([
-            dcc.Markdown("# Welcome to sea anemone", style={'textAlign': 'center'}),
+            dcc.Markdown("# Welcome to sea anemone", style={'textAlign': 'center'}),       
             dcc.Markdown("### Upload your data to get started."),
             self.render(),
+            html.Div([
+                html.Div(['working directory: '], id="current-working-directory-label", style={"marginLeft":"10px", "marginTop": "10px", 'display': 'inline-block'}),
+                html.A("select directory", href="#change_working", id="current-working-directory", style={"cursor": "pointer", "color": "blue", "textDecoration": "underline", "marginLeft":"10px", "marginTop": "10px", 'display': 'inline-block'}, title='change directory')
+            ]),
             dcc.Markdown("---"),
             dcc.Markdown(session_text),
             gear_maker(self.id)],
@@ -890,3 +896,55 @@ class StartingModel(ModelGraph):
             'depth': np.logspace(0, np.log10(300), 31)  # Example depth values from 0 to 300 meters
             })
         return cls(data=df)
+    
+
+class PyInterpretter(Panel):
+    def __init__(self):
+        super().__init__(id='pyinterp')
+
+    def initialize(self):
+        init = html.Div([
+            html.H2("Python Interpreter"),
+            dcc.Textarea(
+                id='code-input',
+                placeholder='Type Python code here...',
+                style={'width': '100%', 'height': 200}
+            ),
+            html.Br(),
+            html.Button('Run Code', id='run-btn', n_clicks=0),
+            html.H4("Output:"),
+            html.Pre(id='code-output', style={'backgroundColor': '#f4f4f4', 'padding': '10px'})
+        ])
+        return init
+    # def add_callbacks(self, app):
+    #     import sys
+    #     import io
+    #     import traceback
+    #     import numpy as np        
+    #     @app.callback(
+    #         Output('code-output', 'children'),
+    #         Input('run-btn', 'n_clicks'),
+    #         State('code-input', 'value')
+    #     )
+    #     def run_python_code(n_clicks, code):
+    #         if not code:
+    #             return "No code entered."
+
+    #         # Redirect stdout and stderr
+    #         old_stdout = sys.stdout
+    #         old_stderr = sys.stderr
+    #         redirected_output = sys.stdout = io.StringIO()
+    #         redirected_error = sys.stderr = io.StringIO()
+
+    #         try:
+    #             # Execute the code in a restricted namespace
+    #             exec(code)#, {"__builtins__": __builtins__}, {})
+    #             output = redirected_output.getvalue()
+    #             errors = redirected_error.getvalue()
+    #             return output + errors if output or errors else "Code executed successfully (no output)."
+    #         except Exception:
+    #             return traceback.format_exc()
+    #         finally:
+    #             # Restore stdout and stderr
+    #             sys.stdout = old_stdout
+    #             sys.stderr = old_stderr

@@ -75,50 +75,50 @@ class TEMframe(DataFrame):
                     sweeps += usf.Sweep.from_buffer(f, combine=False)
             return cls.from_sweeps(sweeps, track_history=track_history, folder_path=z.namelist()[0]+'.zip')
 
-    @classmethod
-    def from_session(cls, session_zip):
-        import zipfile
-        import io
-        import base64
+    # @classmethod
+    # def from_session(cls, session_zip):
+    #     import zipfile
+    #     import io
+    #     import base64
 
-        df_data = None
-        df_overview = None
-        df_models = None
+    #     df_data = None
+    #     df_overview = None
+    #     df_models = None
 
-        if isinstance(session_zip, str) and session_zip.endswith('.zip'):
-            with open(session_zip, 'rb') as f:
-                zip_bytes = f.read()
-        elif isinstance(session_zip, str):
-            zip_bytes = base64.b64decode(session_zip)
-        else:
-            zip_bytes = session_zip
+    #     if isinstance(session_zip, str) and session_zip.endswith('.zip'):
+    #         with open(session_zip, 'rb') as f:
+    #             zip_bytes = f.read()
+    #     elif isinstance(session_zip, str):
+    #         zip_bytes = base64.b64decode(session_zip)
+    #     else:
+    #         zip_bytes = session_zip
 
-        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
+    #     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
             
-            with z.open('tem_data.csv', 'r') as f:
-                df = pd.read_csv(f)
-            with z.open('history.py', 'r') as f:
-                history = f.readlines()
-            history = [line.strip().decode('utf-8') for line in history]
+    #         with z.open('tem_data.csv', 'r') as f:
+    #             df = pd.read_csv(f)
+    #         with z.open('history.py', 'r') as f:
+    #             history = f.readlines()
+    #         history = [line.strip().decode('utf-8') for line in history]
             
-            saved_forwards = [x for x in z.namelist() if x.endswith('.em1')]
-            forward_operators = None
-            if len(saved_forwards) > 0:
-                from anemone.forwards import Forward, logify_forward
-                lg_FWR = logify_forward(Forward)
-                forward_operators = []
-                for i in range(len(saved_forwards)):
-                    with z.open(saved_forwards[i], 'r') as f:
-                        fwr = lg_FWR.load(f)
-                        fwr.tolerance=1e-6
-                        forward_operators.append(fwr)
-            df_data = cls.from_pandas(df, history=history, forward_operators=forward_operators)
-            df_overview = df_data.overview()
-            if 'models.csv' in z.namelist():
-                with z.open('models.csv', 'r') as f:
-                    df_models = pd.read_csv(f)
-                    df_models = cls.from_pandas(df_models, history=history, forward_operators=forward_operators)
-        return {'data': df_data, 'models': df_models, 'overview':df_overview}
+    #         saved_forwards = [x for x in z.namelist() if x.endswith('.em1')]
+    #         forward_operators = None
+    #         if len(saved_forwards) > 0:
+    #             from anemone.forwards import Forward, logify_forward
+    #             lg_FWR = logify_forward(Forward)
+    #             forward_operators = []
+    #             for i in range(len(saved_forwards)):
+    #                 with z.open(saved_forwards[i], 'r') as f:
+    #                     fwr = lg_FWR.load(f)
+    #                     fwr.tolerance=1e-6
+    #                     forward_operators.append(fwr)
+    #         df_data = cls.from_pandas(df, history=history, forward_operators=forward_operators)
+    #         df_overview = df_data.overview()
+    #         if 'models.csv' in z.namelist():
+    #             with z.open('models.csv', 'r') as f:
+    #                 df_models = pd.read_csv(f)
+    #                 df_models = cls.from_pandas(df_models, history=history, forward_operators=forward_operators)
+    #     return {'data': df_data, 'models': df_models, 'overview':df_overview}
 
     @classmethod
     def from_usf_folder(cls, folder_path, track_history=True):
