@@ -52,6 +52,9 @@ class TEMframe(DataFrame):
             values=['date', 'daytime', 'latitude', 'longitude', 'elevation', 'utm_x', 'utm_y', 'distance'],
             aggfunc='first'
         )
+        # df['site_id'] = df.index
+        if 'misfit' in self.columns:
+            df['misfit'] = self.groupby('site_id')['misfit'].mean()
 
         # with self._skip_tracking():
         #     res = TEMframe(df, history=current_history.copy())
@@ -235,13 +238,13 @@ class TEMframe(DataFrame):
         df_data['utm_y'] = np.nan
         df_data['zone_number'] = np.nan
         # df_data['zone_letter'] = np.nan
-        df_data.loc[ok, 'utm_x'] = utmx
-        df_data.loc[ok, 'utm_y'] = utmy
+        df_data.loc[ok, 'utm_x'] = np.round(utmx, 1)
+        df_data.loc[ok, 'utm_y'] = np.round(utmy, 1)
         df_data.loc[ok, 'zone_number'] = zone_number
         df_data.loc[ok, 'zone_letter'] = zone_letter
         ds = np.cumsum(np.sqrt(np.diff(utmx, prepend=utmx[0])**2 + np.diff(utmy, prepend=utmy[0])**2))
         df_data['distance'] = np.nan
-        df_data.loc[ok, 'distance'] = ds
+        df_data.loc[ok, 'distance'] = np.round(ds, 1)
 
         # source_line = df_data._record_op()
         # output_name = source_line.split('=')[0].strip()
@@ -409,9 +412,10 @@ class TEMframe(DataFrame):
         return d_obs, d_err, self.__class__.from_pandas(df_data, history=self.history.copy(), forward_operators=self.forward_operators)
     
 
-    def invert(self, res_start, vc=0.5, hc=0.8, max_iterations=8):
+    def invert(self, res_start, vc=0.5, hc=0.8, max_iterations=2):
 #        res_start = LogResistivity.smooth(torch.ones(31)*40., torch.logspace(0, 2.1, 30))
         # self._record_op()
+        make_log()
         current_history = self.history.copy()
         dmfwr = self.dmfwr
 
@@ -459,7 +463,7 @@ class TEMframe(DataFrame):
             inv_list.append(inv)
             x_list.append(row_meta['utm_x'])
             y_list.append(row_meta['utm_y'])
-        make_log()
+        
         inv = SCI(inv_list, x=np.array(x_list), y=np.array(y_list), log=write_log)
         inv.data_misfit_acceptance_threshold = 0.95
         res_mods = inv.invert(iter_cap=max_iterations)
@@ -472,14 +476,21 @@ class TEMframe(DataFrame):
 
             d_syn = inv._dpredgrid[i].exp()
             df_data.loc[data_id, 'dbdt_syn'] = d_syn.numpy()
-
+            
+            
             rho,thick = res_mod.mod
             row_meta['site_id'] = id_meta
             row_meta['resistivity'] = rho.detach().cpu().numpy().tolist()
             row_meta['thickness'] = thick.detach().cpu().numpy().tolist()
+            # row_meta['misfit'] = df_data.loc[data_id, 'misfit'].mean()
+            
             results.append(row_meta.to_dict())
             print(f'Inversion for data_id {i:02d} completed.')
+        df_data['misfit'] = (((df_data['dbdt'] - df_data['dbdt_syn'])**2/(np.log1p(df_data['dbdt'].values*df_data['error'].values/100.)**2))**0.5)
+        df_data.dmfwr = self.dmfwr
 
+        print(np.log1p(df_data['error'].values/100.), flush=True)
+        df_overview = df_data.overview()
         df_resmod = pd.DataFrame(results)
 
         rows = []
@@ -499,6 +510,7 @@ class TEMframe(DataFrame):
                     'elevation': row['elevation'],
                     'layer': i,
                     'resistivity': rho,
+                    'misfit': df_overview[df_overview.index==site_id]['misfit'].values[0],
                     'top_depth': top,
                     'bottom_depth': bottom,
                     'center_depth': (top + bottom) / 2

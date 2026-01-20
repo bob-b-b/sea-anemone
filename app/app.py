@@ -80,26 +80,15 @@ x = html.Div([
       ]
 , id='processing_buttons')
 
-# html.Div(
-#     id="invert-controls",
-#     style={"display": "none"},  # hidden by default
-#     children=[
-#         dbc.ButtonGroup(
-#             [
-#                 dbc.Button("Invert All", id="invert_all_button", color="danger"),
-#                 dbc.Button("Invert Selected", id="invert_selected_button", color="warning"),
-#             ]
-#         )
-#     ]
-# )
 
 
-stmod = StartingModel.standard(rho=10.)
+#stmod = StartingModel.standard(rho=10.)
 
 Inv_it = Inversion_iterations.standard(misfit=None,rho=10.)
 
+Sing_site = Single_site.standard(rho=10.)
 
-panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, stmod, Inv_it, t1]
+panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, Inv_it, Sing_site, t1]
 
 nodes = [node for panel in panels for node in panel.to_nodes()]+[dfl.Tab(id=f'tab-processing_buttons', children=[x]), dfl.Tab(id='tab-panel_list', children=[panel_list])]
 
@@ -110,7 +99,11 @@ import layouts
 
 app.layout = html.Div([
     dcc.Location(id='url', refresh='callback-nav'),
-    dcc.Interval(id= "inv-log-poll", interval=3000, n_intervals=0, disabled=True),  # Poll every 2 seconds
+    dcc.Interval(id= "inv-log-poll", interval=1000, n_intervals=0, disabled=True),  # Poll every 2 seconds
+    dcc.Store(id="vc-level", data="medium"),
+    dcc.Store(id="hc-level", data="medium"),
+    dcc.Store(id="starting-model", data={"rho": 10.0,"depth": np.logspace(0, np.log10(300), 31).tolist()}),
+    dcc.Store(id="vc-single-levels", data=["medium"]),  # default
     html.Div([
         dbc.ButtonGroup([
             dbc.Button("1. Load Data", id="upload_layout",    color="primary"),
@@ -378,8 +371,7 @@ def cross_panel_hover(sounding_hover, ttem_hover):
     Output('map', 'figure', allow_duplicate=True),
     Output('model_graph', 'figure', allow_duplicate=True),
     Output('sounding', 'figure', allow_duplicate=True),
-    Output('starting_model', 'figure', allow_duplicate=True),
-    #Output('inv_it', 'figure', allow_duplicate=True),
+    #Output('starting_model', 'figure', allow_duplicate=True),
     [
         Input('model_section', 'clickData'),
         Input('tTEM', 'clickData'),
@@ -417,22 +409,150 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color):
         #     df_layers = pd.concat([mod1.dataframe[df_data['site_id'] != site_id], df_layers], ignore_index=True)
         mod1.dataframe = df_layers
         dbdt1.dataframe = df_site
-    return m1.render(), mod1.render(), dbdt1.render(), mod1.render()
+    return m1.render(), mod1.render(), dbdt1.render()
 
-# @app.callback(
-#     [Output('inv-log-poll', 'disabled'),
-#     Output('inv_it', 'figure', allow_duplicate=True)],
-#     Input('invert_all_button', 'n_clicks'),
-#     prevent_initial_call="initial_duplicate",
-# )
-# def enable_inv_log_poll(n_clicks):
-#     if n_clicks:
-#         return False, Inv_it.render()
-#     raise PreventUpdate
+@app.callback(
+    Output("starting-model", "data"),
+    Input("inv_it", "relayoutData"),
+    State("starting-model", "data"),
+    prevent_initial_call=True
+)
+def update_starting_model_from_iterations(relayoutData, data):
+    if "shapes[0].x0" not in relayoutData:
+        raise PreventUpdate
+
+    rho = float(relayoutData["shapes[0].x0"])
+    data["rho"] = rho
+    return data
+
+
+@app.callback(
+    Output("vc-level", "data"),
+    Output("vc_loose_button", "color"),
+    Output("vc_medium_button", "color"),
+    Output("vc_tight_button", "color"),
+    Output("vc_loose_button", "disabled"),
+    Output("vc_medium_button", "disabled"),
+    Output("vc_tight_button", "disabled"),
+    Input("vc_loose_button", "n_clicks"),
+    Input("vc_medium_button", "n_clicks"),
+    Input("vc_tight_button", "n_clicks"),
+    State("vc-level", "data"),
+    prevent_initial_call=True
+)
+def select_vc_constraint(loose, medium, tight, current):
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+
+    trigger = ctx.triggered[0]["prop_id"].split(".")[0]
+
+    if trigger == "vc_loose_button":
+        selected = "loose"
+    elif trigger == "vc_medium_button":
+        selected = "medium"
+    elif trigger == "vc_tight_button":
+        selected = "tight"
+    else:
+        selected = current
+
+    def style(name):
+        return (
+            "primary" if selected == name else "secondary",
+            selected == name
+        )
+
+    loose_color, loose_disabled   = style("loose")
+    med_color, med_disabled       = style("medium")
+    tight_color, tight_disabled   = style("tight")
+
+    return (
+        selected,
+        loose_color, med_color, tight_color,
+        loose_disabled, med_disabled, tight_disabled
+    )
+@app.callback(
+    Output("hc-level", "data"),
+    Output("hc_loose_button", "color"),
+    Output("hc_medium_button", "color"),
+    Output("hc_tight_button", "color"),
+    Output("hc_loose_button", "disabled"),
+    Output("hc_medium_button", "disabled"),
+    Output("hc_tight_button", "disabled"),
+    Input("hc_loose_button", "n_clicks"),
+    Input("hc_medium_button", "n_clicks"),
+    Input("hc_tight_button", "n_clicks"),
+    State("hc-level", "data"),
+    prevent_initial_call=True
+)
+def select_hc_constraint(loose, medium, tight, current):
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+
+    trigger = ctx.triggered[0]["prop_id"].split(".")[0]
+
+    if trigger == "hc_loose_button":
+        selected = "loose"
+    elif trigger == "hc_medium_button":
+        selected = "medium"
+    elif trigger == "hc_tight_button":
+        selected = "tight"
+    else:
+        selected = current
+
+    def style(name):
+        return (
+            "primary" if selected == name else "secondary",
+            selected == name
+        )
+
+    loose_color, loose_disabled   = style("loose")
+    med_color, med_disabled       = style("medium")
+    tight_color, tight_disabled   = style("tight")
+
+    return (
+        selected,
+        loose_color, med_color, tight_color,
+        loose_disabled, med_disabled, tight_disabled
+    )
+
+@app.callback(
+    Output("vc-single-levels", "data"),
+    Output("vc_sing_loose_button", "color"),
+    Output("vc_sing_medium_button", "color"), 
+    Output("vc_sing_tight_button", "color"),
+    Input("vc_sing_loose_button", "n_clicks"),
+    Input("vc_sing_medium_button", "n_clicks"),
+    Input("vc_sing_tight_button", "n_clicks"),
+    State("vc-single-levels", "data"),
+    prevent_initial_call=True
+)
+def toggle_single_site_vc(loose, medium, tight, active):
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+
+    button = ctx.triggered_id.replace("vc_sing_", "").replace("_button", "")
+
+    if button in active:
+        active.remove(button)
+    else:
+        active.append(button)
+
+    def color(name):
+        return "primary" if name in active else "secondary"
+
+    return (
+        active,
+        color("loose"),
+        color("medium"),
+        color("tight"),
+    )
+
+
 @app.callback(
     [
-       # Output('starting_model', 'figure', allow_duplicate=True),
-        #Output('inv_it', 'figure', allow_duplicate=True),
         Output('model_section', 'figure', allow_duplicate=True),
         Output('sounding', 'figure', allow_duplicate=True),
         Output('review_layout', 'n_clicks', allow_duplicate=True),
@@ -440,24 +560,86 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color):
     ],
     Input('invert_all_button', 'n_clicks'),
     State('review_layout', 'n_clicks'),  # Add this state to get current value
-    running=[(Output("invert_all_button", "disabled"), True, False),(Output("invert_selected_button", "disabled"), True, False), (Output("inv-log-poll", "disabled"), False, True)],
+    State("vc-level", "data"),
+    State("hc-level", "data"),
+    State("starting-model", "data"),
+    running=[(Output("invert_all_button", "disabled"), True, False),
+    (Output("invert_selected_button", "disabled"), True, False), 
+    (Output("inv-log-poll", "disabled"), False, True),    
+    (Output("vc_loose_button", "disabled"), True, False),
+    (Output("vc_medium_button", "disabled"), True, False),
+    (Output("vc_tight_button", "disabled"), True, False),
+    (Output("hc_loose_button", "disabled"), True, False),
+    (Output("hc_medium_button", "disabled"), True, False),
+    (Output("hc_tight_button", "disabled"), True, False),
+    (Output('reset_inv_model_button', "disabled"), True, False)],
     prevent_initial_call=True
 )
-def launch_inversion(n_clicks, current_review_clicks):
+def launch_inversion(n_clicks, current_review_clicks, vc_level,hc_level,starting_model):
     if n_clicks:
-        from torch import from_numpy
-        rho = from_numpy(stmod.dataframe['resistivity'].values)
-        z   = from_numpy(stmod.dataframe['depth'].values[:-1])
+        from torch import from_numpy, tensor
+        print('starting model:', starting_model["rho"])
+        rho = tensor(starting_model["rho"]).repeat(len(starting_model["depth"]))
+        z   = tensor(starting_model["depth"][:-1])
 
+        if vc_level == "loose":
+            Vert = 5.0
+        elif vc_level == "medium":
+            Vert = 0.5
+        elif vc_level == "tight":
+            Vert = 0.1
+
+        if hc_level == "loose":
+            Horz = 5.0
+        elif hc_level == "medium":
+            Horz = 0.6
+        elif hc_level == "tight":
+            Horz = 0.3
         res_start                        = LogResistivity.smooth(rho,z) 
-        TABLES['models'], TABLES['data'] = TABLES['data'].invert(res_start)
+        TABLES['models'], TABLES['data'] = TABLES['data'].invert(res_start,vc = Vert, hc = Horz)
         mod1.dataframe                   = TABLES['models'].copy()
         mod2.dataframe                   = TABLES['models'].copy()
         dbdt1.dataframe                  = TABLES['data'].copy()
         dbdt2.dataframe                  = TABLES['data'].copy()
         new_review_clicks = (current_review_clicks or 0) + 1
-        return mod2.render(), dbdt1.render(), new_review_clicks, False
+        layouts.invert = layouts.invert_multi_first
+        return mod2.render(), dbdt1.render(), new_review_clicks, False#, 0
     raise PreventUpdate
+
+@app.callback(
+    Output("inv-single", "figure", allow_duplicate=True),
+    Input("invert_single_button", "n_clicks"),
+    State("vc-levels", "data"),
+    State("starting-model", "data"),
+    prevent_initial_call=True
+)
+def invert_single_site(n_clicks, vc_levels, starting_model):
+    curves = []
+
+    rho = torch.tensor(starting_model["rho"]).repeat(len(starting_model["depth"]))
+    z   = torch.tensor(starting_model["depth"][:-1])
+
+    for vc in vc_levels:
+        Vert = {"loose": 1.0, "medium": 0.5, "tight": 0.1}[vc]
+        res_start = LogResistivity.smooth(rho, z)
+        df_layers, _ = TABLES["data"].invert_site(
+            site_id=current_site,
+            res_start=res_start,
+            vc=Vert,
+            hc=default_hc
+        )
+
+        curves.append((vc, df_layers))
+
+    return Sing_site.render(curves)
+
+@app.callback(
+    Output("inv-log-poll", "n_intervals"),
+    Input("invert_all_button", "n_clicks"),
+    prevent_initial_call=True,
+)
+def reset_polling(n):
+    return 0
 
 @app.callback(
     [Output('output-data-upload', 'children'),
