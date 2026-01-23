@@ -140,26 +140,12 @@ class Sweep:
     def correct_polarity(self, **kwargs):
         self.data *= self.get_polarity(**kwargs)        
 
-    def save(self, fname):
-        from pickle import dump
-        with open(fname, 'wb') as outfile:
-            dump(self, outfile)
-
-
-    @classmethod
-    def load(cls, fname, **kwargs):
-        from pickle import load
-        with open(fname, "rb") as a_file:
-            data = load(a_file)
-        return data
-
 from anemone.forwards import Forward, logify_forward
 from anemone.system import Loop, Receiver, Waveform, FilterChain, ButterworthFilter
 import numpy as np
 
-logForward = logify_forward(Forward)
 
-def sweep2fwr(sweeps, fwr=logForward):
+def sweep2fwr(sweeps, fwr=Forward):
     points = set(swp.points for swp in sweeps)
     forwards = []
     for pnts in points:
@@ -172,7 +158,7 @@ def sweep2fwr(sweeps, fwr=logForward):
             filter_chain.append(ButterworthFilter(f_cut, order))
         fc = FilterChain(filter_chain)
         time = swp.time
-        forwards.append(fwr(tx, rx, time, wv, fc, tolerance=1e-6, do_setup=False))
+        forwards.append(fwr(tx, rx, time, wv, fc, tolerance=1e-6, do_setup=False, log_scale=True))
     return forwards
 
 def sweep2dataframes(sweeps):

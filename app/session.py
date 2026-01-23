@@ -59,17 +59,18 @@ class Session:
     def load_dataframes(self):
         #print
         if self.data is not None and isinstance(self.data, str):
-            self.data = TEMframe.from_pandas(pd.read_csv(self.data))
+            self.data = TEMframe.from_pandas(pd.read_csv(self.save_dir+self.data))
         if self.models is not None and isinstance(self.models, str):
-            self.models = pd.read_csv(self.models)
+            self.models = pd.read_csv(self.save_dir+self.models)
         if self.forwards is not None and isinstance(self.forwards, list):
             fwd_list = []
             for fwd_path in self.forwards:
-                fwd = Forward.load(self.save_dir+fwd_path)
+                fwd = Forward.load(self.save_dir+fwd_path).logify()
                 fwd_list.append(fwd)
             self.forwards = fwd_list
             self.data.forward_operators = fwd_list
             self.data.dmfwr = self.forwards[0]+self.forwards[1]
+            self.data.dmfwr = self.data.dmfwr.logify()
 
     @classmethod
     def from_folder(cls, folder):

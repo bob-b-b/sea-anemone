@@ -671,22 +671,6 @@ def run_python_code(n_clicks, code):
         sys.stdout = old_stdout
         sys.stderr = old_stderr
 
-# @app.callback(
-#     Output("current-working-directory", "children"),
-#     Input("working-directory-link", "n_clicks"),
-#     prevent_initial_call=True
-# )
-# def select_working_directory(n_clicks):
-
-
-    # if folder_path:
-    #     # Update the working directory
-    #     # os.chdir(folder_path)
-    #     return f"Working Directory: {folder_path}"
-    # else:
-    #     print('no valid hash found')
-    #     raise PreventUpdate
-
 
 # import signal
 # @app.server.route("/shutdown", methods=["POST"])
