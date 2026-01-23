@@ -19,6 +19,21 @@ if iteration_cap<50:
     warnings.warn("The default iteration cap for TEMframe inversion has been reduced to 10 to speed up testing. Change it back to 50 for production runs.", UserWarning)
 
 
+def make_log():
+    """Initialize a log file by creating it empty or clearing if it exists."""
+    try:
+        with open('inversion_log.txt', 'w') as f:
+            f.write('')
+    except IOError as e:
+        print(f"Error creating log file: {e}")
+    
+
+def write_log(message):
+    print(message)
+    with open('inversion_log.txt', 'a') as f:
+        f.write(message+'\n')
+    
+
 class TEMframe(DataFrame):
     forward_operators = []
     history = []
@@ -42,6 +57,9 @@ class TEMframe(DataFrame):
             values=['date', 'daytime', 'latitude', 'longitude', 'elevation', 'utm_x', 'utm_y', 'distance'],
             aggfunc='first'
         )
+        # df['site_id'] = df.index
+        if 'misfit' in self.columns:
+            df['misfit'] = self.groupby('site_id')['misfit'].mean()
 
         # with self._skip_tracking():
         #     res = TEMframe(df, history=current_history.copy())
@@ -70,9 +88,13 @@ class TEMframe(DataFrame):
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
             usf_files = [x for x in z.namelist() if x.endswith('.usf')]
             sweeps = []
-            for fname in usf_files:
+            for i, fname in enumerate(usf_files):
                 with z.open(fname, 'r') as f:
-                    sweeps += usf.Sweep.from_buffer(f, combine=False)
+                    new_sweeps = usf.Sweep.from_buffer(f, combine=False)
+                    if set([x.points for x in new_sweeps]) == {6,22}:
+                        sweeps += new_sweeps
+                    else:
+                        print(f'Ignoring {fname} because it does not contain both low and high moment data.')                    
             return cls.from_sweeps(sweeps, track_history=track_history, folder_path=z.namelist()[0]+'.zip')
 
     # @classmethod
@@ -126,7 +148,11 @@ class TEMframe(DataFrame):
         usf_files = [folder_path+f for f in os.listdir(folder_path) if f.endswith('.usf')]
         for usf_file in usf_files:        
             with open(usf_file, 'rb') as f:
-                sweeps += usf.Sweep.from_buffer(f, combine=False)
+                new_sweeps = usf.Sweep.from_buffer(f, combine=False)
+                if set([x.points for x in new_sweeps]) == {6,22}:
+                    sweeps += new_sweeps
+                else:
+                    print(f'Ignoring {usf_file} because it does not contain both low and high moment data.')
         return cls.from_sweeps(sweeps, track_history=track_history, folder_path=folder_path)
 
     @classmethod
@@ -135,7 +161,12 @@ class TEMframe(DataFrame):
         mega_sweeps = []
         for pnts in points:
             mega_sweeps.append(usf.Sweep.combine_sweeps([swp for swp in sweeps if swp.points==pnts]))
-        lm,hm = mega_sweeps
+        try:
+            lm,hm = mega_sweeps
+        except:
+            print(len(mega_sweeps))
+            print(points)
+            print(folder_path)
 
         n_sites,n_gates = lm.data.shape
         n_gates += 1
@@ -218,13 +249,13 @@ class TEMframe(DataFrame):
         df_data['utm_y'] = np.nan
         df_data['zone_number'] = np.nan
         # df_data['zone_letter'] = np.nan
-        df_data.loc[ok, 'utm_x'] = utmx
-        df_data.loc[ok, 'utm_y'] = utmy
+        df_data.loc[ok, 'utm_x'] = np.round(utmx, 1)
+        df_data.loc[ok, 'utm_y'] = np.round(utmy, 1)
         df_data.loc[ok, 'zone_number'] = zone_number
         df_data.loc[ok, 'zone_letter'] = zone_letter
         ds = np.cumsum(np.sqrt(np.diff(utmx, prepend=utmx[0])**2 + np.diff(utmy, prepend=utmy[0])**2))
         df_data['distance'] = np.nan
-        df_data.loc[ok, 'distance'] = ds
+        df_data.loc[ok, 'distance'] = np.round(ds, 1)
 
         # source_line = df_data._record_op()
         # output_name = source_line.split('=')[0].strip()
@@ -393,6 +424,7 @@ class TEMframe(DataFrame):
     def invert(self, res_start, vc=0.4, hc=0.4, max_iterations=10):
 #        res_start = LogResistivity.smooth(torch.ones(31)*40., torch.logspace(0, 2.1, 30))
         # self._record_op()
+        make_log()
         current_history = self.history.copy()
         dmfwr = self.dmfwr
 
@@ -440,8 +472,8 @@ class TEMframe(DataFrame):
             inv_list.append(inv)
             x_list.append(row_meta['utm_x'])
             y_list.append(row_meta['utm_y'])
-
-        inv = SCI(inv_list, x=np.array(x_list), y=np.array(y_list))
+        
+        inv = SCI(inv_list, x=np.array(x_list), y=np.array(y_list), log=write_log)
         inv.data_misfit_acceptance_threshold = 0.95
         res_mods = inv.invert(iter_cap=max_iterations)
 
@@ -453,14 +485,21 @@ class TEMframe(DataFrame):
 
             d_syn = inv._dpredgrid[i].exp()
             df_data.loc[data_id, 'dbdt_syn'] = d_syn.numpy()
-
+            
+            
             rho,thick = res_mod.mod
             row_meta['site_id'] = id_meta
             row_meta['resistivity'] = rho.detach().cpu().numpy().tolist()
             row_meta['thickness'] = thick.detach().cpu().numpy().tolist()
+            # row_meta['misfit'] = df_data.loc[data_id, 'misfit'].mean()
+            
             results.append(row_meta.to_dict())
             print(f'Inversion for data_id {i:02d} completed.')
+        df_data['misfit'] = (((df_data['dbdt'] - df_data['dbdt_syn'])**2/(np.log1p(df_data['dbdt'].values*df_data['error'].values/100.)**2))**0.5)
+        df_data.dmfwr = self.dmfwr
 
+        print(np.log1p(df_data['error'].values/100.), flush=True)
+        df_overview = df_data.overview()
         df_resmod = pd.DataFrame(results)
 
         rows = []
@@ -480,6 +519,7 @@ class TEMframe(DataFrame):
                     'elevation': row['elevation'],
                     'layer': i,
                     'resistivity': rho,
+                    'misfit': df_overview[df_overview.index==site_id]['misfit'].values[0],
                     'top_depth': top,
                     'bottom_depth': bottom,
                     'center_depth': (top + bottom) / 2
