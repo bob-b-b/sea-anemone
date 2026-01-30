@@ -40,6 +40,8 @@ sesh = session.Session()
 if os.path.exists(session_tracker):
     with open(session_tracker, 'rt') as f:
         session_files = f.readlines()
+    session_files = list(set([line.strip() for line in session_files if line.strip() != '']))
+
 else:
     session_files = []
 
