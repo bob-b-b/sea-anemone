@@ -3,9 +3,9 @@ from basepanel import *
 #from database_panel import DatabasePanel
 from dash import dash_table
 import numpy as np
+from nosj import nosj
 
 import plotly.io as pio
-
 from typing import Literal
 import plotly.express as px
 import plotly.graph_objects as go
@@ -54,14 +54,10 @@ custom_template = {
         },
     }
 }
-
-# Register the custom template
 pio.templates["custom"] = custom_template
-
-# Set the custom template as the default
 pio.templates.default = "custom"
 
-@dataclass
+@nosj
 class MapSettings(PanelSettings):
     zoom: int = 14
     color: str = '#ff0000'
@@ -111,7 +107,10 @@ class Map(Panel):
                          gear_maker(self.id)],
                         style={'height': '100%', 'overflow': 'hidden'} )
         
-@dataclass
+
+
+
+@nosj
 class dbdtSoundingSettings(PanelSettings):
     lm_color: str = '#ff0000'
     hm_color: str = '#0000ff'
@@ -336,7 +335,7 @@ class rhoaSounding(Panel):
         return fig
 
 
-@dataclass
+@nosj
 class dbdtSectionSettings(PanelSettings):
     lm_color: str = '#ff0000'
     hm_color: str = '#2D81FF'
@@ -527,7 +526,7 @@ panel_list = html.Div([
     dcc.Markdown(children=markdown_text)
 ])
 
-@dataclass
+@nosj
 class AutoProcessing(PanelSettings):
     sign_correction:  bool = False
     remove_negatives: bool = False
@@ -563,15 +562,21 @@ class Upload(Panel):
     
     def initialize(self):
         session_text = "### Recent sessions\n"
-        if self.session_files is not None:
-            for f in self.session_files:
-                session_text += f"- [{f}](#load={f})\n"
+        if self.session_files is None or len(self.session_files) == 0:
+            session_text += "no previous session:\n"
         else:
-            session_text+= f"- no recent sessions\n"
+            for f in self.session_files:
+                cfolder = f.strip().replace('\\', '/')
+                session_text += f"- [{cfolder}](#load=\"{cfolder.replace(' ', '%20')}\")\n"
+        session_text += "- [open session](#open_session)\n"
         return html.Div([
-            dcc.Markdown("# Welcome to sea anemone", style={'textAlign': 'center'}),
+            dcc.Markdown("# Welcome to sea anemone", style={'textAlign': 'center'}),       
             dcc.Markdown("### Upload your data to get started."),
             self.render(),
+            html.Div([
+                html.Div(['working directory: '], id="current-working-directory-label", style={"marginLeft":"10px", "marginTop": "10px", 'display': 'inline-block'}),
+                html.A("select directory", href="#change_working", id="current-working-directory", style={"cursor": "pointer", "color": "blue", "textDecoration": "underline", "marginLeft":"10px", "marginTop": "10px", 'display': 'inline-block'}, title='change directory')
+            ]),
             dcc.Markdown("---"),
             dcc.Markdown(session_text),
             gear_maker(self.id)],
@@ -579,7 +584,7 @@ class Upload(Panel):
         )
 
 
-@dataclass
+@nosj
 class TableSettings(PanelSettings):
     max_rows: int = 50
     visible_columns: list[bool] = None
@@ -653,7 +658,7 @@ class Table(Panel):
         )
 
 import pandas as pd
-@dataclass
+@nosj
 class ModelGraphSettings(PanelSettings):
     z: Literal['depth', 'elevation'] = 'depth'
     color_by: Literal['site_id', 'misfit'] = 'site_id'
@@ -722,7 +727,7 @@ class ModelGraph(Panel):
         fig.update_xaxes(type="log", range=[np.log10(self.settings.rho_min), np.log10(self.settings.rho_max)])
         return fig        
     
-@dataclass
+@nosj
 class ModelSectionSettings(PanelSettings):
     z: Literal['depth', 'elevation'] = 'depth'
     x_axis: Literal['daytime', 'site_id', 'longitude', 'latitude', 'distance'] = 'daytime'
@@ -738,7 +743,7 @@ class ModelSection(Panel):
         if self.dataframe is None: return self.empty_render()
         # with self.dataframe._skip_tracking():
         df_layers_long = self.dataframe.melt(
-            id_vars=['site_id', 'daytime', 'longitude', 'latitude', 'date', 'elevation', 'layer', 'resistivity'],
+            id_vars=['site_id', 'daytime', 'longitude', 'latitude', 'date', 'elevation', 'layer', 'resistivity', 'misfit'],
             value_vars=['top_depth', 'bottom_depth'],
             var_name='depth_type',
             value_name='depth'
@@ -764,56 +769,43 @@ class ModelSection(Panel):
         )
         fig.update_layout(hovermode="x")
         fig.update_yaxes(autorange="reversed")
+        fig.update_layout(yaxis2=dict(title='Misfit',overlaying='y',side='right',showgrid=False))
+
+        misfit_trace = px.line(
+            df_layers_long,
+            x=self.settings.x_axis,
+            y='misfit',
+        ).data[0]
+
+        misfit_trace.update(
+            yaxis='y2',
+            line=dict(color='black', width=2),
+            name='Misfit',showlegend=True
+        )
+        fig.update_layout(yaxis2=dict(range=[0, 8]))
+
+        fig.add_trace(misfit_trace)
+
+        fig.update_layout(
+        legend=dict(x=0.95, y=0.11,xanchor="left",yanchor="top",bgcolor="rgba(255,255,255,0.8)")
+            )
+
+        fig.update_layout(yaxis2=dict(title=dict(text="Misfit",standoff=10),overlaying="y",side="right",showgrid=False)
+)
+
         return fig
 
 
-
-
-# panel_list = html.Div([
-#     html.H1("Panels"),
-#     html.H2("Data"),
-#     html.Ul([
-#         html.Li([
-#             dcc.Link("Sounding", href="#sounding"),
-#             " ",
-#             dcc.Link("[+]", href="#new_sounding")
-#         ]),
-#         html.Li([
-#             dcc.Link("Section", href="#section"),
-#             " ",
-#             dcc.Link("[+]", href="#new_section")
-#         ]),
-#     ]),
-#     html.H2("Models"),
-#     html.Ul([
-#         html.Li([
-#             dcc.Link("Graph", href="#graph"),
-#             " ",
-#             dcc.Link("[+]", href="#new_graph")
-#         ]),
-#         html.Li([
-#             dcc.Link("Colorbar", href="#colorbar"),
-#             " ",
-#             dcc.Link("[+]", href="#new_colorbar")
-#         ]),
-#         html.Li([
-#             dcc.Link("Table", href="#table"),
-#             " ",
-#             dcc.Link("[+]", href="#new_table")
-#         ]),
-#     ]),
-# ])
-
 import dash_bootstrap_components as dbc
 
-@dataclass
+@nosj
 class StartingModelSettings(PanelSettings):
     line_color: str='#ff0000'
 
 from anemone.inversion import LogResistivity
 
 class StartingModel(ModelGraph):
-    starting_rho: float = 10.
+    
     misfit = None
     def __init__(self, data, **kwargs):
         starting_model = kwargs.pop('starting_rho', 10.)
@@ -840,10 +832,10 @@ class StartingModel(ModelGraph):
             # hover='resistivity'  # Add tooltip for resistivity values
         )
         
-        for i in [0.5, 1, 2]:
-            z = self.dataframe['depth']
-            y = 10+90*(1 / (1 + np.exp(-20.*(z-150)/z.max())))**i
-            fig.add_scatter(x=y, y=z, line=dict(color='grey'))#, row=1, col=2)
+        # for i in [0.5, 1, 2]:
+        #     z = self.dataframe['depth']
+        #     y = 10+90*(1 / (1 + np.exp(-20.*(z-150)/z.max())))**i
+        #     fig.add_scatter(x=y, y=z, line=dict(color='grey'))#, row=1, col=2)
 
         # Update layout to match typical resistivity plot conventions
         fig.update_layout(
@@ -872,9 +864,9 @@ class StartingModel(ModelGraph):
                         dcc.Graph(figure=self.render(), id=self.id, mathjax=True, 
                                     config=dict(edits={'shapePosition':True}, displayModeBar=False)),
                             width=10),
-                    dbc.Col([dbc.Button("invert all", id='invert_all_button', style={'width':'100%'}),
-                             html.Div(style={'height':'10px'}),
-                             dbc.Button("invert selected", id='invert_selected_button', style={'width':'100%'})] , width=2),
+                    #dbc.Col([dbc.Button("invert all", id='invert_all_button', style={'width':'100%'}),
+                   #          html.Div(style={'height':'10px'}),
+                   #          dbc.Button("invert selected", id='invert_selected_button', style={'width':'100%'})] , width=2),
                              dbc.Tooltip('The sounding panel shows the selected data', target='invert_selected_button')
                     # dbc.Col(html.Button("invert selected", id='invert_selected_button'), width=1)
                 ], style={'height':'100%'})], style={'height':'95%', 'padding':'25px'}),
@@ -904,6 +896,387 @@ class StartingModel(ModelGraph):
             'depth': np.logspace(0, np.log10(300), 31)  # Example depth values from 0 to 300 meters
             })
         return cls(data=df)
+    
+
+class PyInterpretter(Panel):
+    def __init__(self):
+        super().__init__(id='pyinterp')
+
+    def initialize(self):
+        init = html.Div([
+            html.H2("Python Interpreter"),
+            dcc.Textarea(
+                id='code-input',
+                placeholder='Type Python code here...',
+                style={'width': '100%', 'height': 200}
+            ),
+            html.Br(),
+            html.Button('Run Code', id='run-btn', n_clicks=0),
+            html.H4("Output:"),
+            html.Pre(id='code-output', style={'backgroundColor': '#f4f4f4', 'padding': '10px'})
+        ])
+        return init
+    # def add_callbacks(self, app):
+    #     import sys
+    #     import io
+    #     import traceback
+    #     import numpy as np        
+    #     @app.callback(
+    #         Output('code-output', 'children'),
+    #         Input('run-btn', 'n_clicks'),
+    #         State('code-input', 'value')
+    #     )
+    #     def run_python_code(n_clicks, code):
+    #         if not code:
+    #             return "No code entered."
+
+    #         # Redirect stdout and stderr
+    #         old_stdout = sys.stdout
+    #         old_stderr = sys.stderr
+    #         redirected_output = sys.stdout = io.StringIO()
+    #         redirected_error = sys.stderr = io.StringIO()
+
+    #         try:
+    #             # Execute the code in a restricted namespace
+    #             exec(code)#, {"__builtins__": __builtins__}, {})
+    #             output = redirected_output.getvalue()
+    #             errors = redirected_error.getvalue()
+    #             return output + errors if output or errors else "Code executed successfully (no output)."
+    #         except Exception:
+    #             return traceback.format_exc()
+    #         finally:
+    #             # Restore stdout and stderr
+    #             sys.stdout = old_stdout
+    #             sys.stderr = old_stderr
+        
+class Inversion_iterations(Panel):
+    #iterations = [1]
+    misfit = None
+    starting_rho = 10.
+    log_time_value = None
+    def __init__(self, data,rho=10., **kwargs):
+        self.rho = rho
+        settings = StartingModelSettings(id='inv_it', **kwargs)
+        super().__init__(id='inv_it', settings=settings)
+        self.dataframe = data
+
+    # def misfit_render(self):
+    #     fig = px.line(self.misfit)
+    #     return fig
+
+    def render_init(self):
+        
+        df = pd.DataFrame({
+            'resistivity': [self.rho] * 31,  # Default resistivity values
+            'depth': np.logspace(0, np.log10(300), 31)  # Example depth values from 0 to 300 meters
+            })
+        fig = px.line(df,
+            x='resistivity',
+            y='depth',
+            markers=True,
+            color_discrete_sequence=[self.settings.line_color, self.settings.line_color],
+            hover_data={'resistivity': ':.2f Ω⋅m', 'depth': False},  # Add tooltip for resistivity values
+            # hover='resistivity'  # Add tooltip for resistivity values
+        )
+        
+        # for i in [0.5, 1, 2]:
+        #     z = df['depth']
+        #     y = 10+90*(1 / (1 + np.exp(-20.*(z-150)/z.max())))**i
+        #     fig.add_scatter(x=y, y=z, line=dict(color='grey'))#, row=1, col=2)
+
+        # Update layout to match typical resistivity plot conventions
+        fig.update_layout(
+            title='Inversion Starting Model',
+            xaxis_title='resistivity [Ω⋅m]',
+            yaxis_title='depth [m]',
+            xaxis_type='log',  # Resistivity is typically plotted on log scale
+            yaxis_type='linear',
+            yaxis=dict(autorange='reversed'),  # Depth increases downward
+            xaxis=dict(range=[-0.1,3.1]),  # Set x-axis range for resistivity
+            showlegend=True,
+            modebar=dict(remove=['toImage', 'zoom', 'zoomIn', 'zoomOut', 'pan', 'select']),
+        )
+        fig.add_shape(type='line', x0=self.rho, x1=self.rho,
+                      y0=df['depth'].min(), y1=df['depth'].max(),
+                      xref='x1', yref='y1',
+                      line=dict(color=self.settings.line_color, dash='dash'),
+                      editable=True)
+
+        return fig
+
+    def render(self):
+        if not isinstance(self.misfit, list):
+            fig = self.render_init()
+
+        elif len(self.misfit) == 0:
+            fig = go.Figure()
+            fig.update_layout(
+                title='Inversion',
+                xaxis_title='Iterations',
+                yaxis_title='Misfit',
+                xaxis_type='linear',  # Resistivity is typically plotted on log scale
+                yaxis_type='log',
+                yaxis=dict(range=[-1,2]),  # Depth increases downward
+                xaxis=dict(range=[-0.1,20.1]),  # Set x-axis range for resistivity
+                showlegend=True,
+                #modebar=dict(remove=['toImage', 'zoom', 'zoomIn', 'zoomOut', 'pan', 'select']),
+            )
+        else:
+            fig = px.line(
+                x=self.iterations,
+                y=self.misfit, labels={'x':'Iterations', 'y':'Misfit'},
+                markers=True,
+                color_discrete_sequence=[self.settings.line_color, self.settings.line_color],
+
+            )
+
+            fig.update_traces(name="Misfit", showlegend=True)
+            
+            
+            fig = px.line(
+                x=self.iterations,
+                y=self.misfit, labels={'x':'Iterations', 'y':'Misfit'},
+                markers=True,
+                color_discrete_sequence=[self.settings.line_color, self.settings.line_color],
+
+            )
+
+            fig.update_traces(name="Total misfit", showlegend=True)
+
+
+            # Update layout to match typical resistivity plot conventions
+            fig.update_layout(
+                title='Inversion',
+                xaxis_title='Iterations',
+                yaxis_title='Misfit',
+                xaxis_type='linear',  # Resistivity is typically plotted on log scale
+                yaxis_type='log',
+                yaxis=dict(range=[-1,2]),  # Depth increases downward
+                xaxis=dict(range=[-0.1,20.1]),  # Set x-axis range for resistivity
+                showlegend=True,
+                #modebar=dict(remove=['toImage', 'zoom', 'zoomIn', 'zoomOut', 'pan', 'select']),
+            )
+        return fig
+    
+
+    def initialize(self):
+        init = html.Div([dbc.Container([
+                dbc.Row([
+                    dbc.Col(
+                        dcc.Graph(figure=self.render_init(), id=self.id, mathjax=True, 
+                                    config=dict(edits={'shapePosition':True}, displayModeBar=False)),
+                            width=10),
+                    dbc.Col([dbc.Button("invert all", id='invert_all_button', style={'width':'100%'}),
+                             html.Div(style={'height':'10px'}),
+                             dbc.Button("invert selected", id='invert_selected_button', style={'width':'100%'}),
+                             html.Div(style={'height':'30px'}), 
+                             html.Div(
+                            "Vertical constraints", style={"fontWeight": "bold", 'textAlign':'center'}),
+                            html.Div(style={'height':'10px'}),
+                             dbc.Button("Loose", id='vc_loose_button', color='secondary', outline=True, disabled=False, style={'width':'100%'}),
+                             html.Div(style={'height':'10px'}),
+                             dbc.Button("Medium",id="vc_medium_button",color="primary",outline=True,disabled=True,style={"width": "100%"}),
+                             html.Div(style={'height':'10px'}),
+                             dbc.Button("Tight", id='vc_tight_button',color='secondary', outline=True, disabled=False, style={'width':'100%'}),
+                             html.Div(style={'height':'30px'}), 
+                             html.Div(
+                            "Horizontal constraints", style={"fontWeight": "bold", 'textAlign':'center'}),
+                            html.Div(style={'height':'10px'}),
+                             dbc.Button("Loose", id='hc_loose_button', color='secondary', outline=True, disabled=False, style={'width':'100%'}),
+                             html.Div(style={'height':'10px'}),
+                             dbc.Button("Medium",id="hc_medium_button",color="primary",outline=True,disabled=True,style={"width": "100%"}),
+                             html.Div(style={'height':'10px'}),
+                             dbc.Button("Tight", id='hc_tight_button',color='secondary', outline=True, disabled=False, style={'width':'100%'}),
+                             html.Div(style={'height':'30px'}),
+                             dbc.Button("Starting model", id='reset_inv_model_button', color='secondary', style={'width':'100%'})] , width=2),
+                             dbc.Tooltip('The sounding panel shows the selected data', target='invert_selected_button')
+                ], style={'height':'100%'})], style={'height':'95%', 'padding':'25px'}),
+                html.Div(
+                            "Elapsed time: 0:00",
+                            id="inv-timer",
+                            style={"fontWeight": "bold"}
+                        ),
+                 gear_maker(self.id)], style={'height': '100%', 'overflow': 'hidden'},
+                  )
+        return init                   
+    
+    def add_callbacks(self, app):
+        super().add_callbacks(app)
+
+        @app.callback(
+            Output(self.id, 'figure', allow_duplicate=True),
+            Output("inv-timer", "children"),
+            Input('inv-log-poll', 'n_intervals'),
+            prevent_initial_call=True
+        )
+
+        def update_misfit(n_intervals):
+            log_time_value = None
+            elapsed_seconds = n_intervals
+            minutes, seconds = divmod(elapsed_seconds, 60)
+            timer_text = f"Elapsed time: {int(minutes)}:{int(seconds):02d}"
+            self.iterations = []
+            self.misfit = []
+            log_path = "inversion_log.txt"
+
+           #if not os.path.exists("inversion_log.txt") or os.path.getsize("inversion_log.txt") == 0:
+           #     return self.render_init()
+
+            with open("inversion_log.txt", "r") as file:
+                for line in file:
+                    if not line.strip():
+                        continue  # skip empty lines
+
+                    parts = line.split()
+
+                    # Iteration number is the first token
+                    if not parts[0].isdigit():
+                        continue  # skip lines that don't start with an iteration number
+                    iteration = int(parts[0])
+
+                    # Find "Total misfit:" and take the number after it
+                    total_misfit_index = parts.index("Total") + 2
+                    total_misfit = float(parts[total_misfit_index])
+
+                    self.iterations.append(iteration)
+                    self.misfit.append(total_misfit)
+
+                    if "Last" in parts:
+                        last_index = parts.index("Last")
+                        target_index = last_index + 3
+                        if target_index < len(parts):
+                            log_time_value = parts[target_index]
+
+            # ---- build timer string ----
+            timer_text = f"Elapsed time: {int(minutes)}:{int(seconds):02d}"
+            if log_time_value is not None:
+                timer_text += f" | Last iteration: {log_time_value} s"
+            return self.render(), timer_text
+        @app.callback(
+            Output("starting_model", "figure"),
+            Input("starting-model", "data"),
+        )
+        def sync_starting_model(data):
+            df = pd.DataFrame({
+                "resistivity": [data["rho"]] * len(data["depth"]),
+                "depth": data["depth"]
+            })
+            stmod.dataframe = df
+            return self.render()
+        
+        @app.callback(
+            Output("inv_it", "figure", allow_duplicate=True),
+            Input("reset_inv_model_button", "n_clicks"),
+            prevent_initial_call=True
+        )
+        def reset_inv_model(n_clicks):
+            return self.render_init()
+
+        
+
+    @classmethod
+    def standard(cls, misfit=None, rho=10.):
+        return cls(data=misfit, rho=rho)#cls(data=df)
+
+class Single_site(Panel):
+    def __init__(self, data,rho=10., **kwargs):
+        self.rho = rho
+        settings = StartingModelSettings(id='inv-single', **kwargs)
+        super().__init__(id='inv-single', settings=settings)
+        self.dataframe = data
+
+
+    def render_init(self):
+        
+        fig = go.Figure()
+        df = pd.DataFrame({
+            'resistivity': [self.rho] * 31,  # Default resistivity values
+            'depth': np.logspace(0, np.log10(300), 31)  # Example depth values from 0 to 300 meters
+            })
+        fig = px.line(df,
+            x='resistivity',
+            y='depth',
+            markers=True,
+            color_discrete_sequence=[self.settings.line_color, self.settings.line_color],
+            hover_data={'resistivity': ':.2f Ω⋅m', 'depth': False},  # Add tooltip for resistivity values
+        )
+
+        # Update layout to match typical resistivity plot conventions
+        fig.update_layout(
+            title='Inversion Starting Model',
+            xaxis_title='resistivity [Ω⋅m]',
+            yaxis_title='depth [m]',
+            xaxis_type='log',  # Resistivity is typically plotted on log scale
+            yaxis_type='linear',
+            yaxis=dict(autorange='reversed'),  # Depth increases downward
+            xaxis=dict(range=[-0.1,3.1]),  # Set x-axis range for resistivity
+            showlegend=True,
+            modebar=dict(remove=['toImage', 'zoom', 'zoomIn', 'zoomOut', 'pan', 'select']),
+        )
+        fig.add_shape(type='line', x0=self.rho, x1=self.rho,
+                    y0=df['depth'].min(), y1=df['depth'].max(),
+                    xref='x1', yref='y1',
+                    line=dict(color=self.settings.line_color, dash='dash'),
+                    editable=True)
+
+        return fig
+
+    def render(self):
+
+        # fig = px.line(self.dataframe,
+        #     x='resistivity',
+        #     y='depth',
+        #     markers=True,
+        #     color_discrete_sequence=[self.settings.line_color, self.settings.line_color],
+
+        # )
+
+        # Update layout to match typical resistivity plot conventions
+        fig = go.Figure()
+        fig.update_layout(
+            title='Inversion',
+            xaxis_title='Resistivity [Ω⋅m]',
+            yaxis_title='Depth [m]',
+            yaxis_type='linear',  # Resistivity is typically plotted on log scale
+            xaxis_type='log',
+            xaxis=dict(range=[-1,3]),  # Depth increases downward
+            yaxis=dict(range=[-0.1,20.1]),  # Set x-axis range for resistivity
+            showlegend=True,
+            #modebar=dict(remove=['toImage', 'zoom', 'zoomIn', 'zoomOut', 'pan', 'select']),
+        )
+        return fig
+    
+
+    def initialize(self):
+        init = html.Div([dbc.Container([
+                dbc.Row([
+                    dbc.Col(
+                        dcc.Graph(figure=self.render_init(), id=self.id, mathjax=True, 
+                                    config=dict(edits={'shapePosition':True}, displayModeBar=False)),
+                            width=10),
+                    dbc.Col([html.Div(
+                            "Vertical constraints", style={"fontWeight": "bold", 'textAlign':'center'}),
+                            html.Div(style={'height':'10px'}),
+                             dbc.Button("Loose", id='vc_sing_loose_button', color='secondary', outline=True, disabled=False, style={'width':'100%'}),
+                             html.Div(style={'height':'10px'}),
+                             dbc.Button("Medium",id="vc_sing_medium_button",color="primary",outline=True,disabled=False,style={"width": "100%"}),
+                             html.Div(style={'height':'10px'}),
+                             dbc.Button("Tight", id='vc_sing_tight_button',color='secondary', outline=True, disabled=False, style={'width':'100%'}),
+                             html.Div(style={'height':'30px'}), 
+                             html.Div(style={'height':'10px'}),], width=2),
+                             dbc.Tooltip('The sounding panel shows the selected data', target='invert_selected_button')
+                ], style={'height':'100%'})], style={'height':'95%', 'padding':'25px'}),
+                 gear_maker(self.id)], style={'height': '100%', 'overflow': 'hidden'},
+                  )
+        return init
+    
+    def add_callbacks(self, app):
+        super().add_callbacks(app)
+
+
+    @classmethod
+    def standard(cls, misfit=None, rho=10.):
+        return cls(data=misfit, rho=rho)#cls(data=df)
     
 
 

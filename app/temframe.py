@@ -13,6 +13,27 @@ def silence(s):
 from anemone.inversion import LogResistivity
 from anemone.inversion import fastJac, SCI
 
+iteration_cap = 10
+if iteration_cap<50:
+    import warnings
+    warnings.warn("The default iteration cap for TEMframe inversion has been reduced to 10 to speed up testing. Change it back to 50 for production runs.", UserWarning)
+
+
+def make_log():
+    """Initialize a log file by creating it empty or clearing if it exists."""
+    try:
+        with open('inversion_log.txt', 'w') as f:
+            f.write('')
+    except IOError as e:
+        print(f"Error creating log file: {e}")
+    
+
+def write_log(message):
+    print(message)
+    with open('inversion_log.txt', 'a') as f:
+        f.write(message+'\n')
+    
+
 class TEMframe(DataFrame):
     forward_operators = []
     history = []
@@ -30,13 +51,15 @@ class TEMframe(DataFrame):
 
     def overview(self):
         current_history = self.history.copy()
-        # tmp_df = self.copy()
-        # with tmp_df._skip_tracking():
+
         df = self.pivot_table(
             index=['site_id'],
             values=['date', 'daytime', 'latitude', 'longitude', 'elevation', 'utm_x', 'utm_y', 'distance'],
             aggfunc='first'
         )
+        # df['site_id'] = df.index
+        if 'misfit' in self.columns:
+            df['misfit'] = self.groupby('site_id')['misfit'].mean()
 
         # with self._skip_tracking():
         #     res = TEMframe(df, history=current_history.copy())
@@ -46,7 +69,13 @@ class TEMframe(DataFrame):
         return df
 
     @classmethod
-    def from_zip(cls, zip_content, track_history=True):
+    def from_usfzip(cls, zip_path, track_history=True):
+        with open(zip_path, 'rb') as f:
+            zip_bytes = f.read()
+        return cls.from_zip_content(zip_bytes, track_history=track_history)
+    
+    @classmethod
+    def from_zip_content(cls, zip_content, track_history=True):
         import zipfile
         import io
         import base64
@@ -59,55 +88,59 @@ class TEMframe(DataFrame):
         with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
             usf_files = [x for x in z.namelist() if x.endswith('.usf')]
             sweeps = []
-            for fname in usf_files:
+            for i, fname in enumerate(usf_files):
                 with z.open(fname, 'r') as f:
-                    sweeps += usf.Sweep.from_buffer(f, combine=False)
+                    new_sweeps = usf.Sweep.from_buffer(f, combine=False)
+                    if set([x.points for x in new_sweeps]) == {6,22}:
+                        sweeps += new_sweeps
+                    else:
+                        print(f'Ignoring {fname} because it does not contain both low and high moment data.')                    
             return cls.from_sweeps(sweeps, track_history=track_history, folder_path=z.namelist()[0]+'.zip')
 
-    @classmethod
-    def from_session(cls, session_zip):
-        import zipfile
-        import io
-        import base64
+    # @classmethod
+    # def from_session(cls, session_zip):
+    #     import zipfile
+    #     import io
+    #     import base64
 
-        df_data = None
-        df_overview = None
-        df_models = None
+    #     df_data = None
+    #     df_overview = None
+    #     df_models = None
 
-        if isinstance(session_zip, str) and session_zip.endswith('.zip'):
-            with open(session_zip, 'rb') as f:
-                zip_bytes = f.read()
-        elif isinstance(session_zip, str):
-            zip_bytes = base64.b64decode(session_zip)
-        else:
-            zip_bytes = session_zip
+    #     if isinstance(session_zip, str) and session_zip.endswith('.zip'):
+    #         with open(session_zip, 'rb') as f:
+    #             zip_bytes = f.read()
+    #     elif isinstance(session_zip, str):
+    #         zip_bytes = base64.b64decode(session_zip)
+    #     else:
+    #         zip_bytes = session_zip
 
-        with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
+    #     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
             
-            with z.open('tem_data.csv', 'r') as f:
-                df = pd.read_csv(f)
-            with z.open('history.py', 'r') as f:
-                history = f.readlines()
-            history = [line.strip().decode('utf-8') for line in history]
+    #         with z.open('tem_data.csv', 'r') as f:
+    #             df = pd.read_csv(f)
+    #         with z.open('history.py', 'r') as f:
+    #             history = f.readlines()
+    #         history = [line.strip().decode('utf-8') for line in history]
             
-            saved_forwards = [x for x in z.namelist() if x.endswith('.em1')]
-            forward_operators = None
-            if len(saved_forwards) > 0:
-                from anemone.forwards import Forward, logify_forward
-                lg_FWR = logify_forward(Forward)
-                forward_operators = []
-                for i in range(len(saved_forwards)):
-                    with z.open(saved_forwards[i], 'r') as f:
-                        fwr = lg_FWR.load(f)
-                        fwr.tolerance=1e-6
-                        forward_operators.append(fwr)
-            df_data = cls.from_pandas(df, history=history, forward_operators=forward_operators)
-            df_overview = df_data.overview()
-            if 'models.csv' in z.namelist():
-                with z.open('models.csv', 'r') as f:
-                    df_models = pd.read_csv(f)
-                    df_models = cls.from_pandas(df_models, history=history, forward_operators=forward_operators)
-        return {'data': df_data, 'models': df_models, 'overview':df_overview}
+    #         saved_forwards = [x for x in z.namelist() if x.endswith('.em1')]
+    #         forward_operators = None
+    #         if len(saved_forwards) > 0:
+    #             from anemone.forwards import Forward, logify_forward
+    #             lg_FWR = logify_forward(Forward)
+    #             forward_operators = []
+    #             for i in range(len(saved_forwards)):
+    #                 with z.open(saved_forwards[i], 'r') as f:
+    #                     fwr = lg_FWR.load(f)
+    #                     fwr.tolerance=1e-6
+    #                     forward_operators.append(fwr)
+    #         df_data = cls.from_pandas(df, history=history, forward_operators=forward_operators)
+    #         df_overview = df_data.overview()
+    #         if 'models.csv' in z.namelist():
+    #             with z.open('models.csv', 'r') as f:
+    #                 df_models = pd.read_csv(f)
+    #                 df_models = cls.from_pandas(df_models, history=history, forward_operators=forward_operators)
+    #     return {'data': df_data, 'models': df_models, 'overview':df_overview}
 
     @classmethod
     def from_usf_folder(cls, folder_path, track_history=True):
@@ -115,7 +148,11 @@ class TEMframe(DataFrame):
         usf_files = [folder_path+f for f in os.listdir(folder_path) if f.endswith('.usf')]
         for usf_file in usf_files:        
             with open(usf_file, 'rb') as f:
-                sweeps += usf.Sweep.from_buffer(f, combine=False)
+                new_sweeps = usf.Sweep.from_buffer(f, combine=False)
+                if set([x.points for x in new_sweeps]) == {6,22}:
+                    sweeps += new_sweeps
+                else:
+                    print(f'Ignoring {usf_file} because it does not contain both low and high moment data.')
         return cls.from_sweeps(sweeps, track_history=track_history, folder_path=folder_path)
 
     @classmethod
@@ -124,7 +161,12 @@ class TEMframe(DataFrame):
         mega_sweeps = []
         for pnts in points:
             mega_sweeps.append(usf.Sweep.combine_sweeps([swp for swp in sweeps if swp.points==pnts]))
-        lm,hm = mega_sweeps
+        try:
+            lm,hm = mega_sweeps
+        except:
+            print(len(mega_sweeps))
+            print(points)
+            print(folder_path)
 
         n_sites,n_gates = lm.data.shape
         n_gates += 1
@@ -207,13 +249,13 @@ class TEMframe(DataFrame):
         df_data['utm_y'] = np.nan
         df_data['zone_number'] = np.nan
         # df_data['zone_letter'] = np.nan
-        df_data.loc[ok, 'utm_x'] = utmx
-        df_data.loc[ok, 'utm_y'] = utmy
+        df_data.loc[ok, 'utm_x'] = np.round(utmx, 1)
+        df_data.loc[ok, 'utm_y'] = np.round(utmy, 1)
         df_data.loc[ok, 'zone_number'] = zone_number
         df_data.loc[ok, 'zone_letter'] = zone_letter
         ds = np.cumsum(np.sqrt(np.diff(utmx, prepend=utmx[0])**2 + np.diff(utmy, prepend=utmy[0])**2))
         df_data['distance'] = np.nan
-        df_data.loc[ok, 'distance'] = ds
+        df_data.loc[ok, 'distance'] = np.round(ds, 1)
 
         # source_line = df_data._record_op()
         # output_name = source_line.split('=')[0].strip()
@@ -236,8 +278,6 @@ class TEMframe(DataFrame):
         return self
     
     def enable(self, data_ids):
-        # self._record_op()
-        # with self._skip_tracking():
         self['inuse_manual'] = self['inuse_manual'].mask(self['data_id'].isin(data_ids), True)
         return self
 
@@ -381,9 +421,10 @@ class TEMframe(DataFrame):
         return d_obs, d_err, self.__class__.from_pandas(df_data, history=self.history.copy(), forward_operators=self.forward_operators)
     
 
-    def invert(self, res_start, vc=0.4, hc=0.4, max_iterations=50):
+    def invert(self, res_start, vc=0.4, hc=0.4, max_iterations=10):
 #        res_start = LogResistivity.smooth(torch.ones(31)*40., torch.logspace(0, 2.1, 30))
         # self._record_op()
+        make_log()
         current_history = self.history.copy()
         dmfwr = self.dmfwr
 
@@ -431,8 +472,8 @@ class TEMframe(DataFrame):
             inv_list.append(inv)
             x_list.append(row_meta['utm_x'])
             y_list.append(row_meta['utm_y'])
-
-        inv = SCI(inv_list, x=np.array(x_list), y=np.array(y_list))
+        
+        inv = SCI(inv_list, x=np.array(x_list), y=np.array(y_list), log=write_log)
         inv.data_misfit_acceptance_threshold = 0.95
         res_mods = inv.invert(iter_cap=max_iterations)
 
@@ -444,14 +485,21 @@ class TEMframe(DataFrame):
 
             d_syn = inv._dpredgrid[i].exp()
             df_data.loc[data_id, 'dbdt_syn'] = d_syn.numpy()
-
+            
+            
             rho,thick = res_mod.mod
             row_meta['site_id'] = id_meta
             row_meta['resistivity'] = rho.detach().cpu().numpy().tolist()
             row_meta['thickness'] = thick.detach().cpu().numpy().tolist()
+            # row_meta['misfit'] = df_data.loc[data_id, 'misfit'].mean()
+            
             results.append(row_meta.to_dict())
             print(f'Inversion for data_id {i:02d} completed.')
+        df_data['misfit'] = (((df_data['dbdt'] - df_data['dbdt_syn'])**2/(np.log1p(df_data['dbdt'].values*df_data['error'].values/100.)**2))**0.5)
+        df_data.dmfwr = self.dmfwr
 
+        print(np.log1p(df_data['error'].values/100.), flush=True)
+        df_overview = df_data.overview()
         df_resmod = pd.DataFrame(results)
 
         rows = []
@@ -471,6 +519,7 @@ class TEMframe(DataFrame):
                     'elevation': row['elevation'],
                     'layer': i,
                     'resistivity': rho,
+                    'misfit': df_overview[df_overview.index==site_id]['misfit'].values[0],
                     'top_depth': top,
                     'bottom_depth': bottom,
                     'center_depth': (top + bottom) / 2
@@ -481,7 +530,7 @@ class TEMframe(DataFrame):
         return df_layers, df_data
 
 
-    def invert_site(self, site_id, vc=0.4, res_start=100., max_iterations=50):
+    def invert_site(self, site_id, vc=0.4, res_start=100., max_iterations=10):
         t_max = max([fwr.times.max().item() for fwr in self.forward_operators])
         d_max = (t_max*4e6)**0.5
         n_layers = 30
@@ -499,7 +548,7 @@ class TEMframe(DataFrame):
 
         inv1 = fastJac(d_obs, d_err, res_start, self.dmfwr)
         inv1.vertical_smoothness=vc
-        res_mod=inv1.invert(iter_cap=10)
+        res_mod=inv1.invert(iter_cap=max_iterations)
         i,row = df_site.overview().iterrows().__next__()
         d_syn = inv1.data_predicted.exp()
         df_site.loc[:, 'dbdt_syn'] = d_syn.numpy()
@@ -524,7 +573,7 @@ class TEMframe(DataFrame):
                 'center_depth': (top + bottom) / 2
             })
         df_layers = self.__class__(rows, history=self.history, forward_operators=self.forward_operators)
-        return df_layers, df_site
+        return df_layers, df_site, inv1
 
     def save(self, save_folder):
         tem_data = os.path.join(save_folder, 'tem_data.csv')
@@ -550,11 +599,11 @@ class TEMframe(DataFrame):
         i = 0
         from anemone.forwards import Forward, logify_forward
         lg_FWR = logify_forward(Forward)
+
         while True:
             save_folder_fwr = os.path.join(load_folder, f'fwr{i}')
             if os.path.exists(save_folder_fwr):
                 fwr = lg_FWR.load(save_folder_fwr)
-                fwr.tolerance=1e-5
                 forward_operators.append(fwr)
                 i += 1
             else:
@@ -563,163 +612,3 @@ class TEMframe(DataFrame):
     
     def copy(self, *args, **kwargs):
         return TEMframe(super().copy(*args, **kwargs), history=self.history, forward_operators=self.forward_operators)
-
-
-
-
-    # def __post_init__(self):
-    #     def wrapped_method(func):
-    #         def wrapped(*args, **kwargs):
-    #             result = func(*args, **kwargs)
-    #             return TEMframe.from_pandas(result, history=self.history, forward_operators=self.forward_operators)
-    #         return wrapped
-    #     # This is the code to figure out what to wrap. leaving these loops takes considerably longer to run.
-        
-    #     # all_vars = dir(DataFrame)
-    #     # all_vars.remove('_data')
-    #     # for var in all_vars:
-    #     #     try:
-    #     #         method = getattr(self, var, None)
-    #     #         if callable(method):
-    #     #                 sig = inspect.signature(method)
-    #     #                 return_annotation = getattr(sig, 'return_annotation', None)
-    #     #                 if return_annotation == 'DataFrame':
-    #     #                     wrapped_method = wrap_output(method)
-    #     #                     setattr(self, var, wrapped_method)
-    #     #                     print('\t\tsetattr(self, \'{}\', wrapped_method(self.{}))'.format(var, var))
-    #     #     except:
-    #     #         pass
-    #     setattr(self, '__rmatmul__', wrapped_method(self.__rmatmul__))
-    #     setattr(self, '_append', wrapped_method(self._append))
-    #     setattr(self, '_arith_method_with_reindex', wrapped_method(self._arith_method_with_reindex))
-    #     setattr(self, '_construct_result', wrapped_method(self._construct_result))
-    #     setattr(self, '_constructor_from_mgr', wrapped_method(self._constructor_from_mgr))
-    #     setattr(self, '_dispatch_frame_op', wrapped_method(self._dispatch_frame_op))
-    #     setattr(self, '_reindex_multi', wrapped_method(self._reindex_multi))
-    #     setattr(self, 'add', wrapped_method(self.add))
-    #     setattr(self, 'applymap', wrapped_method(self.applymap))
-    #     setattr(self, 'assign', wrapped_method(self.assign))
-    #     setattr(self, 'combine', wrapped_method(self.combine))
-    #     setattr(self, 'combine_first', wrapped_method(self.combine_first))
-    #     setattr(self, 'compare', wrapped_method(self.compare))
-    #     setattr(self, 'corr', wrapped_method(self.corr))
-    #     setattr(self, 'cov', wrapped_method(self.cov))
-    #     setattr(self, 'diff', wrapped_method(self.diff))
-    #     setattr(self, 'div', wrapped_method(self.div))
-    #     setattr(self, 'divide', wrapped_method(self.divide))
-    #     setattr(self, 'eq', wrapped_method(self.eq))
-    #     setattr(self, 'explode', wrapped_method(self.explode))
-    #     setattr(self, 'floordiv', wrapped_method(self.floordiv))
-    #     setattr(self, 'from_dict', wrapped_method(self.from_dict))
-    #     setattr(self, 'from_records', wrapped_method(self.from_records))
-    #     setattr(self, 'ge', wrapped_method(self.ge))
-    #     setattr(self, 'gt', wrapped_method(self.gt))
-    #     setattr(self, 'isin', wrapped_method(self.isin))
-    #     setattr(self, 'isna', wrapped_method(self.isna))
-    #     setattr(self, 'isnull', wrapped_method(self.isnull))
-    #     setattr(self, 'join', wrapped_method(self.join))
-    #     setattr(self, 'le', wrapped_method(self.le))
-    #     setattr(self, 'lt', wrapped_method(self.lt))
-    #     setattr(self, 'map', wrapped_method(self.map))
-    #     setattr(self, 'melt', wrapped_method(self.melt))
-    #     setattr(self, 'merge', wrapped_method(self.merge))
-    #     setattr(self, 'mod', wrapped_method(self.mod))
-    #     setattr(self, 'mode', wrapped_method(self.mode))
-    #     setattr(self, 'mul', wrapped_method(self.mul))
-    #     setattr(self, 'multiply', wrapped_method(self.multiply))
-    #     setattr(self, 'ne', wrapped_method(self.ne))
-    #     setattr(self, 'nlargest', wrapped_method(self.nlargest))
-    #     setattr(self, 'notna', wrapped_method(self.notna))
-    #     setattr(self, 'notnull', wrapped_method(self.notnull))
-    #     setattr(self, 'nsmallest', wrapped_method(self.nsmallest))
-    #     setattr(self, 'pivot', wrapped_method(self.pivot))
-    #     setattr(self, 'pivot_table', wrapped_method(self.pivot_table))
-    #     setattr(self, 'pow', wrapped_method(self.pow))
-    #     setattr(self, 'radd', wrapped_method(self.radd))
-    #     setattr(self, 'rdiv', wrapped_method(self.rdiv))
-    #     setattr(self, 'reindex', wrapped_method(self.reindex))
-    #     setattr(self, 'reorder_levels', wrapped_method(self.reorder_levels))
-    #     setattr(self, 'rfloordiv', wrapped_method(self.rfloordiv))
-    #     setattr(self, 'rmod', wrapped_method(self.rmod))
-    #     setattr(self, 'rmul', wrapped_method(self.rmul))
-    #     setattr(self, 'round', wrapped_method(self.round))
-    #     setattr(self, 'rpow', wrapped_method(self.rpow))
-    #     setattr(self, 'rsub', wrapped_method(self.rsub))
-    #     setattr(self, 'rtruediv', wrapped_method(self.rtruediv))
-    #     setattr(self, 'set_axis', wrapped_method(self.set_axis))
-    #     setattr(self, 'shift', wrapped_method(self.shift))
-    #     setattr(self, 'sub', wrapped_method(self.sub))
-    #     setattr(self, 'subtract', wrapped_method(self.subtract))
-    #     setattr(self, 'swaplevel', wrapped_method(self.swaplevel))
-    #     setattr(self, 'to_period', wrapped_method(self.to_period))
-    #     setattr(self, 'to_timestamp', wrapped_method(self.to_timestamp))
-    #     setattr(self, 'transform', wrapped_method(self.transform))
-    #     setattr(self, 'transpose', wrapped_method(self.transpose))
-    #     setattr(self, 'truediv', wrapped_method(self.truediv))
-    #     setattr(self, '__rmatmul__', wrapped_method(self.__rmatmul__))
-    #     setattr(self, '_append', wrapped_method(self._append))
-    #     setattr(self, '_arith_method_with_reindex', wrapped_method(self._arith_method_with_reindex))
-    #     setattr(self, '_construct_result', wrapped_method(self._construct_result))
-    #     setattr(self, '_constructor_from_mgr', wrapped_method(self._constructor_from_mgr))
-    #     setattr(self, '_dispatch_frame_op', wrapped_method(self._dispatch_frame_op))
-    #     setattr(self, '_reindex_multi', wrapped_method(self._reindex_multi))
-    #     setattr(self, 'add', wrapped_method(self.add))
-    #     setattr(self, 'applymap', wrapped_method(self.applymap))
-    #     setattr(self, 'assign', wrapped_method(self.assign))
-    #     setattr(self, 'combine', wrapped_method(self.combine))
-    #     setattr(self, 'combine_first', wrapped_method(self.combine_first))
-    #     setattr(self, 'compare', wrapped_method(self.compare))
-    #     setattr(self, 'corr', wrapped_method(self.corr))
-    #     setattr(self, 'cov', wrapped_method(self.cov))
-    #     setattr(self, 'diff', wrapped_method(self.diff))
-    #     setattr(self, 'div', wrapped_method(self.div))
-    #     setattr(self, 'divide', wrapped_method(self.divide))
-    #     setattr(self, 'eq', wrapped_method(self.eq))
-    #     setattr(self, 'explode', wrapped_method(self.explode))
-    #     setattr(self, 'floordiv', wrapped_method(self.floordiv))
-    #     setattr(self, 'from_dict', wrapped_method(self.from_dict))
-    #     setattr(self, 'from_records', wrapped_method(self.from_records))
-    #     setattr(self, 'ge', wrapped_method(self.ge))
-    #     setattr(self, 'gt', wrapped_method(self.gt))
-    #     setattr(self, 'isin', wrapped_method(self.isin))
-    #     setattr(self, 'isna', wrapped_method(self.isna))
-    #     setattr(self, 'isnull', wrapped_method(self.isnull))
-    #     setattr(self, 'join', wrapped_method(self.join))
-    #     setattr(self, 'le', wrapped_method(self.le))
-    #     setattr(self, 'lt', wrapped_method(self.lt))
-    #     setattr(self, 'map', wrapped_method(self.map))
-    #     setattr(self, 'melt', wrapped_method(self.melt))
-    #     setattr(self, 'merge', wrapped_method(self.merge))
-    #     setattr(self, 'mod', wrapped_method(self.mod))
-    #     setattr(self, 'mode', wrapped_method(self.mode))
-    #     setattr(self, 'mul', wrapped_method(self.mul))
-    #     setattr(self, 'multiply', wrapped_method(self.multiply))
-    #     setattr(self, 'ne', wrapped_method(self.ne))
-    #     setattr(self, 'nlargest', wrapped_method(self.nlargest))
-    #     setattr(self, 'notna', wrapped_method(self.notna))
-    #     setattr(self, 'notnull', wrapped_method(self.notnull))
-    #     setattr(self, 'nsmallest', wrapped_method(self.nsmallest))
-    #     setattr(self, 'pivot', wrapped_method(self.pivot))
-    #     setattr(self, 'pivot_table', wrapped_method(self.pivot_table))
-    #     setattr(self, 'pow', wrapped_method(self.pow))
-    #     setattr(self, 'radd', wrapped_method(self.radd))
-    #     setattr(self, 'rdiv', wrapped_method(self.rdiv))
-    #     setattr(self, 'reindex', wrapped_method(self.reindex))
-    #     setattr(self, 'reorder_levels', wrapped_method(self.reorder_levels))
-    #     setattr(self, 'rfloordiv', wrapped_method(self.rfloordiv))
-    #     setattr(self, 'rmod', wrapped_method(self.rmod))
-    #     setattr(self, 'rmul', wrapped_method(self.rmul))
-    #     setattr(self, 'round', wrapped_method(self.round))
-    #     setattr(self, 'rpow', wrapped_method(self.rpow))
-    #     setattr(self, 'rsub', wrapped_method(self.rsub))
-    #     setattr(self, 'rtruediv', wrapped_method(self.rtruediv))
-    #     setattr(self, 'set_axis', wrapped_method(self.set_axis))
-    #     setattr(self, 'shift', wrapped_method(self.shift))
-    #     setattr(self, 'sub', wrapped_method(self.sub))
-    #     setattr(self, 'subtract', wrapped_method(self.subtract))
-    #     setattr(self, 'swaplevel', wrapped_method(self.swaplevel))
-    #     setattr(self, 'to_period', wrapped_method(self.to_period))
-    #     setattr(self, 'to_timestamp', wrapped_method(self.to_timestamp))
-    #     setattr(self, 'transform', wrapped_method(self.transform))
-    #     setattr(self, 'transpose', wrapped_method(self.transpose))
-    #     setattr(self, 'truediv', wrapped_method(self.truediv))
