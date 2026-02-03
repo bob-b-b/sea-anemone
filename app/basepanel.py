@@ -332,37 +332,36 @@ class Panel:
     childname: str = 'figure'
 
     def add_callbacks(self, app):
-        self.settings.add_callbacks(app)
-        def update_render(*args):
-            for key, arg in zip(self.settings.flat_keys, args):
-                if isinstance(arg, dict) and 'hex' in arg:
-                    arg = arg['hex']
-                
-                if hasattr(self.settings, key):
-                    if self.settings.schema['properties'][key].get('type')=='integer':
-                        arg = int(arg)
-                    elif self.settings.schema['properties'][key].get('type')=='number':
-                        arg = float(arg)
-                    elif self.settings.schema['properties'][key].get('type')=='boolean':
-                        arg = (arg=='true' or arg is True)
-                    setattr(self.settings, key, arg)
-                elif '-' in key:
-                    basekey,index = key.split('-')
-                    if hasattr(self.settings, basekey):
-                        arg = (arg=='true' or arg is True)
-                        exec(f'self.settings.{basekey}[{index}] = arg')
-
-    
-            return self.render()
-        
-        update_render = app.callback(Output(self.id, self.childname),
-                    [Input({'type': f'settings-{self.id}', 'key': x}, 'value') for x in self.settings.flat_keys])(update_render)
+        if self.settings is not None:
+            self.settings.add_callbacks(app)
+            def update_render(*args):
+                for key, arg in zip(self.settings.flat_keys, args):
+                    if isinstance(arg, dict) and 'hex' in arg:
+                        arg = arg['hex']
+                    
+                    if hasattr(self.settings, key):
+                        if self.settings.schema['properties'][key].get('type')=='integer':
+                            arg = int(arg)
+                        elif self.settings.schema['properties'][key].get('type')=='number':
+                            arg = float(arg)
+                        elif self.settings.schema['properties'][key].get('type')=='boolean':
+                            arg = (arg=='true' or arg is True)
+                        setattr(self.settings, key, arg)
+                    elif '-' in key:
+                        basekey,index = key.split('-')
+                        if hasattr(self.settings, basekey):
+                            arg = (arg=='true' or arg is True)
+                            exec(f'self.settings.{basekey}[{index}] = arg')
+                return self.render()        
+            update_render = app.callback(Output(self.id, self.childname),
+                        [Input({'type': f'settings-{self.id}', 'key': x}, 'value') for x in self.settings.flat_keys])(update_render)
     
     
     def initialize(self):
-        return html.Div([dcc.Graph(figure=self.render(), id=self.id, mathjax=True, 
-                                   style={'height':'98%', 'width': '98%', 'align': 'center'}),
-                         gear_maker(self.id)],
+        children = [dcc.Graph(figure=self.render(), id=self.id, mathjax=True, style={'height':'98%', 'width': '98%', 'align': 'center'})]
+        if self.settings is not None:
+            children.append(gear_maker(self.id))
+        return html.Div(children,
                         style={'height': '100%'})
 
     def empty_render(self):
@@ -370,7 +369,10 @@ class Panel:
         return fig
 
     def to_nodes(self):
-        return [dfl.Tab(id=f'tab-{self.id}', children=[self.initialize()]), self.settings.node()]
+        nodes = [dfl.Tab(id=f'tab-{self.id}', children=[self.initialize()])]
+        if self.settings is not None:
+            nodes.append(self.settings.node())
+        return nodes
     
     @property
     def layout_dict(self):
