@@ -1,5 +1,0 @@
-001	Data misfit:	22.78	Vertical misfit:	0.14	Horizontal misfit:	0.05	Total misfit:	10.01	Step size:	1.10	Last iteration time:	10.42
-
-002	Data misfit:	16.72	Vertical misfit:	0.32	Horizontal misfit:	0.12	Total misfit:	7.35	Step size:	1.28	Last iteration time:	10.19
-
-reached iteration cap..

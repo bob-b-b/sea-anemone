@@ -400,7 +400,6 @@ class TEMframe(DataFrame):
         df_data     = self[self['site_id']==site_id].copy()
         df_data     = df_data[df_data['gate_id']>-1]
         df_data['include'] = df_data['inuse_manual'].astype(bool, copy=False).fillna(df_data['inuse_auto'].astype(bool))
-        
         df_data.sort_values('data_id', inplace=True)
         dbdt=df_data['dbdt'].values
         d_obs = torch.from_numpy(np.abs(dbdt)).log()
@@ -412,7 +411,7 @@ class TEMframe(DataFrame):
         return d_obs, d_err, self.__class__.from_pandas(df_data, history=self.history.copy(), forward_operators=self.forward_operators)
     
 
-    def invert(self, res_start, vc=0.5, hc=0.8, max_iterations=2):
+    def invert(self, res_start, vc=0.5, hc=0.8, max_iterations=50):
 #        res_start = LogResistivity.smooth(torch.ones(31)*40., torch.logspace(0, 2.1, 30))
         # self._record_op()
         make_log()
@@ -467,7 +466,7 @@ class TEMframe(DataFrame):
         inv = SCI(inv_list, x=np.array(x_list), y=np.array(y_list), log=write_log)
         inv.data_misfit_acceptance_threshold = 0.95
         res_mods = inv.invert(iter_cap=max_iterations)
-
+        doi = inv.doi
         for i,((id_row, row), (id_meta, row_meta)) in enumerate(zip(pivot_multi.iterrows(), df_overview.iterrows())):
             assert id_meta == id_row, "Site ID mismatch between row and metadata"
 
@@ -489,7 +488,6 @@ class TEMframe(DataFrame):
         df_data['misfit'] = (((df_data['dbdt'] - df_data['dbdt_syn'])**2/(np.log1p(df_data['dbdt'].values*df_data['error'].values/100.)**2))**0.5)
         df_data.dmfwr = self.dmfwr
 
-        print(np.log1p(df_data['error'].values/100.), flush=True)
         df_overview = df_data.overview()
         df_resmod = pd.DataFrame(results)
 
@@ -508,6 +506,7 @@ class TEMframe(DataFrame):
                     'latitude': row['latitude'],
                     'longitude': row['longitude'],
                     'elevation': row['elevation'],
+                    'doi': doi[_],
                     'layer': i,
                     'resistivity': rho,
                     'misfit': df_overview[df_overview.index==site_id]['misfit'].values[0],
@@ -521,34 +520,20 @@ class TEMframe(DataFrame):
         return df_layers, df_data
 
 
-    def invert_site(self, site_id, vc=0.4, res_start=100., max_iterations=50):
-        t_max = max([fwr.times.max().item() for fwr in self.forward_operators])
-        d_max = (t_max*4e6)**0.5
-        n_layers = 30
-
-        if res_start is None:
-            thk = 1.+torch.logspace(-0.5, np.log10(d_max-n_layers+1), n_layers).diff()
-            z = thk.cumsum()
-            res_start=LogResistivity.smooth(torch.ones(n_layers)*40., z)
-
-        elif isinstance(res_start, float):
-            thk = 1.+torch.logspace(-0.5, np.log10(d_max-n_layers+1), n_layers).diff()
-            z = thk.cumsum(0)
-            res_start=LogResistivity.smooth(torch.ones(n_layers)*res_start, z)
+    def invert_site(self, site_id, res_start,vc=0.5, max_iterations=50):
         d_obs, d_err, df_site = self.get_site_data(site_id)
-
         inv1 = fastJac(d_obs, d_err, res_start, self.dmfwr)
         inv1.vertical_smoothness=vc
-        res_mod=inv1.invert(iter_cap=10)
+        res_mod=inv1.invert(iter_cap=max_iterations)
+        doi_value = inv1.doi
         i,row = df_site.overview().iterrows().__next__()
         d_syn = inv1.data_predicted.exp()
         df_site.loc[:, 'dbdt_syn'] = d_syn.numpy()
-
+        df_site['misfit'] = torch.sqrt(((d_obs - d_syn.log())**2/((d_err)**2)).mean())
         rho,thick = res_mod.mod
         rows = []
         tops = np.concatenate([[0], np.cumsum(thick)[:-1]])
         bottoms = np.cumsum(thick)
-
         for i, (rho, top, bottom) in enumerate(zip(rho, tops, bottoms)):
             rows.append({
                 'site_id': df_site['site_id'].values[0],
@@ -557,6 +542,8 @@ class TEMframe(DataFrame):
                 'latitude': row['latitude'],
                 'longitude': row['longitude'],
                 'elevation': row['elevation'],
+                'misfit': df_site['misfit'].values[0],
+                'doi': doi_value,
                 'layer': i,
                 'resistivity': rho,
                 'top_depth': top,
