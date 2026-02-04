@@ -70,8 +70,9 @@ class Map(Panel):
     highlighted: int = None
 
     def __init__(self, data, **kwargs):
-        settings = MapSettings(id='map', **kwargs)
-        super().__init__(id='map', settings=settings)
+        id = kwargs.pop('id', 'map')
+        settings = MapSettings(id=id, **kwargs)
+        super().__init__(id=id, settings=settings)
         self.dataframe = data
 
     def render(self):
@@ -1281,22 +1282,3 @@ class Single_site(Panel):
 
 
 # --------------------- Settings ---------------------
-@nosj
-class ScatterMapSettings(PanelSettings):
-    color: str = "red"
-    highlight_color: str = "yellow"
-    zoom: int = 10
-    png_crs: str = "EPSG:32637"
-    bh_color: str = 'orange'
-    geod: str = Geod(ellps="WGS84")
-    res_min: int = 1
-    res_max: int = 300
-    norm: str = mcolors.LogNorm(vmin=res_min, vmax=res_max)
-    cmap: str = cm.jet
-    line_color: str="yellow"
-    radius: int = 50 
-    column_width: int = 60
-    num_labels_colorbar: int = 4
-    # raster_cache_dir: str = r"C:\Users\au679476\Downloads\test_for_map_pngs_tiffs\raster_cache"
-
-from Map_external_layers import ScatterMapRenderer, make_safe_id_from_stem, layer_row

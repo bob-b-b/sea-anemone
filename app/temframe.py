@@ -359,7 +359,7 @@ class TEMframe(DataFrame):
             include_mask = include_values.astype(bool)
             d_err[~include_mask] = torch.inf  # Set error to zero for included measurements
 
-            inv = fastJac(d_obs, d_err, res_start, self.dmfwr, logger=print)
+            inv = fastJac(d_obs, d_err, res_start, self.dmfwr)
             inv.data_misfit_acceptance_threshold = 0.95
             res_mod = inv.invert(iter_cap=10)
 
@@ -467,7 +467,7 @@ class TEMframe(DataFrame):
             include_mask = include_values.astype(bool)
             d_err[~include_mask] = torch.inf  # Set error to zero for included measurements
 
-            inv = fastJac(d_obs, d_err, res_start.copy(), dmfwr.copy(), logger=silence)
+            inv = fastJac(d_obs, d_err, res_start.copy(), dmfwr.copy())
             inv.setup_matrices()
             inv_list.append(inv)
             x_list.append(row_meta['utm_x'])
