@@ -64,17 +64,6 @@ RASTER_FOLDER = r"C:\Users\au679476\Downloads\test_for_map_pngs_tiffs"
 # we will put the folder of the session
 
 # # --------------------- Instantiate ---------------------
-gis = ScatterMapRenderer(
-    dataframe=df,
-    settings=settings,
-    highlighted=None,
-    tiff_path=None,  # leave empty; we'll load on demand
-    png_path=None
-    )
-
-initial_rasters = gis.build_raster_registry_from_folder(RASTER_FOLDER, include_subfolders=False)
-gis.initial_rasters = initial_rasters 
-
 
 
 
@@ -84,7 +73,17 @@ import pandas as pd
 import session
 
 global sesh
-sesh = session.Session()
+sesh = session.Session.from_folder("C:/Users/au646858/OneDrive - Aarhus Universitet/Documents/anemone_projects/eliya_spring_kenya/")
+# gis = ScatterMapRenderer(
+#     dataframe=sesh.overview,
+#     settings=settings,
+#     highlighted=None,
+#     tiff_path=None,  # leave empty; we'll load on demand
+#     png_path=None
+#     )
+
+# initial_rasters = gis.build_raster_registry_from_folder(RASTER_FOLDER, include_subfolders=False)
+# gis.initial_rasters = initial_rasters 
 
 
 if os.path.exists(session_tracker):
@@ -104,6 +103,7 @@ u1    = Upload(session_files=session_files)
 # t1    = Table(df_overview, id='table_overview', settings=TableSettings('table_overview', visible_columns=[True]*len(df_overview.columns)))
 mod1 = ModelGraph(   dataframe=sesh.models )
 mod2 = ModelSection( dataframe=sesh.models )
+gis = m1
 
 
 x = html.Div([
@@ -135,7 +135,7 @@ Inv_it = Inversion_iterations.standard(misfit=None,rho=10.)
 
 Sing_site = Single_site.standard(rho=10.)
 
-panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, Inv_it, Sing_site, pyInt, gis]
+panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, Inv_it, Sing_site, pyInt]#, gis]
 nodes = [node for panel in panels for node in panel.to_nodes()]+[dfl.Tab(id=f'tab-processing_buttons', children=[x]), dfl.Tab(id='tab-panel_list', children=[panel_list])]
 
 

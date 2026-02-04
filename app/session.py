@@ -22,6 +22,7 @@ import pandas as pd
 class Session:
     data:   TEMframe  = None
     models: DataFrame = None
+    site:   DataFrame = None
     forwards: List[Forward] = None
     settings: SessionSettings = None
     save_dir: str = None
