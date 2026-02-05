@@ -42,7 +42,7 @@ depth = 120       # number of depth samples per layer for TESTING
 
 
 # --------------------- Settings ---------------------
-class Settings():
+class Settings(PanelSettings):
     color = "red"
     highlight_color = "yellow"
     zoom = 10
@@ -59,7 +59,7 @@ class Settings():
     num_labels_colorbar = 4
     raster_cache_dir = r"C:\Users\au679476\Downloads\test_for_map_pngs_tiffs\raster_cache"
 
-settings = Settings()
+settings = Settings('tmp_scattermap')
 
 
 
@@ -623,7 +623,7 @@ bh_data, rock_color_map = load_borehole_file(r"C:\Users\au679476\Downloads\boreh
 # rock_color_map = None
 
 
-model_frame = TEMframe.from_pandas(pd.read_csv("test_models_day4.csv"))
+model_frame = TEMframe.from_pandas(pd.read_csv("models.csv"))
 # model_frame = TEMframe.from_pandas(pd.read_csv('test_models_Dollow.csv'))
 
 def preprocess_new_df(new_df):
@@ -656,6 +656,7 @@ def preprocess_new_df(new_df):
         return row['top_depth'] + [row['bottom_depth'][-1]]
     
     df_wide['Depths'] = df_wide.apply(extract_depth_interfaces, axis=1)
+
     
     # 5. Make a global color for attr to be used even when the user changes attribute
     for attr in existing_attrs:
@@ -874,125 +875,6 @@ def get_polyline_profile(coords, section_data, resolution_m=10.0):
         total_dist += seg_length
         
     return np.array(all_x_coords), np.array(all_lons), np.array(all_lats)
-
-def plot_section_NOT_IN_USE(x, y_depth, res_models, elev=None, title="Resistivity Section"):
-    # 1. Prepare Z Data (Depth x Distance)
-    Z_clean = [np.full(len(y_depth), np.nan) if r is None else r for r in res_models]
-    Z_matrix = np.array(Z_clean).T  # Transpose to get [Depth, Distance]
-    Z_log = np.log10(Z_matrix)
-
-
-    # 2. Prepare Y Data (Topography)
-    if elev is not None:
-        # Create a 2D mesh of actual elevations
-        # This results in a matrix where each column follows the surface terrain
-        Y_grid = np.array([elev - d for d in y_depth])
-        
-        # We take the average elevation profile to define the Y-axis tick labels
-        # but the heatmap needs to know the full extent.
-        y_axis_values = Y_grid[:, 0] # Reference vertical slice
-    else:
-        Y_grid = np.array([-d for d in y_depth])
-        y_axis_values = -y_depth
-
-    # 3. Create Heatmap
-    # Note: If your Plotly version struggles with 2D Y in go.Heatmap, 
-    # we use the 'x', 'y' coordinates as 1D and the 'z' as the matrix.
-    standard_colorscale = []
-    for i in range(256):
-        fraction = i / 255
-        rgba = settings.cmap(fraction) 
-        color_str = f"rgb({int(rgba[0]*255)}, {int(rgba[1]*255)}, {int(rgba[2]*255)})"
-        standard_colorscale.append([fraction, color_str])
-
-
-    # fig = go.Figure(data=go.Contour(
-    fig = go.Figure(data=go.Heatmap(
-        z=Z_log,
-        x=x,
-        # Use the first column of the grid as the Y scale
-        y=Y_grid[:, 0] if elev is not None else -y_depth, #Y_grid[:, 0]
-        colorscale=standard_colorscale,
-        zmin=np.log10(settings.res_min),
-        zmax=np.log10(settings.res_max),
-
-        coloraxis="coloraxis",
-
-        # colorbar=dict(
-        #     title="Resistivity (Ω·m)",
-        #     tickvals=[0, 1, 2, 2.47], 
-        #     ticktext=["1", "10", "100", "300"]
-        # ),
-        hoverinfo="all",
-        connectgaps=False,
-        hoverongaps=False
-    ))
-
-    # # --------- 3D plot --------- might be useful later ------ from here
-    # fig = go.Figure(data=go.Surface(
-    #     z=Y_grid,        # The actual elevations (Topography)
-    #     x=x,             # Distances
-    #     y=np.zeros_like(x), # Keep it on a single plane (2D slice)
-    #     surfacecolor=Z_log, # This applies the resistivity colors
-    #     colorscale=standard_colorscale,
-    #     showscale=True
-    # ))
-
-    # # Force the camera to a "Side View" to look like a 2D section
-    # fig.update_layout(
-    #     scene=dict(
-    #         camera=dict(eye=dict(x=0, y=-2, z=0)), # View from the side
-    #         xaxis_title="Distance",
-    #         zaxis_title="Elevation",
-    #         yaxis_visible=False # Hide the depth thickness
-    #     )
-    # )
-    # # --------- 3D plot --------- might be useful later ------ to here
-    
-    
-    if elev is not None:
-        fig.add_trace(go.Scatter(
-            x=x, y=elev,
-            mode='lines',
-            line=dict(color='black', width=1.5, dash='dash'),
-            coloraxis="coloraxis"
-            # name='Topography Line'
-        ))
-
-    # 4. Final Layout Fixes
-    fig.update_layout(
-        title=title,
-        xaxis_title="Distance (m)",
-        yaxis_title="Elevation (m)" if elev is not None else "Depth (m)",
-        plot_bgcolor="white",
-        hovermode="x",
-        # This is critical: ensures the axis shows the full depth range
-        yaxis=dict(
-            autorange=True,fixedrange=False,
-            # If using depths without elevation, reverse the axis
-            # range=[np.nanmin(Y_grid), np.nanmax(Y_grid)] if elev is not None else None
-        )
-    )
-
-    # 2. Add Layout Styling (White Background + Grid + Buffer)
-    fig.update_layout(
-        template="plotly_white", # Sets initial white theme
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-        xaxis_title="Distance along path (m)",
-        yaxis_title="Elevation (m)",
-        # Set the buffer space here
-        xaxis=dict(
-            # range=[min_x - buffer, max_x + buffer],
-            showgrid=True,gridcolor="lightgray",gridwidth=0.5,zeroline=False,showline=True,linecolor="black",mirror=True),
-        yaxis=dict(
-            showgrid=True,gridcolor="lightgray",gridwidth=0.5,zeroline=False,showline=True,linecolor="black",mirror=True,
-            autorange=True # Ensures topography is fully visible
-        ),
-        margin=dict(l=60, r=40, t=50, b=60),
-        height=500
-    )
-    return fig
 
 def create_blocky_polygons(stations_on_line, depths, bar_width=settings.column_width):
     """

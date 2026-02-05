@@ -73,7 +73,7 @@ def update_tabset(json_data, target_tab_id, settings_tab_id, change_order=False)
     exec(f'json_data{accessor_string}[\'selected\'] = {tabset.index(settings_tab_id)}')
     return json_data
 
-def add_tabset(json_data, new_tab):
+def add_tabset(json_data, new_tab,settings_tab_id,target_tab_id,change_order=False):
     accessor_chain = find_tab_by_id(json_data, new_tab)
     accessor_string = ''
     for key in accessor_chain[:-1]:
@@ -109,7 +109,7 @@ def add_tabset(json_data, new_tab):
 
 
 @dataclass
-class PanelSettings:
+class PanelSettings():
     id: str
     _settings_schema: dict = None
     title: str = None
@@ -334,6 +334,10 @@ class Panel:
     def add_callbacks(self, app):
         if self.settings is not None:
             self.settings.add_callbacks(app)
+
+            if not self.settings.flat_keys:
+                        return
+
             def update_render(*args):
                 for key, arg in zip(self.settings.flat_keys, args):
                     if isinstance(arg, dict) and 'hex' in arg:
@@ -353,7 +357,8 @@ class Panel:
                             arg = (arg=='true' or arg is True)
                             exec(f'self.settings.{basekey}[{index}] = arg')
                 return self.render()        
-            update_render = app.callback(Output(self.id, self.childname),
+            print("CHECKPOINT PANEL")
+            update_render = app.callback(Output(self.id, self.childname),#, allow_duplicate=True),
                         [Input({'type': f'settings-{self.id}', 'key': x}, 'value') for x in self.settings.flat_keys])(update_render)
     
     

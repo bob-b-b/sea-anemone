@@ -999,7 +999,7 @@ def toggle_profile_busy(state, style):
 
 # --------------------- Update map ---------------------
 @app.callback(
-    Output("something", "figure"),
+    Output(renderer.id, "figure"),
     Output("raster-busy-store", "data" , allow_duplicate=True),
     
     Input("raster-load-trigger", "data"), 
@@ -1148,7 +1148,7 @@ app.clientside_callback(
     }
     """,
     Output('dummy-div-for-resize', 'children'),
-    Input('map', 'id'),  # Assuming your dl.Map has id="map"
+    Input('gis', 'id'),  # Assuming your dl.Map has id="map"
 )
 
 
