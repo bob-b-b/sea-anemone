@@ -1,0 +1,10 @@
+001	Data misfit:	18.12	Vertical misfit:	0.00	Horizontal misfit:	0.00	Total misfit:	8.14	Step size:	1.10	Last iteration time:	0.21
+
+002	Data misfit:	18.12	Vertical misfit:	0.00	Horizontal misfit:	0.00	Total misfit:	8.14	Step size:	1.28	Last iteration time:	0.18
+
+003	Data misfit:	18.12	Vertical misfit:	0.00	Horizontal misfit:	0.00	Total misfit:	8.14	Step size:	0.59	Last iteration time:	0.20
+
+004	Data misfit:	18.12	Vertical misfit:	0.00	Horizontal misfit:	0.00	Total misfit:	8.14	Step size:	0.10	Last iteration time:	0.28
+
+005	Data misfit:	18.12	Vertical misfit:	0.00	Horizontal misfit:	0.00	Total misfit:	8.14	Step size:	0.10	Last iteration time:	0.19
+

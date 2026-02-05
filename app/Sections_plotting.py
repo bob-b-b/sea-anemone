@@ -618,7 +618,7 @@ def build_combined_borehole_figure(bh_ids, bh_projections, rock_color_map):
 
 
 # ----------- BOREHOLES ----------------
-bh_data, rock_color_map = load_borehole_file(r"C:\Users\au679476\Downloads\boreholes_Gende_Rige_test.bor")
+bh_data, rock_color_map = load_borehole_file(r"C:\Users\au646858\Downloads\boreholes_Gende_Rige_test.bor")
 # bh_data = None 
 # rock_color_map = None
 

@@ -53,18 +53,14 @@ from dash.dependencies import Input, Output, State, ALL, MATCH
 from scipy.spatial import cKDTree
 from pyproj import Geod
 
-from basepanel import Panel, gear_maker, dcc
 from temframe import TEMframe
-
-from Sections_plotting import *
-from Map_external_layers import ScatterMapRenderer_A
+from gis import GIS
 
 # --------------------- reading the tiffs and pngs ---------------------
 RASTER_FOLDER = r"C:\Users\au679476\Downloads\test_for_map_pngs_tiffs"
 # we will put the folder of the session
 
-
-
+# # --------------------- Instantiate ---------------------
 
 
 
@@ -90,7 +86,17 @@ import pandas as pd
 import session
 
 global sesh
-sesh = session.Session()
+sesh = session.Session.from_folder("C:/Users/au646858/OneDrive - Aarhus Universitet/Documents/anemone_projects/eliya_spring_kenya/")
+# gis = ScatterMapRenderer(
+#     dataframe=sesh.overview,
+#     settings=settings,
+#     highlighted=None,
+#     tiff_path=None,  # leave empty; we'll load on demand
+#     png_path=None
+#     )
+
+# initial_rasters = gis.build_raster_registry_from_folder(RASTER_FOLDER, include_subfolders=False)
+# gis.initial_rasters = initial_rasters 
 
 
 if os.path.exists(session_tracker):
@@ -103,13 +109,14 @@ else:
 
 
 pyInt = PyInterpretter()
-m1    = Map(data=sesh.overview)
+m1    = Map(sesh.overview)
 dbdt1 = dbdtSounding(dataframe=sesh.data)
 dbdt2 = dbdtSection(dataframe=sesh.data)
 u1    = Upload(session_files=session_files)
 # t1    = Table(df_overview, id='table_overview', settings=TableSettings('table_overview', visible_columns=[True]*len(df_overview.columns)))
 mod1 = ModelGraph(   dataframe=sesh.models )
 mod2 = ModelSection( dataframe=sesh.models )
+gis = GIS(sesh.overview)
 
 gis = ScatterMapRenderer(dataframe=sesh.models)
 
@@ -165,9 +172,9 @@ app.layout = html.Div([
     html.Div([
         dbc.ButtonGroup([
             dbc.Button("1. Load Data",  id="upload_layout",    color="primary"),
-            dbc.Button("2. Process",    id="process_layout",   disabled=True, color="secondary"),
-            dbc.Button("3. Invert",     id="invert_layout",    disabled=True, color="secondary"),
-            dbc.Button("4. QC",         id="review_layout",    disabled=True, color="secondary"),
+            dbc.Button("2. Process",    id="process_layout",   disabled=False, color="secondary"),
+            dbc.Button("3. Invert",     id="invert_layout",    disabled=False, color="secondary"),
+            dbc.Button("4. QC",         id="review_layout",    disabled=False, color="secondary"),
             dbc.Button("5. Interpret",  id="interpret_layout", disabled=False, color="secondary"),
         ], style={'width': '100%'})
     ], style={
