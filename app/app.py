@@ -1,5 +1,5 @@
 import sys, os
-from tkinter import filedialog, Tk
+# from tkinter import filedialog, Tk
 
 
 fpath = os.path.dirname(os.path.abspath(__file__))
@@ -22,10 +22,6 @@ from temframe import TEMframe
 external_stylesheets = [themes.BOOTSTRAP]
 app = Dash(__name__, suppress_callback_exceptions=True, assets_folder='assets',  external_stylesheets=external_stylesheets)
 app.title = "Sea Anemone"
-
-
-import os
-
 
 import os
 import base64
@@ -118,7 +114,7 @@ mod1 = ModelGraph(   dataframe=sesh.models )
 mod2 = ModelSection( dataframe=sesh.models )
 gis = GIS(sesh.overview)
 
-gis = ScatterMapRenderer(dataframe=sesh.models)
+# gis = ScatterMapRenderer(dataframe=sesh.models)
 
 # df, color_master_map, existing_attrs = preprocess_new_df(sesh.models)
 
@@ -192,8 +188,7 @@ app.layout = html.Div([
         'padding': '0 10px'
     }),
     
-    html.Div([flex_layout], style={'marginTop': '60px'}),  # Push content below fixed header
-    # html.Div([gis_layout], style={'marginTop': '60px'}),
+    html.Div([flex_layout], style={'marginTop': '60px'})
     html.Div(id='output-click')
 ])
 
@@ -202,9 +197,9 @@ for panel in panels:
 
 @app.callback(
     [ 
-        Output('sounding', 'figure', allow_duplicate=True),
-        Output('tTEM',     'figure', allow_duplicate=True),
-        Output('model_graph', 'figure', allow_duplicate=True),
+        Output('sounding',      'figure', allow_duplicate=True),
+        Output('tTEM',          'figure', allow_duplicate=True),
+        Output('model_graph',   'figure', allow_duplicate=True),
         Output('model_section', 'figure', allow_duplicate=True),
           ],
     [Input('map', 'relayoutData'), Input('map', 'selectedData')],

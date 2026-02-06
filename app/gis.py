@@ -75,10 +75,10 @@ class GISSettings(PanelSettings):
     num_labels_colorbar: int = 4
     # raster_cache_dir: str = r"C:\Users\au679476\Downloads\test_for_map_pngs_tiffs\raster_cache"
 
-from Map_external_layers import ScatterMapRenderer, make_safe_id_from_stem, layer_row
+from Map_external_layers import make_safe_id_from_stem, layer_row
 
 class GIS(Panel):
-    def __init__(self, dataframe, **kwargs):#(self, dataframe, settings, highlighted=None,tiff_path=None,png_path=None,):
+    def __init__(self, dataframe, **kwargs):
  
         self.dataframe = dataframe
         self.tiff_path = None
@@ -96,10 +96,6 @@ class GIS(Panel):
             setattr(self, key, value)
            
        
-        # Logic previously in __init__
-        # if hasattr(self, 'dataframe') and self.dataframe is None:
-        #     return
- 
         self.tiff_info = self._load_tiff() if getattr(self, 'tiff_path', None) else None
         self.png_info = self._load_png() if getattr(self, 'png_path', None) else None
  
