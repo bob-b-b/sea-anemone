@@ -357,7 +357,6 @@ class Panel:
                             arg = (arg=='true' or arg is True)
                             exec(f'self.settings.{basekey}[{index}] = arg')
                 return self.render()        
-            print("CHECKPOINT PANEL")
             update_render = app.callback(Output(self.id, self.childname),#, allow_duplicate=True),
                         [Input({'type': f'settings-{self.id}', 'key': x}, 'value') for x in self.settings.flat_keys])(update_render)
     

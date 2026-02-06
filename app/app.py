@@ -86,7 +86,7 @@ import pandas as pd
 import session
 
 global sesh
-sesh = session.Session.from_folder("C:/Users/au646858/OneDrive - Aarhus Universitet/Documents/anemone_projects/eliya_spring_kenya/")
+sesh = session.Session()#.from_folder("C:/Users/au646858/OneDrive - Aarhus Universitet/Documents/anemone_projects/eliya_spring_kenya/")
 # gis = ScatterMapRenderer(
 #     dataframe=sesh.overview,
 #     settings=settings,
@@ -116,14 +116,10 @@ u1    = Upload(session_files=session_files)
 # t1    = Table(df_overview, id='table_overview', settings=TableSettings('table_overview', visible_columns=[True]*len(df_overview.columns)))
 mod1 = ModelGraph(   dataframe=sesh.models )
 mod2 = ModelSection( dataframe=sesh.models )
-gis = GIS(sesh.overview)
+gis = GIS(sesh.models)
 
-gis = ScatterMapRenderer(dataframe=sesh.models)
 
-# df, color_master_map, existing_attrs = preprocess_new_df(sesh.models)
-
-x = html.Div([
-      dcc.Markdown(children='### buttons and hot keys'),
+x = html.Div([dcc.Markdown(children='### buttons and hot keys'),
       html.Div(
           [
             dbc.ButtonGroup([
@@ -1049,6 +1045,52 @@ app.clientside_callback(
     prevent_initial_call=True
 )
 
+# CALLBACK A: SHOW message for profile
+app.clientside_callback(
+    """
+    function(line_data, mode, idx) {
+        if (!line_data || line_data.length === 0) return window.dash_clientside.no_update;
+
+        const overlay = document.getElementById('profile-busy-overlay');
+        if (overlay) {
+            overlay.innerText = "Preparing Profile...";
+            overlay.style.display = 'flex';
+            // Explicitly set styles here to ensure visibility
+            overlay.style.position = 'fixed';
+            overlay.style.top = '320px';
+            overlay.style.left = '12px';
+            overlay.style.zIndex = '10000';
+            console.log("JS: Inputs changed - Showing Overlay");
+        }
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("profile-busy-overlay", "className"), # Dummy output to a safe property
+    Input("line-final-store", "data"),
+    Input("section-mode-store", "data"),
+    Input("selected-line-index", "data"),
+)
+
+# CALLBACK A: Hide message for profile
+app.clientside_callback(
+    """
+    function(children) {
+        // Only hide if the children is not null/empty
+        if (!children) return window.dash_clientside.no_update;
+
+        const overlay = document.getElementById('profile-busy-overlay');
+        if (overlay) {
+            overlay.style.display = 'none';
+            console.log("JS: Plot arrived - Hiding Overlay");
+        }
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("profile-busy-overlay", "title"), # Different dummy property
+    Input("profile-plot-content", "children"), # Replace with your plot container ID
+    prevent_initial_call=True
+)
+
 # --------------------- Layers Menu ---------------------
 # --------------------- Toggle the main layers panel ---------------------
 @app.callback(
@@ -1125,30 +1167,34 @@ def collect_opacities(values, ids):
     Output("points-filter", "value"),
     Output("points-color-map-store", "data"),
     Output("points-filters-by-attr-store", "data"),
-
+    
+    Input("interpret_layout", 'n_clicks'),
+    
     Input("map-settings-store", "data"),     # so it can initialize from settings
     Input("points-attr", "value"),           # user changes attribute
     Input("points-filter", "value"),         # user changes checklist
 
     State("points-attr", "options"),
     State("points-filters-by-attr-store", "data"),
-    # State("points-available-attrs-store", "data"),
+    State("points-available-attrs-store", "data"),
     prevent_initial_call=False,)
 
-def sync_points_ui(settings, attr_value, filter_value,
+def sync_points_ui(trig, settings, attr_value, filter_value,
                    existing_attr_options, filters_by_attr, 
-                #    existing_attrs
-                   ):
-
-    if df is None:
+                   existing_attrs):
+    
+    gis.dataframe = sesh.models
+    local_df, color_master_map, existing_attrs = preprocess_new_df(gis.dataframe)
+    
+    if gis.dataframe is None:
         return [], no_update, [], [], {}, (filters_by_attr or {})
 
-    local_df = pd.DataFrame(df)
+       
     filters_by_attr = filters_by_attr or {}
 
     # ---- available attributes come ONLY from existing_attrs ----
-    existing_attrs = []
-    existing_attrs = existing_attrs or []
+    # existing_attrs = []
+    # existing_attrs = existing_attrs or []
     available_attrs = [a for a in existing_attrs if a in local_df.columns]
 
     attr_options = [{"label": a, "value": a} for a in available_attrs]
@@ -1189,6 +1235,7 @@ def sync_points_ui(settings, attr_value, filter_value,
 
     # ---- decide checklist value & persist memory ----
     if trig == "points-filter":
+        # print("POINT FILTER SYNC FUN", filter_value)
         selected = filter_value or []
         filters_by_attr[current_attr] = selected
         checklist_value = selected
@@ -1207,7 +1254,7 @@ def sync_points_ui(settings, attr_value, filter_value,
 # --------------------- Store zoom / center ---------------------
 @app.callback(
     Output("map-view-store", "data"),   
-    Input(gis.id, "relayoutData"),
+    Input('gis', "relayoutData"),
     State("map-view-store", "data"),
     prevent_initial_call=True,)
 
@@ -1344,59 +1391,52 @@ def auto_close_layers(layer_values, opacity_values, menu_clicks, style):
     # State("map-view-store", "data"),
 
 # --------------------- live profile MULTI LINE plot callback ---------------------
+import time
+
 @app.callback(
-    Output("profile-plot-container", "children"),
-    Output("profile-plot-container", "style"),
-
-    Output("profile-busy-store", "data", allow_duplicate=True),
-    Input("profile-load-trigger", "data"), 
-
-    State("line-final-store", "data"),
-    State("section-mode-store", "data"),
-    State("selected-line-index", "data"),
+    Output("profile-plot-content", "children"),
+    Input("line-final-store", "data"),
+    Input("section-mode-store", "data"),
+    Input("selected-line-index", "data"),
     State("map-view-store", "data"),
-
-    State("profile-busy-store", "data"),
     prevent_initial_call=True
 )
 
-def update_section(_trig, lines, mode, selected_idx, view, busy_state):
+def update_section(  lines, mode, selected_idx, view, ):
+    
+    df_up_map, color_master_map, existing_attrs = preprocess_new_df(gis.dataframe)
 
-    base_style = {"flex": "1",
-        "position": "relative",
-        "width": "50%","height": "75%",
-        "minHeight": 0,"margin": "auto",
-        "background": "white","borderRadius": "8px","boxShadow": "0 0 10px rgba(0,0,0,0.15)",
-        "padding": "5px","boxSizing": "border-box","overflow": "hidden",
-        "display": "flex","flexDirection": "column",}
     
     if not lines:
-            return [], base_style,False   #   [dcc.Graph(id="profile-plot_main", figure=go.Figure(), style={"height":"100%","width":"100%"})]
+        msg1 = f"Draw a line to plot"
+        blank_fig = go.Figure()
+        blank_fig.add_annotation(text=msg1, showarrow=False, font=dict(size=15, color="gray"))
+        blank_fig.update_layout(plot_bgcolor="white",paper_bgcolor="white",template="none",xaxis=dict(visible=False),yaxis=dict(visible=False),margin=dict(t=0, b=0, l=0, r=0))      
+        return [dcc.Graph(id="profile-plot_main", figure=blank_fig, config={'displayModeBar': False}, style={"height": "100%", "width": "100%"})],
     
     try:
         current_line = lines[selected_idx]
     except:
         current_line = lines[-1]
-    
-    print(f"[profile] start trig={_trig} n_lines={len(lines)} mode={mode} n_pts={len(current_line)}")
-    
-    # busy = True
 
     # 1. Gather all data
-    y_depth = np.array(df["Depths"].iloc[0])[:-1]
-
-
-    all_x, interp_lons, interp_lats = get_polyline_profile(current_line, df, resolution_m=50)
+    y_depth = np.array(df_up_map["Depths"].iloc[0])[:-1]
+    all_x, interp_lons, interp_lats = get_polyline_profile(current_line, df_up_map, resolution_m=50)
     
     # Get Stations and Boreholes
-    stations_on_line = get_station_projections(current_line, df, search_radius_m=Settings.radius)
+    stations_on_line = get_station_projections(current_line, df_up_map, search_radius_m=Settings.radius)
     if bh_data is not None:
         bh_projections = get_borehole_projections(current_line, bh_data, view, search_radius_m=Settings.radius)
 
     # 2. FAILSAFE: If nothing is near the line, show a message
     if not stations_on_line and not bh_projections:
-        msg = f"No data (stations or boreholes) found within {Settings.radius}m"
-        return go.Figure().add_annotation(text=msg, showarrow=False), base_style,{"busy": False, "since": ...}
+        msg = f"No data (Soundings or Boreholes) found within {Settings.radius}m"
+        blank_fig = go.Figure()
+        blank_fig.add_annotation(text=msg, showarrow=False, font=dict(size=15, color="gray"))
+        blank_fig.update_layout(plot_bgcolor="white",paper_bgcolor="white",template="none",xaxis=dict(visible=False),yaxis=dict(visible=False),margin=dict(t=0, b=0, l=0, r=0))   
+        return html.Div(dcc.Graph(figure=blank_fig, config={'displayModeBar': False}), 
+                        style={"height": "100%", "width": "100%", "background": "white", 
+                               "display": "flex", "alignItems": "center", "justifyContent": "center"})
 
     # 3. Calculate Path Elevations (Terrain)
     if stations_on_line:
@@ -1425,12 +1465,12 @@ def update_section(_trig, lines, mode, selected_idx, view, busy_state):
             
     elif mode == "interp":
         samples = np.vstack([interp_lons, interp_lats]).T
-        res_models, elevations, _, _ = interpolate_nearest(df, samples, radius=Settings.radius)
+        res_models, elevations, _, _ = interpolate_nearest(df_up_map, samples, radius=Settings.radius)
         fig = plot_section_topographic(all_x, y_depth, res_models, elev=path_elevations)
         
     elif mode == "combined":
         samples = np.vstack([interp_lons, interp_lats]).T
-        res_models, elevations, _, _ = interpolate_nearest(df, samples, radius=Settings.radius)
+        res_models, elevations, _, _ = interpolate_nearest(df_up_map, samples, radius=Settings.radius)
         fig = combine_sections_final(all_x, y_depth, res_models, path_elevations, stations_on_line)
 
     # 5. Add Boreholes
@@ -1457,57 +1497,32 @@ def update_section(_trig, lines, mode, selected_idx, view, busy_state):
     
     show_colorbar = mode in ["blocky", "interp", "combined"] and len(stations_on_line) > 0
 
-    # prof_plot_height = 300
+    graph =  html.Div(dcc.Graph(id="profile-plot_main", figure=fig, style={"height": "100%", "width": "100%"},
+        config={"doubleClick": "reset+autosize", "doubleClickDelay": 200, "displayModeBar": True},),
+        style={"width": "100%", "height": "100%", "minHeight": 0})
+    
+    show_colorbar = (stations_on_line is not None and len(stations_on_line) > 0 and mode in ["blocky", "interp", "combined"])
+    has_colorbar = show_colorbar 
+    # 2. Build the legend only if needed
+    legend_element = None
+    if has_colorbar:
+        legend_bar = create_geologic_colorbar_horizontal(settings.res_min, settings.res_max, bar_height=18)
+        legend_element = html.Div(legend_bar,style={"width": "80%", "margin": "0 auto", "marginTop": "2px"})
 
-    graph =  html.Div(
-        dcc.Graph(id="profile-plot_main", figure=fig, style={"height": "100%", "width": "100%"},
-        config={"doubleClick": "reset+autosize", "doubleClickDelay": 200, "displayModeBar": True},),  
-        style={"flex": "1 1 auto", "minHeight": 0, "width": "100%"},)
+    # 3. Define the graph wrapper
+    graph_wrapper = html.Div(graph, style={"width": "100%", "height": "100%", "flex": "0 1 auto","minHeight": 0} )
 
-    if show_colorbar:
-        # vertical colorbar
-        # legend_bar = create_geologic_colorbar(settings.res_min, settings.res_max, plot_height = prof_plot_height)
-        # content = html.Div(
-        #     [
-        #         html.Div(graph, style={"flex": "1", "minWidth": "0", "height": "100%"}),
-        #         html.Div(legend_bar, style={"width": "70px", "display": "flex", 
-        #                                     "justifyContent": "center","alignItems": "center",
-        #                                     "height": "100%",
-        #                                     }
-        #                 )
-        #     ],
-        #     style={"display": "flex", "height": "100%", "width": "100%"}
-        # )
+    # 4. Construct the children list dynamically
+    children_list = [graph_wrapper]
+    if legend_element:
+        children_list.append(legend_element)
 
-
-        legend_bar = create_geologic_colorbar_horizontal(settings.res_min,settings.res_max, bar_height=18)
-
-        content = html.Div(
-            [html.Div(graph), #, style={"flex": "1", "minHeight": 0}
-                html.Div(legend_bar,style={"width": "80%", "margin": "0 auto", "marginTop": "8px",},),
-            ],
-            style={
-                "display": "flex","flexDirection": "column",
-                "height": "100%","width": "100%","minHeight": 0, 
-            },
-        )
-
-        dt = time.perf_counter() - t0
-        print(f"[profile] done trig={_trig} in {dt:.2f}s")
-
-        return [content], base_style, {"busy": False, "since": busy_state.get("since", time.time())} #False
-    else:
-        content = html.Div(
-                        html.Div(graph),
-                        style={
-                            "display": "flex","flexDirection": "column",
-                            "height": "100%","width": "100%","minHeight": 0,  
-                        },
-                    )
-        return [content], base_style, {"busy": False, "since": busy_state.get("since", time.time())} #False
-
-
-    # return [graph], base_style
+    # 5. Final Return 
+    content = html.Div(
+        children=children_list,
+        style={"display": "flex","flexDirection": "column","height": "100%","width": "100%","justifyContent": "center","alignItems": "center",})
+    
+    return html.Div(content, id=f"plot-wrapper-{time.time()}") #content
 
 
 # --------------------- MULTI LINE select profile dropdown and clear all or selected ---------------------
@@ -1594,7 +1609,7 @@ def master_line_controller(lines, clear_sel_n, clear_all_n, view_clicks, check_s
 @app.callback(
     Output("line-final-store", "data", allow_duplicate=True),
     Output("zoom-warning-dialog", "displayed"), # To trigger an alert message
-    Input(gis.id, "relayoutData"),
+    Input('gis', "relayoutData"),
     State("map-view-store", "data"),
     State("line-final-store", "data"),
     prevent_initial_call=True
@@ -1693,10 +1708,14 @@ def sync_hover_to_map(hoverData, lines, selected_idx):
 )
 
 def manage_windows(click_data, n_closes, current_windows, combined_state,all_lines, selected_idx):
+
     ctx = callback_context
     if not ctx.triggered:
         return no_update, no_update
-
+    
+    gis.dataframe = sesh.models
+    df_up_map, color_master_map, existing_attrs = preprocess_new_df(gis.dataframe)
+    
     trigger = ctx.triggered[0]["prop_id"]
     windows = list(current_windows or [])
     # combined_state stores: {"window_id": str, "items": [[id, type], ...]}
@@ -1737,12 +1756,12 @@ def manage_windows(click_data, n_closes, current_windows, combined_state,all_lin
             else:
                 try:
                     row_data = None
-                    if idx in df.index:
-                        row_data = df.loc[idx] if idx in df.index else df.iloc[int(idx)]
+                    if idx in df_up_map.index:
+                        row_data = df_up_map.loc[idx] if idx in df_up_map.index else df_up_map.iloc[int(idx)]
                     else:
                         int_idx = int(idx)
-                        if 0 <= int_idx < len(df):
-                            row_data = df.iloc[int_idx]
+                        if 0 <= int_idx < len(df_up_map):
+                            row_data = df_up_map.iloc[int_idx]
                 except (ValueError, TypeError):
                     row_data = None
 
@@ -1773,7 +1792,7 @@ def manage_windows(click_data, n_closes, current_windows, combined_state,all_lin
             # GENERATE CONTENT BASED ON SELECTION
             # Scenario: Only TEMs selected -> Overlay Plot
             if len(bh_ids) == 0:
-                fig = build_combined_step_figure(df, tem_ids, use_elevation=True)
+                fig = build_combined_step_figure(df_up_map, tem_ids, use_elevation=True)
                 content = dcc.Graph(figure=fig, style={"height": "100%"})
                 title = f"Combined TEM Models ({len(tem_ids)})"
                 # width = "650px"
@@ -1787,7 +1806,7 @@ def manage_windows(click_data, n_closes, current_windows, combined_state,all_lin
 
             # Scenario: BOTH selected -> Side-by-Side Comparison (TEM vs BH)
             else:
-                tem_fig = build_combined_step_figure(df, tem_ids, use_elevation=True)
+                tem_fig = build_combined_step_figure(df_up_map, tem_ids, use_elevation=True)
                 bh_fig = build_combined_borehole_figure(bh_ids, bh_projections, rock_color_map)
                 
                 # OPTIONAL: Align Y-Axes if using Elevation
@@ -1804,7 +1823,7 @@ def manage_windows(click_data, n_closes, current_windows, combined_state,all_lin
                 all_z = []
                 # Add TEM elevations
                 for idx in tem_ids:
-                    row = df.loc[idx]
+                    row = df_up_map.loc[idx]
                     all_z.extend(row['elevation'] - row['bottom_depth'])
                     all_z.append(row['elevation'])
 
@@ -1848,45 +1867,45 @@ def manage_windows(click_data, n_closes, current_windows, combined_state,all_lin
     return no_update, no_update
 
 # --------------------- read and populate tiffs and pngs ---------------------
-@app.callback(
-    Output("dynamic-raster-layer-rows", "children"),
-    Input("raster-registry-store", "data"),
-)
-def render_raster_layer_rows(rasters):
-    rasters = rasters or []
-    if not rasters:
-        # Nothing loaded -> show nothing (or a hint)
-        return no_update #html.Div("No rasters loaded", style={"fontSize": "11px", "color": "#666"})
+# @app.callback(
+#     Output("dynamic-raster-layer-rows", "children"),
+#     Input("raster-registry-store", "data"),
+# )
+# def render_raster_layer_rows(rasters):
+#     rasters = rasters or []
+#     if not rasters:
+#         # Nothing loaded -> show nothing (or a hint)
+#         return no_update #html.Div("No rasters loaded", style={"fontSize": "11px", "color": "#666"})
 
-    rows = []
-    for r in rasters:
-        # r example: {"id": "tiff_1", "kind": "tiff", "name": "myfile.tif", "default_opacity": 0.6}
-        layer_id = r["id"]
-        label = r.get("name", layer_id)
-        default_op = r.get("default_opacity", 0.6)
-        rows.append(layer_row(label, layer_id, checked=False, default_opacity=default_op))
+#     rows = []
+#     for r in rasters:
+#         # r example: {"id": "tiff_1", "kind": "tiff", "name": "myfile.tif", "default_opacity": 0.6}
+#         layer_id = r["id"]
+#         label = r.get("name", layer_id)
+#         default_op = r.get("default_opacity", 0.6)
+#         rows.append(layer_row(label, layer_id, checked=False, default_opacity=default_op))
 
-    return rows
+#     return rows
 
 
 # --------------------- to give waiting signal when using tiffs for 1st time ---------------------
-@app.callback(
-    Output("raster-busy-overlay", "style"),
-    Input("raster-busy-store", "data"),
-    State("raster-busy-overlay", "style"),
-)
-def toggle_raster_loading(is_busy, style):
-    style = style or {}
-    style["display"] = "block" if is_busy else "none"
-    return style
+# @app.callback(
+#     Output("raster-busy-overlay", "style"),
+#     Input("raster-busy-store", "data"),
+#     State("raster-busy-overlay", "style"),
+# )
+# def toggle_raster_loading(is_busy, style):
+#     style = style or {}
+#     style["display"] = "block" if is_busy else "none"
+#     return style
 
 
 
 # # --------------------- Update map ---------------------
 @app.callback(
-    Output('gis-graph', "figure", allow_duplicate=True),
-    Output("test-display", "children"),
-    Output("raster-busy-store", "data" , allow_duplicate=True),
+    Output('gis', "figure", allow_duplicate=True),
+    # Output("test-display", "children"),
+    # Output("raster-busy-store", "data" , allow_duplicate=True),
     
     Input("raster-load-trigger", "data"), 
 
@@ -1897,28 +1916,25 @@ def toggle_raster_loading(is_busy, style):
     Input("selected-line-index", "data"),
     Input("map-hover-marker-store", "data"),
     Input("raster-registry-store", "data"),     
-    # Input("points-color-map-store", "data"),
-    # Input("points-filter", "value"),
-    # State("points-attr", "value"),
+    Input("points-color-map-store", "data"),
+    Input("points-filter", "value"),
+    State("points-attr", "value"),
     
     prevent_initial_call=True)
 
-def update_map(
-            _trigger,
-                layers, opacity, 
-                view, lines,selected_idx, hover_pt,
-               rasters, 
-            #    color_map, 
-            # actual_filters, actual_attr,
-              ):
+def update_map(_trigger,layers, opacity, view, lines,selected_idx, hover_pt,rasters, 
+               color_map, actual_filters, actual_attr,):
     
     layers = layers or []
     opacity = opacity or {}
     rasters = rasters or []
-    # color_map = color_map or {}
+    color_map = color_map or {}
+    actual_attr = actual_attr or "date"
+    actual_filters = actual_filters or []
 
-    color_map = mcolors.LogNorm(vmin=1, vmax=1000)
-
+    # color_map = mcolors.LogNorm(vmin=1, vmax=1000)
+    gis.dataframe = sesh.models
+    df_up_map, color_master_map, existing_attrs = preprocess_new_df(gis.dataframe)
 
     if layers is None and lines is None:
         return no_update
@@ -1963,35 +1979,27 @@ def update_map(
     if bh_data is not None:
         bh_projections = get_borehole_projections(current_line, bh_data, view, search_radius_m=Settings.radius)
     
-    # if lines is not None:
-        # print(f"Lines in store: {len(lines)}") 
-        
-    # actual_attr = actual_attr or "date"
-    actual_attr = "date"
-    # actual_filters = actual_filters or []
-    # color_map = color_map or {}
-
     fig = gis.render(
-        # show_google="google" in layers,
+                show_google="google" in layers,
+                show_tiff=show_tiff,
+                show_png=show_png,
+                show_points=is_points_visible,
+                google_op=opacity.get("google", 1),
+                tiff_op=tiff_op,
+                png_op=png_op,       
+                view=view,
+                final_line=lines,
+                selected_idx=selected_idx,
+                hover_pt=hover_pt,
+                boreholes=bh_projections if is_bh_visible else None, # This now contains the Lon/Lat!
+                show_boreholes=is_bh_visible,
+                point_filters=actual_filters,
+                point_attr=actual_attr,
+                color_map=color_map,
+                uirevision=f"{str(lines)}_{actual_attr}"
 
-        # show_tiff=show_tiff,
-        # show_png=show_png,
-        # show_points=is_points_visible,
-        # google_op=opacity.get("google", 1),
-        # tiff_op=tiff_op,
-        # png_op=png_op,       
-        view=view,
-        final_line=lines,
-        selected_idx=selected_idx,
-        hover_pt=hover_pt,
-        # boreholes=bh_projections if is_bh_visible else None, # This now contains the Lon/Lat!
-        # show_boreholes=is_bh_visible,
-        # point_filters=actual_filters,
-        # point_attr=actual_attr,
-        # color_map=color_map,
-        uirevision=f"{str(lines)}_{actual_attr}"
     )
-    # print(f"DEBUG: Mapping {actual_attr}. Color Map Keys: {list(color_map.keys())[:5]}")
+    # print(f"DEBUG: Mapping attr{actual_attr} and FILTERS {actual_filters}")#. Color Map Keys: {list(color_map.keys())[:5]}")
 
     if fig is None: return no_update
 
@@ -2007,6 +2015,7 @@ def update_map(
         fig.layout.shapes =  [] 
     
      # Force the uirevision to be unique to this attribute
+    fig.update_layout(showlegend=False)
     fig.layout.uirevision = f"{str(lines)}"
     return fig #, debug_text #, False
 
@@ -2017,98 +2026,98 @@ if __name__ == "__main__":
     # app.run(port=8050)
 
 # # --------------------- Fix screen Resizing - STILL NEEDS TO ZOOM IN/OUT AFTER WINDOW RESIZING---------------------
-# app.clientside_callback(
+app.clientside_callback(
 
-#     """
-#     function(id) {
-#         const el = document.getElementById(id);
-#         if (!el) return "";
+    """
+    function(id) {
+        const el = document.getElementById(id);
+        if (!el) return "";
 
-#         // Create the observer
-#         const ro = new ResizeObserver(entries => {
-#             for (let entry of entries) {
-#                 // Find the internal leaflet map instance
-#                 const mapEl = entry.target.querySelector('.leaflet-container');
-#                 if (mapEl && mapEl._leaflet_map) {
-#                     mapEl._leaflet_map.invalidateSize();
+        // Create the observer
+        const ro = new ResizeObserver(entries => {
+            for (let entry of entries) {
+                // Find the internal leaflet map instance
+                const mapEl = entry.target.querySelector('.leaflet-container');
+                if (mapEl && mapEl._leaflet_map) {
+                    mapEl._leaflet_map.invalidateSize();
                     
-#                     // Optional: nudge the map to redraw tiles
-#                     mapEl._leaflet_map.fire('move');
-#                 }
-#             }
-#         });
+                    // Optional: nudge the map to redraw tiles
+                    mapEl._leaflet_map.fire('move');
+                }
+            }
+        });
 
-#         // Start watching the map container
-#         ro.observe(el);
+        // Start watching the map container
+        ro.observe(el);
         
-#         return "Observer Active";
-#     }
-#     """,
-#     Output('dummy-div-for-resize', 'children'),
-#     Input('gis', 'id'),  # Assuming your dl.Map has id="map"
-# )
+        return "Observer Active";
+    }
+    """,
+    Output('dummy-div-for-resize', 'children'),
+    Input('gis', 'id'),  # Assuming your dl.Map has id="map"
+)
 
 
-# app.clientside_callback(
-#     """
-#     function(msg) {
-#         if(msg) {
-#             alert(msg);
-#         }
-#         return null;
-#     }
-#     """,
-#     Output("notification-store", "data"), # Clear it after showing
-#     Input("notification-store", "data")
-# )
+app.clientside_callback(
+    """
+    function(msg) {
+        if(msg) {
+            alert(msg);
+        }
+        return null;
+    }
+    """,
+    Output("notification-store", "data"), # Clear it after showing
+    Input("notification-store", "data")
+)
 
 
-# app.clientside_callback(
-#     """
-#     function(values, ids) {
-#         // Event-based: set busy=True only when a raster checkbox flips OFF -> ON.
-#         // Keep internal memory of previous states so we detect the toggle event.
+app.clientside_callback(
+    """
+    function(values, ids) {
+        // Event-based: set busy=True only when a raster checkbox flips OFF -> ON.
+        // Keep internal memory of previous states so we detect the toggle event.
 
-#         if (!window._rasterPrevOn) window._rasterPrevOn = {};
+        if (!window._rasterPrevOn) window._rasterPrevOn = {};
 
-#         if (!values || !ids) {
-#             return window.dash_clientside.no_update;
-#         }
+        if (!values || !ids) {
+            return window.dash_clientside.no_update;
+        }
 
-#         for (let i = 0; i < ids.length; i++) {
-#             const id = ids[i];
-#             const v = values[i];
+        for (let i = 0; i < ids.length; i++) {
+            const id = ids[i];
+            const v = values[i];
 
-#             if (!id || !id.layer) continue;
+            if (!id || !id.layer) continue;
 
-#             const layer = id.layer;
-#             const isRaster = (typeof layer === "string") &&
-#                              (layer.startsWith("tiff_") || layer.startsWith("png_"));
+            const layer = id.layer;
+            const isRaster = (typeof layer === "string") &&
+                             (layer.startsWith("tiff_") || layer.startsWith("png_"));
 
-#             if (!isRaster) continue;
+            if (!isRaster) continue;
 
-#             const isOnNow = Array.isArray(v) && v.includes("on");
-#             const wasOn = !!window._rasterPrevOn[layer];
+            const isOnNow = Array.isArray(v) && v.includes("on");
+            const wasOn = !!window._rasterPrevOn[layer];
 
-#             // Update memory
-#             window._rasterPrevOn[layer] = isOnNow;
+            // Update memory
+            window._rasterPrevOn[layer] = isOnNow;
 
-#             // Trigger event: OFF -> ON
-#             if (!wasOn && isOnNow) {
-#                 console.log("Raster turned ON:", layer, "=> set busy TRUE");
-#                 return true;
-#             }
-#         }
+            // Trigger event: OFF -> ON
+            if (!wasOn && isOnNow) {
+                console.log("Raster turned ON:", layer, "=> set busy TRUE");
+                return true;
+            }
+        }
 
-#         // Otherwise do nothing (do NOT return false; that would hide it)
-#         return window.dash_clientside.no_update;
-#     }
-#     """,
-#     Output("raster-busy-store", "data", allow_duplicate=True),
-#     Input({"type": "layer-check", "layer": ALL}, "value"),
-#     State({"type": "layer-check", "layer": ALL}, "id"),
-#     prevent_initial_call=True
-# )
+        // Otherwise do nothing (do NOT return false; that would hide it)
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("raster-busy-store", "data", allow_duplicate=True),
+    Input({"type": "layer-check", "layer": ALL}, "value"),
+    State({"type": "layer-check", "layer": ALL}, "id"),
+    prevent_initial_call=True
+)
 
 
 

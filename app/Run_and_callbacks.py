@@ -35,27 +35,27 @@ RASTER_FOLDER = r"C:\Users\au679476\Downloads\test_for_map_pngs_tiffs"
 # we will put the folder of the session
 
 # --------------------- Instantiate ---------------------
-renderer = ScatterMapRenderer(
-    dataframe=df,
-    settings=settings,
-    highlighted=None,
-    tiff_path=None,  # leave empty; we'll load on demand
-    png_path=None
-    )
+# renderer = ScatterMapRenderer(
+#     dataframe=df,
+#     settings=settings,
+#     highlighted=None,
+#     tiff_path=None,  # leave empty; we'll load on demand
+#     png_path=None
+#     )
 
-renderer.id = 'something'
+# renderer.id = 'something'
 
-initial_rasters = renderer.build_raster_registry_from_folder(RASTER_FOLDER, include_subfolders=False)
-renderer.initial_rasters = initial_rasters 
+# initial_rasters = renderer.build_raster_registry_from_folder(RASTER_FOLDER, include_subfolders=False)
+# renderer.initial_rasters = initial_rasters 
 
-# --------------------- starting the app - needs to be after the readings of tiffs and pngs! ---------------------
+# # --------------------- starting the app - needs to be after the readings of tiffs and pngs! ---------------------
 app = Dash(__name__, suppress_callback_exceptions=True)
-app.title = "sea anemone"
+# app.title = "sea anemone"
 
-def serve_layout():
-    return renderer.initialize()  # <-- no args
+# def serve_layout():
+#     return renderer.initialize()  # <-- no args
 
-app.layout = serve_layout
+# app.layout = serve_layout
 
 # # Register the callback HERE (outside the class)
 # CALLBACK FOR ALT+LEFT CLICK + CTRL

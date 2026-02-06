@@ -24,6 +24,8 @@ from pyproj import Geod
 from basepanel import Panel, gear_maker, dcc, PanelSettings
 from temframe import TEMframe
 
+from panels import *
+
 import io
 
 num_layers = 28         # number of interpreted layers for TESTING
@@ -618,17 +620,26 @@ def build_combined_borehole_figure(bh_ids, bh_projections, rock_color_map):
 
 
 # ----------- BOREHOLES ----------------
-bh_data, rock_color_map = load_borehole_file(r"C:\Users\au646858\Downloads\boreholes_Gende_Rige_test.bor")
+# bh_data, rock_color_map = load_borehole_file("C:/Users/au679476/Downloads/boreholes_Gende_Rige_test.bor")
+bh_data, rock_color_map = load_borehole_file("C:/Users/au679476/Downloads/Boreholes_Dollow.bor")
 # bh_data = None 
 # rock_color_map = None
 
 
-model_frame = TEMframe.from_pandas(pd.read_csv("models.csv"))
+# model_frame = TEMframe.from_pandas(pd.read_csv("models.csv"))
 # model_frame = TEMframe.from_pandas(pd.read_csv('test_models_Dollow.csv'))
+
+
 
 def preprocess_new_df(new_df):
     # 1. Identify which columns are attributes vs which are layer data
     # Add any attribute here that you want to filter by in the UI
+
+    # If the input is None or not a DataFrame, return empty defaults
+    if new_df is None or not hasattr(new_df, 'columns'):
+        return pd.DataFrame(), {}, []
+
+
     attributes = ['date', 'daytime', 'elevation','Data Residual', 'DOI', 'Number of Gates']
     color_master_map = {}
 
@@ -693,7 +704,8 @@ def get_numeric_colors(values, cmap_name='jet'): # to cheat plotly with hex stri
         return ['grey'] * len(values)
 
 # Apply it
-df, color_master_map, existing_attrs = preprocess_new_df(model_frame)
+# model_frame = 
+# df, color_master_map, existing_attrs = preprocess_new_df(model_frame)
 
 # -------------------------------------------------------------
 def paper_to_geo(px, py, view):

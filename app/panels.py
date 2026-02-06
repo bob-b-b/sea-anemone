@@ -1280,6 +1280,3 @@ class Single_site(Panel):
     def standard(cls, misfit=None, rho=10.):
         return cls(data=misfit, rho=rho)#cls(data=df)
     
-
-
-# --------------------- Settings ---------------------
