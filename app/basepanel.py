@@ -10,6 +10,7 @@ from dataclasses_jsonschema import JsonSchemaMixin
 import tkinter as tk
 from tkinter import filedialog
 import plotly.express as px
+from nosj import nosj
 
 
 
@@ -108,7 +109,7 @@ def add_tabset(json_data, new_tab,settings_tab_id,target_tab_id,change_order=Fal
 
 
 
-@dataclass
+@nosj
 class PanelSettings():
     id: str
     _settings_schema: dict = None
@@ -148,9 +149,18 @@ class PanelSettings():
                 value=eval(f'self.{key}'),
                 style={'margin': '5px'}
             )
+        cbar_check = lambda key,prop: 'cbar' in key.lower()
+        def cbar_render(key,prop):
+            return dbc.Select(
+                options=[{"label": 'horizontal', "value": True}, {'label':'vertical', 'value':True}],
+                id={'type': f'settings-{self.id}', 'key': key},
+                value=eval(f'self.{key}'),
+                style={'margin': '5px'}
+            )            
         return [
             (color_check, color_render),
-            (enum_check,  enum_render)
+            (enum_check,  enum_render),
+            (cbar_check, cbar_render)
         ]
 
     def render(self):
@@ -325,7 +335,7 @@ class PanelSettings():
         all_keys = all_keys + key_elements
         return all_keys
 
-@dataclass
+@nosj
 class Panel:
     id: str
     settings: PanelSettings = None
@@ -386,5 +396,19 @@ class Panel:
             'name': f'{self.id.lower()}',
         }
      
-        
-        
+from dataclasses import asdict
+import json
+@nosj
+class ColorBar(JsonSchemaMixin):
+    vmin: float
+    vmax: float
+    cmap: str = 'viridis'
+    log:  bool = False
+
+    def to_dict(self, *args, **kwargs):
+        # return {'vmin': self.vmin, 'vmax': self.vmax, 'cmap': self.cmap, 'log': self.log}
+        return asdict(self)
+
+
+    # def __dict__(self):
+    #     return {'vmin': self.vmin, 'vmax': self.vmax, 'cmap': self.cmap, 'log': self.log}

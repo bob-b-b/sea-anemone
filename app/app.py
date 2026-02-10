@@ -1,5 +1,5 @@
 import sys, os
-from tkinter import filedialog, Tk
+# from tkinter import filedialog, Tk
 
 
 fpath = os.path.dirname(os.path.abspath(__file__))
@@ -22,10 +22,6 @@ from temframe import TEMframe
 external_stylesheets = [themes.BOOTSTRAP]
 app = Dash(__name__, suppress_callback_exceptions=True, assets_folder='assets',  external_stylesheets=external_stylesheets)
 app.title = "Sea Anemone"
-
-
-import os
-
 
 import os
 import base64
@@ -162,8 +158,8 @@ app.layout = html.Div([
         'alignItems': 'center',
         'padding': '0 10px'
     }),
-    # html.Div(gis.get_shared_stores(), id="shared-store-container"),
-    html.Div([flex_layout], style={'marginTop': '60px'}),  # Push content below fixed header
+    
+    html.Div([flex_layout], style={'marginTop': '60px'})
     html.Div(id='output-click')
 ])
 
@@ -172,9 +168,9 @@ for panel in panels:
 
 @app.callback(
     [ 
-        Output('sounding', 'figure', allow_duplicate=True),
-        Output('tTEM',     'figure', allow_duplicate=True),
-        Output('model_graph', 'figure', allow_duplicate=True),
+        Output('sounding',      'figure', allow_duplicate=True),
+        Output('tTEM',          'figure', allow_duplicate=True),
+        Output('model_graph',   'figure', allow_duplicate=True),
         Output('model_section', 'figure', allow_duplicate=True),
         Output('profile_plot_main', 'figure', allow_duplicate=True)
           ],
