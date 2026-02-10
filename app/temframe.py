@@ -283,7 +283,18 @@ class TEMframe(DataFrame):
 
     @classmethod
     def from_pandas(cls, dataframe, **kwargs):
-        return cls(dataframe, **kwargs)
+        res = cls(dataframe, **kwargs)
+        if not hasattr(res, 'dmfwr'):
+            res.dmfwr = res.forward_operators[0]+res.forward_operators[1]
+        return res
+    
+    # def copy(self):
+    #     res = super().copy()
+    #     res.history = self.history.copy()
+    #     res.track_history = self.track_history
+    #     res.forward_operators = self.forward_operators.copy()
+    #     res.dmfwr = self.dmfwr
+    #     return res
 
     @classmethod
     def load(cls, file_path):
@@ -426,7 +437,7 @@ class TEMframe(DataFrame):
         make_log()
         current_history = self.history.copy()
         dmfwr = self.dmfwr
-
+        
         df_data = self.copy()
         df_overview = df_data.overview()
 
@@ -544,8 +555,10 @@ class TEMframe(DataFrame):
             z = thk.cumsum(0)
             res_start=LogResistivity.smooth(torch.ones(n_layers)*res_start, z)
         d_obs, d_err, df_site = self.get_site_data(site_id)
-        inv1 = fastJac(d_obs, d_err, res_start, self.dmfwr)
+
+        inv1 = fastJac(d_obs, d_err, res_start,self.dmfwr)
         inv1.vertical_smoothness=vc
+
         res_mod=inv1.invert(iter_cap=max_iterations)
         doi_value = inv1.doi
         i,row = df_site.overview().iterrows().__next__()

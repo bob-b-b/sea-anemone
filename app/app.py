@@ -1,3 +1,8 @@
+import session
+
+global sesh
+sesh = session.Session()
+
 import sys, os
 from tkinter import filedialog, Tk
 
@@ -9,6 +14,7 @@ if fpath not in sys.path:
 session_tracker = fpath+'/recent_projects.txt'
 
 from panels import *
+from inversion_panels import *
 
 from dash import dcc
 from dash import Dash#, callback_context
@@ -32,10 +38,7 @@ import os
 import pandas as pd
 # df_overview = pd.DataFrame(columns=['date', 'daytime', 'latitude', 'longitude', 'elevation', 'utm_x', 'utm_y', 'distance'])
 
-import session
 
-global sesh
-sesh = session.Session()
 
 
 if os.path.exists(session_tracker):
@@ -55,6 +58,7 @@ u1    = Upload(session_files=session_files)
 # t1    = Table(df_overview, id='table_overview', settings=TableSettings('table_overview', visible_columns=[True]*len(df_overview.columns)))
 mod1 = ModelGraph(   dataframe=sesh.models )
 mod2 = ModelSection( dataframe=sesh.models )
+Multi_inv = MultiInversion( dataframe=sesh.data )
 
 
 x = html.Div([
@@ -84,10 +88,9 @@ x = html.Div([
 
 # Inv_it = Inversion_iterations.standard(misfit=None,rho=10.)
 
-Sing_site = Single_site.standard(rho=10.)
+Sing_inv = Single_site( dataframe=sesh.data, rho=10 )
 
-panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, Inv_it, Sing_site, pyInt]
-
+panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, Multi_inv, Sing_inv, pyInt]
 nodes = [node for panel in panels for node in panel.to_nodes()]+[dfl.Tab(id=f'tab-processing_buttons', children=[x]), dfl.Tab(id='tab-panel_list', children=[panel_list])]
 
 
@@ -107,6 +110,7 @@ app.layout = html.Div([
     dcc.Interval(id= "inv-log-poll", interval=1000, n_intervals=0, disabled=True),  # Poll every 2 seconds
     dcc.Store(id="vc-level", data="medium"),
     dcc.Store(id="hc-level", data="medium"),
+    dcc.Store(id="selected-site-id", data=None),
     dcc.Store(id="starting-model", data={"rho": 10.0,"depth": np.cumsum(np.logspace(0, 1.3, 31)).tolist()}),
     dcc.Store(id="vc-single-levels", data=["medium"]),  # default
     dcc.Store(id='starting-model-selected',data=[]),
@@ -303,6 +307,20 @@ def show_value(n1, n2, ttem_selected, sounding_selected):
     return ctx.triggered_id, dbdt2.render(), dbdt1.render()
 
 @app.callback(
+    Output("model_section", "figure", allow_duplicate=True),
+    Output("model_graph", "figure", allow_duplicate=True),
+    Input("review_layout", "n_clicks"),
+    State("invert_layout", "color"),
+    prevent_initial_call=True
+)
+def update_model_on_review(_, invert_color):
+    # if invert_color != "primary":
+        # raise PreventUpdate
+    mod2.dataframe = sesh.models.copy() if sesh.models is not None else None
+    mod1.dataframe = sesh.models.copy() if sesh.models is not None else None
+    return mod2.render(), mod1.render()
+
+@app.callback(
     Output('output-click', 'children', allow_duplicate=True),
     Input('saveButton', 'n_clicks'),
     prevent_initial_call=True,
@@ -334,7 +352,7 @@ def save_session(n1):
         Output('map', 'figure', allow_duplicate=True),
         Output('model_graph', 'figure', allow_duplicate=True),
         Output('sounding', 'figure', allow_duplicate=True),
-        Output('inv_it', 'figure', allow_duplicate=True)
+        Output('multi_inv', 'figure', allow_duplicate=True)
     ],
     Input('highlight_prev', 'n_clicks'),
     Input('highlight_next', 'n_clicks'),
@@ -367,38 +385,38 @@ def highlight_change(n1, n2, invert_layout_color):
         print('will launch an inversion next time')
     
 
-    return ctx.triggered_id, m1.render(), mod1.render(), dbdt1.render(), Inv_it.render()
+    return ctx.triggered_id, m1.render(), mod1.render(), dbdt1.render(), Multi_inv.render()
 
 
 
 
-@app.callback(
-    Output('map', 'figure', allow_duplicate=True),
-    [
-        Input('model_section', 'hoverData'),
-        Input('tTEM', 'hoverData'),
-    ],
-    prevent_initial_call="initial_duplicate",
-    allow_duplicate=True
-)
-def cross_panel_hover(sounding_hover, ttem_hover):
-    # ctx = callback_context
-    if not ctx.triggered:
-        raise PreventUpdate
-    trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
-    hover_data = ctx.triggered[0]['value']
-    if not hover_data or 'points' not in hover_data:
-        raise PreventUpdate
-    if trigger_id == 'tTEM':
-        x_value = hover_data['points'][0]['x']
-        site_id = dbdt2.dataframe.query(f'{dbdt2.settings.x_axis} == @x_value')['site_id'].iloc[0]
-        m1.highlighted = site_id
-    elif trigger_id == 'model_section':
-        x_value = hover_data['points'][0]['x']
-        site_id = mod2.dataframe.query(f'{mod2.settings.x_axis} == @x_value')['site_id'].iloc[0]
-        m1.highlighted = site_id
+# @app.callback(
+#     Output('map', 'figure', allow_duplicate=True),
+#     [
+#         Input('model_section', 'hoverData'),
+#         Input('tTEM', 'hoverData'),
+#     ],
+#     prevent_initial_call="initial_duplicate",
+#     allow_duplicate=True
+# )
+# def cross_panel_hover(sounding_hover, ttem_hover):
+#     # ctx = callback_context
+#     if not ctx.triggered:
+#         raise PreventUpdate
+#     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+#     hover_data = ctx.triggered[0]['value']
+#     if not hover_data or 'points' not in hover_data:
+#         raise PreventUpdate
+#     if trigger_id == 'tTEM':
+#         x_value = hover_data['points'][0]['x']
+#         site_id = dbdt2.dataframe.query(f'{dbdt2.settings.x_axis} == @x_value')['site_id'].iloc[0]
+#         m1.highlighted = site_id
+#     elif trigger_id == 'model_section':
+#         x_value = hover_data['points'][0]['x']
+#         site_id = mod2.dataframe.query(f'{mod2.settings.x_axis} == @x_value')['site_id'].iloc[0]
+#         m1.highlighted = site_id
 
-    return m1.render()
+#     return m1.render()
 
 @app.callback(
     Output('map', 'figure', allow_duplicate=True),
@@ -415,7 +433,7 @@ def cross_panel_hover(sounding_hover, ttem_hover):
     allow_duplicate=True
 )
 def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color):
-    ctx = callback_context
+    # ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
@@ -433,321 +451,125 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color):
     else:
         site_id = None
     df_data = sesh.data
+    # Sing_inv.dataframe = df_data[df_data['site_id'] == site_id]
     m1.highlighted = site_id
     mod1.highlighted = site_id
     dbdt1.dataframe = df_data[df_data['site_id'] == site_id]
-    if invert_layout_color == 'primary':
-        df_layers, df_site, _ = df_data.invert_site(site_id)
-        # if mod1.dataframe is not None:
-        #     df_layers = pd.concat([mod1.dataframe[df_data['site_id'] != site_id], df_layers], ignore_index=True)
-        mod1.dataframe = df_layers
-        dbdt1.dataframe = df_site
+    # if invert_layout_color == 'primary':
+    #     # df_layers, df_site, _ = df_data.invert_site(site_id)
+    #     # if mod1.dataframe is not None:
+    #     #     df_layers = pd.concat([mod1.dataframe[df_data['site_id'] != site_id], df_layers], ignore_index=True)
+    #     mod1.dataframe = df_layers
+    #     dbdt1.dataframe = df_site
     return m1.render(), mod1.render(), dbdt1.render()
 
+# @app.callback(
+#     Output("starting-model", "data"),
+#     Input("multi_inv", "relayoutData"),
+#     Input("inv-single", "relayoutData"),
+#     State("starting-model", "data"),
+#     prevent_initial_call=True
+# )
+# def update_starting_model_from_iterations(multi_inv_data, sing_site_data, data):
+
+#     if not ctx.triggered:
+#         raise PreventUpdate
+
+#     trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
+
+#     if trigger_id == "multi_inv":
+#         relayoutData = multi_inv_data
+#     elif trigger_id == "inv-single":
+#         relayoutData = sing_site_data
+#     else:
+#         raise PreventUpdate
+
+#     if not relayoutData or "shapes[0].x0" not in relayoutData:
+#         raise PreventUpdate
+
+#     rho = float(relayoutData["shapes[0].x0"])
+#     data["rho"] = rho
+#     return data
+
 @app.callback(
-    Output("starting-model", "data"),
-    Input("inv_it", "relayoutData"),
+    Output("starting-model", "data", allow_duplicate=True),
+    Input("multi_inv", "relayoutData"),
+    State("starting-model", "data"),
+    prevent_initial_call=True
+)
+def update_starting_model_from_drag(relayout, model):
+    if not relayout:
+        raise PreventUpdate
+
+    # Look for moved vertical line
+    moved = [k for k in relayout if k.endswith(".x0")]
+    if not moved:
+        raise PreventUpdate
+
+    new_rho = relayout[moved[0]]
+
+    # Update starting model
+    model["rho"] = float(new_rho)
+
+    return model
+
+@app.callback(
+    Output("starting-model", "data", allow_duplicate=True),
     Input("inv-single", "relayoutData"),
     State("starting-model", "data"),
     prevent_initial_call=True
 )
-def update_starting_model_from_iterations(inv_it_data, sing_site_data, data):
-
-    if not ctx.triggered:
+def update_starting_model_from_single_drag(relayout, model):
+    if not relayout:
         raise PreventUpdate
 
-    trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
-
-    if trigger_id == "inv_it":
-        relayoutData = inv_it_data
-    elif trigger_id == "inv-single":
-        relayoutData = sing_site_data
-    else:
+    moved = [k for k in relayout if k.endswith(".x0")]
+    if not moved:
         raise PreventUpdate
 
-    if not relayoutData or "shapes[0].x0" not in relayoutData:
-        raise PreventUpdate
-
-    rho = float(relayoutData["shapes[0].x0"])
-    data["rho"] = rho
-    return data
+    model["rho"] = float(relayout[moved[0]])
+    return model
 
 
-@app.callback(
-    Output("vc-level", "data"),
-    # Output("vc_loose_button", "color"),
-    # Output("vc_medium_button", "color"),
-    # Output("vc_tight_button", "color"),
-    Output("vc_loose_button",  "color"),
-    Output("vc_medium_button","color"),
-    Output("vc_tight_button", "color"),
-    Output("vc_loose_button",  "outline"),
-    Output("vc_medium_button","outline"),
-    Output("vc_tight_button", "outline"),
-    # Output("vc_loose_button", "disabled"),
-    # Output("vc_medium_button", "disabled"),
-    # Output("vc_tight_button", "disabled"),
-    Input("vc_loose_button", "n_clicks"),
-    Input("vc_medium_button", "n_clicks"),
-    Input("vc_tight_button", "n_clicks"),
-    State("vc-level", "data"),
-    prevent_initial_call=True
-)
-def select_vc_constraint(loose, medium, tight, current):
-    if not ctx.triggered:
-        raise PreventUpdate
-
-    trigger = ctx.triggered[0]["prop_id"].split(".")[0]
-
-    if trigger == "vc_loose_button":
-        selected = "loose"
-    elif trigger == "vc_medium_button":
-        selected = "medium"
-    elif trigger == "vc_tight_button":
-        selected = "tight"
-    else:
-        selected = current
-
-    # def style(name):
-    #     return (
-    #         "primary" if selected == name else "secondary",
-    #         selected == name
-    #     )
-
-    # loose_color, loose_disabled   = style("loose")
-    # med_color, med_disabled       = style("medium")
-    # tight_color, tight_disabled   = style("tight")
-    def style(name):
-        selected_flag = (selected == name)
-        return (
-            "primary" if selected_flag else "secondary",
-            not selected_flag   # outline=True if NOT selected
-        )
-
-    loose_color, loose_outline = style("loose")
-    med_color,   med_outline   = style("medium")
-    tight_color, tight_outline = style("tight")
-
-    return (
-        selected,
-        loose_color, med_color, tight_color,
-        # loose_disabled, med_disabled, tight_disabled
-        loose_outline, med_outline, tight_outline
-    )
-@app.callback(
-    Output("hc-level", "data"),
-    Output("hc_loose_button", "color"),
-    Output("hc_medium_button", "color"),
-    Output("hc_tight_button", "color"),
-    Output("hc_loose_button", "outline"),
-    Output("hc_medium_button", "outline"),
-    Output("hc_tight_button", "outline"),
-    Input("hc_loose_button", "n_clicks"),
-    Input("hc_medium_button", "n_clicks"),
-    Input("hc_tight_button", "n_clicks"),
-    State("hc-level", "data"),
-    prevent_initial_call=True
-)
-def select_hc_constraint(loose, medium, tight, current):
-    if not ctx.triggered:
-        raise PreventUpdate
-
-    trigger = ctx.triggered[0]["prop_id"].split(".")[0]
-
-    if trigger == "hc_loose_button":
-        selected = "loose"
-    elif trigger == "hc_medium_button":
-        selected = "medium"
-    elif trigger == "hc_tight_button":
-        selected = "tight"
-    else:
-        selected = current
-
-    def style(name):
-        is_selected = (selected == name)
-        return (
-            "primary" if is_selected else "secondary",  # color
-            not is_selected                              # outline
-        )
-
-    loose_color, loose_outline   = style("loose")
-    med_color, med_outline       = style("medium")
-    tight_color, tight_outline  = style("tight")
-
-    return (
-        selected,
-        loose_color, med_color, tight_color,
-        loose_outline, med_outline, tight_outline
-    )
-
-@app.callback(
-    Output("vc-single-levels", "data"),
-    Output("vc_sing_loose_button", "color"),
-    Output("vc_sing_medium_button", "color"), 
-    Output("vc_sing_tight_button", "color"),
-    Output("vc_sing_loose_button",  "outline"),
-    Output("vc_sing_medium_button","outline"),
-    Output("vc_sing_tight_button", "outline"),
-    Input("vc_sing_loose_button", "n_clicks"),
-    Input("vc_sing_medium_button", "n_clicks"),
-    Input("vc_sing_tight_button", "n_clicks"),
-    State("vc-single-levels", "data"),
-    prevent_initial_call=True
-)
-def toggle_single_site_vc(loose, medium, tight, active):
-    if not ctx.triggered:
-        raise PreventUpdate
-
-    button = ctx.triggered_id.replace("vc_sing_", "").replace("_button", "")
-
-    if button in active:
-        active.remove(button)
-    else:
-        active.append(button)
-
-    def style(name):
-        is_active = name in active
-        return (
-            "primary" if is_active else "secondary",  # color
-            not is_active                              # outline
-        )
-
-    loose_color,  loose_outline  = style("loose")
-    med_color,    med_outline    = style("medium")
-    tight_color,  tight_outline  = style("tight")
-
-    return (
-        active,
-        loose_color, med_color, tight_color,
-        loose_outline, med_outline, tight_outline
-    )
 
 
 
 # @app.callback(
-#     [
-#         Output('model_section', 'figure', allow_duplicate=True),
-#         Output('sounding', 'figure', allow_duplicate=True),
-#         Output('review_layout', 'n_clicks', allow_duplicate=True),
-#         Output('review_layout', 'disabled', allow_duplicate=True),
-#     ],
-#     Input('invert_all_button', 'n_clicks'),
-#     State('review_layout', 'n_clicks'),  # Add this state to get current value
-#     State("vc-level", "data"),
-#     State("hc-level", "data"),
-#     State("starting-model", "data"),
-#     running=[(Output("invert_all_button", "disabled"), True, False),
-#     (Output("invert_selected_button", "disabled"), True, False), 
-#     (Output("inv-log-poll", "disabled"), False, True),    
-#     (Output("vc_loose_button", "disabled"), True, False),
-#     (Output("vc_medium_button", "disabled"), True, False),
-#     (Output("vc_tight_button", "disabled"), True, False),
-#     (Output("hc_loose_button", "disabled"), True, False),
-#     (Output("hc_medium_button", "disabled"), True, False),
-#     (Output("hc_tight_button", "disabled"), True, False),
-#     (Output('reset_inv_model_button', "disabled"), True, False)],
+#     Output("starting-model-selected", "data"),
+#     Input("multi_inv", "selectedData"),
 #     prevent_initial_call=True
 # )
 # def launch_inversion(n_clicks, current_review_clicks, vc_level,hc_level,starting_model):
 #     if n_clicks:
 #         from torch import from_numpy, tensor
-#         print('starting model:', starting_model["rho"])
+#         # print('starting model:', starting_model["rho"])
 #         rho = tensor(starting_model["rho"]).repeat(len(starting_model["depth"]))
 #         z   = tensor(starting_model["depth"][:-1])
-
+        
 #         if vc_level == "loose":
-#             Vert = 1.0
+#             Vert = 5.0
 #         elif vc_level == "medium":
 #             Vert = 0.5
 #         elif vc_level == "tight":
 #             Vert = 0.1
 
 #         if hc_level == "loose":
-#             Horz = 1.0
+#             Horz = 5.0
 #         elif hc_level == "medium":
 #             Horz = 0.6
 #         elif hc_level == "tight":
 #             Horz = 0.3
 #         res_start                        = LogResistivity.smooth(rho,z) 
-#         TABLES['models'], TABLES['data'] = TABLES['data'].invert(res_start,vc = Vert, hc = Horz)
-#         mod1.dataframe                   = TABLES['models'].copy()
-#         mod2.dataframe                   = TABLES['models'].copy()
-#         dbdt1.dataframe                  = TABLES['data'].copy()
-#         dbdt2.dataframe                  = TABLES['data'].copy()
+#         sesh.models, sesh.data = sesh.data.invert(res_start,vc = Vert, hc = Horz)
+#         mod1.dataframe                   = sesh.models.copy()
+#         mod2.dataframe                   = sesh.models.copy()
+#         dbdt1.dataframe                  = sesh.data.copy()
+#         dbdt2.dataframe                  = sesh.data.copy()
 #         new_review_clicks = (current_review_clicks or 0) + 1
 #         layouts.invert = layouts.invert_multi_first
 #         return mod2.render(), dbdt1.render(), new_review_clicks, False#, 0
 #     raise PreventUpdate
 
-@app.callback(
-    Output("starting-model-selected", "data"),
-    Input("inv_it", "selectedData"),
-    prevent_initial_call=True
-)
-def launch_inversion(n_clicks, current_review_clicks, vc_level,hc_level,starting_model):
-    if n_clicks:
-        from torch import from_numpy, tensor
-        print('starting model:', starting_model["rho"])
-        rho = tensor(starting_model["rho"]).repeat(len(starting_model["depth"]))
-        z   = tensor(starting_model["depth"][:-1])
-
-        if vc_level == "loose":
-            Vert = 5.0
-        elif vc_level == "medium":
-            Vert = 0.5
-        elif vc_level == "tight":
-            Vert = 0.1
-
-        if hc_level == "loose":
-            Horz = 5.0
-        elif hc_level == "medium":
-            Horz = 0.6
-        elif hc_level == "tight":
-            Horz = 0.3
-        res_start                        = LogResistivity.smooth(rho,z) 
-        sesh.models, sesh.data = sesh.data.invert(res_start,vc = Vert, hc = Horz)
-        mod1.dataframe                   = sesh.models.copy()
-        mod2.dataframe                   = sesh.models.copy()
-        dbdt1.dataframe                  = sesh.data.copy()
-        dbdt2.dataframe                  = sesh.data.copy()
-        new_review_clicks = (current_review_clicks or 0) + 1
-        layouts.invert = layouts.invert_multi_first
-        return mod2.render(), dbdt1.render(), new_review_clicks, False#, 0
-    raise PreventUpdate
-
-@app.callback(
-    Output("inv-single", "figure", allow_duplicate=True),
-    Output("map", "figure", allow_duplicate=True),
-    Input("map", "clickData"),
-    State("vc-single-levels", "data"),
-    State("starting-model", "data"),
-    State("invert_layout", "color"),
-    prevent_initial_call=True
-)
-def invert_single_site(click_data, vc_levels, starting_model, layout):
-    if not click_data or 'points' not in click_data or not layout=='primary':
-        raise PreventUpdate
-    print(layout)
-    from torch import tensor
-    site_id = int(click_data['points'][0]['pointNumber'])
-    curves = []
-    print('starting model:', starting_model["rho"])
-    rho = tensor(starting_model["rho"]).repeat(len(starting_model["depth"]))
-    z   = tensor(starting_model["depth"][:-1])
-    m1.highlighted = site_id
-    #data = TABLES['data']
-    for vc in vc_levels:
-        data = TABLES['data']
-        Vert = {"loose": 1.0, "medium": 0.5, "tight": 0.1}[vc]
-        res_start = LogResistivity.smooth(rho, z)
-        df_layers, df_site = data.invert_site(
-            site_id=site_id,
-            res_start=res_start,
-            vc=Vert
-        )
-
-        curves.append((vc, df_layers['resistivity'].values, df_layers['bottom_depth'].values,df_layers['misfit'].values[-1],df_layers, df_site['dbdt'].values, df_site['dbdt_syn'].values, df_site['time'].values, df_site['error'].values,df_site['include'].values, df_layers['doi'].values))
-    return Sing_site.render(curves), m1.render()
 
 @app.callback(
     Output("inv-log-poll", "n_intervals"),
@@ -782,6 +604,8 @@ def upload_file(contents, current_process_clicks):
 
     dbdt1.dataframe = sesh.data.copy()
     dbdt2.dataframe = sesh.data.copy()
+    Multi_inv.dataframe = sesh.data.copy()
+    Sing_inv.dataframe = sesh.data.copy()
     m1.dataframe    = sesh.overview
     mod1.dataframe  = sesh.models
     mod2.dataframe  = sesh.models

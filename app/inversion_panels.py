@@ -1,0 +1,764 @@
+from dataclasses import field
+from basepanel import *
+#from database_panel import DatabasePanel
+from dash import ctx
+import numpy as np
+from nosj import nosj
+import pandas as pd
+
+import plotly.express as px
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
+import numpy as np
+import os
+from anemone.inversion import LogResistivity
+
+@nosj
+class MultiInversionSettings(PanelSettings):
+    line_color: str='#ff0000'
+
+class MultiInversion(Panel):
+    misfit = None
+    starting_rho = 10.
+    log_time_value = None
+    dbdt = None
+    def __init__(self, dataframe,rho=10., **kwargs):
+        self.starting_rho = rho
+        settings = MultiInversionSettings(id='multi_inv', **kwargs)
+        super().__init__(id='multi_inv', settings=settings)
+        self.dataframe = dataframe
+    def render_init(self):
+        COMMON_LAYOUT = dict(
+            width=1000,
+            height=850,
+            margin=dict(l=60, r=40, t=90, b=45),
+        )
+        # self.dataframe = self.dataframe.reset_index(drop=True)
+        if self.dataframe is None:
+            df = pd.DataFrame({
+                "resistivity": [self.starting_rho] * 31,
+                "depth": np.cumsum(np.logspace(0, 1.3, 31))
+            })
+        else:
+            df = self.dataframe
+        from __main__ import sesh
+        fig = make_subplots(rows=1,cols=2,column_widths=[0.45, 0.55],subplot_titles=('Starting Model','Sounding curve'))
+        fig.update_layout(uirevision="multi_inv")
+        depth = np.cumsum(np.logspace(0, 1.3, 31))
+        rho = df['resistivity'][:31] if 'resistivity' in df.columns else [self.starting_rho]*31
+        # print(df['resistivity'] if 'resistivity' in df.columns else 0)
+        # -------- Left subplot: resistivity vs depth --------
+        fig.add_trace(go.Scatter(x=rho,y=depth,mode='lines+markers',line=dict(color=self.settings.line_color),marker=dict(color=self.settings.line_color),hovertemplate='ρ: %{x:.2f} Ω⋅m<br>depth: %{y:.2f} m'),row=1,col=1        )
+        # dbdt = sesh.data.dmfwr(rho,depth)
+        # time = sesh.data.time
+        # Vertical reference line
+        fig.add_shape(type='line',x0=self.starting_rho,x1=self.starting_rho,y0=depth.min(),y1=depth.max(),line=dict(color=self.settings.line_color, dash='dash'),row=1,col=1        )
+
+        # for i, row in df.iterrows():
+        #     fig.add_shape(
+        #         type="line",
+        #         x0=row["resistivity"] * 0.9,
+        #         x1=row["resistivity"] * 1.1,
+        #         y0=row["depth"],
+        #         y1=row["depth"],
+        #         editable=True,
+        #         name=f"layer-{i}",
+        #         # dragmode = 'select'
+        #     )
+        # fig.update_layout(dragmode="select")
+        if sesh.data is None:
+            fig.add_trace(go.Scatter(x=[1e-6, 1e-2],y=[1e-10, 1e-3],mode="markers",marker=dict(opacity=0),showlegend=False),row=1,col=2            )
+        else:
+            global_median = sesh.data['dbdt'].median()
+
+            # 2. Median per site
+            site_medians = (
+                sesh.data
+                    .dropna(subset=['dbdt'])
+                    .groupby('site_id')['dbdt']
+                    .median()
+            )
+            site_with_median_dbdt = (site_medians - global_median).abs().idxmin()
+            print(depth)
+            print(rho)
+            d_err = sesh.data[sesh.data['site_id']==site_with_median_dbdt].error.dropna().values
+            d_obs = sesh.data[sesh.data['site_id']==site_with_median_dbdt].dbdt.dropna().values
+            dbdt = sesh.data.dmfwr(rho,depth).exp()
+            e = d_err / 100
+
+            err_plus  = d_obs * e
+            err_minus = d_obs * e / (1 + e)
+            # print(len(sesh.data[sesh.data['site_id']==1].time),len(dbdt))
+            time = sesh.data[sesh.data['site_id']==site_with_median_dbdt].time.dropna().values
+            fig.add_trace(go.Scatter(x=time,y=dbdt,mode="lines",line=dict(color=self.settings.line_color),name="Starting model"), row=1, col=2        )
+            fig.add_trace(go.Scatter(x=time,y=d_obs,mode="markers",name="Observed dB/dt",marker=dict(color="black",size=6,),
+            error_y=dict(type="data",array=err_plus,arrayminus=err_minus,visible=True,thickness=1,width=0),),row=1,col=2)
+            
+
+        # -------- Axes & layout formatting --------
+        fig.update_xaxes(title_text='Resistivity [Ω⋅m]',type='log',range=[0, 2.7],showline=True,mirror=True,row=1,col=1        )
+
+        fig.update_yaxes(title_text='Depth [m]',range=[180, -0.5],showline=True,mirror=True,row=1,col=1        )
+
+        fig.update_xaxes(title_text='Time [s]',type = 'log',range=[-6,-2.1],showline=True,mirror=True,row=1,col=2        )
+
+        fig.update_yaxes(title_text='dB/dt [V / m²]',type = 'log',range = [-12, -5],showline=True,mirror=True,row=1,col=2        )
+
+        fig.update_layout(
+            title = "Spatially Constrained Inversion",
+            showlegend=False,
+            modebar=dict(
+                remove=['toImage', 'zoom', 'zoomIn', 'zoomOut', 'pan', 'select']
+            )
+        )
+        fig.update_layout(
+                **COMMON_LAYOUT,
+                #title='Select constraints and interact with map',
+                showlegend=False
+            )
+        return fig
+
+    def render(self):
+        if not isinstance(self.misfit, list):
+
+            fig = self.render_init()
+
+        elif len(self.misfit) == 0:
+            fig = go.Figure()
+            fig.update_layout(title='Inversion',xaxis_title='Iterations',yaxis_title='Misfit',xaxis_type='linear',yaxis_type='log',yaxis=dict(range=[-1,2]), 
+            xaxis=dict(range=[-0.1,3+len(self.misfit)]),showlegend=True)
+            fig.update_xaxes(showline=True, mirror=True)
+            fig.update_yaxes(showline=True, mirror=True)
+        else:
+            fig = px.line(
+                x=self.iterations,
+                y=self.misfit, labels={'x':'Iterations', 'y':'Misfit'},
+                markers=True,
+                color_discrete_sequence=[self.settings.line_color, self.settings.line_color],
+
+            )
+
+            fig.update_traces(name="Misfit", showlegend=True)
+            
+            
+            fig = px.line(
+                x=self.iterations,
+                y=self.misfit, labels={'x':'Iterations', 'y':'Misfit'},
+                markers=True,
+                color_discrete_sequence=[self.settings.line_color, self.settings.line_color],
+
+            )
+
+            fig.update_traces(name="Total misfit", showlegend=True)
+
+            fig.update_layout(title='Inversion',xaxis_title='Iterations',yaxis_title='Misfit',xaxis_type='linear',yaxis_type='log',yaxis=dict(range=[-1,2]),
+            xaxis=dict(range=[-0.1,3+len(self.misfit)]),  showlegend=True            )
+            fig.update_xaxes(showline=True, mirror=True)
+            fig.update_yaxes(showline=True, mirror=True)
+        return fig
+    
+
+    def initialize(self):
+        init = html.Div([dbc.Container([
+                dbc.Row([
+                    dbc.Col(
+                        dcc.Graph(figure=self.render_init(), id=self.id, mathjax=True, 
+                                    config=dict(edits={'shapePosition':True}, displayModeBar=False)),
+                            width=10),
+                    dbc.Col([dbc.Button("invert all", id='invert_all_button', style={'width':'100%'}),
+                             html.Div(style={'height':'10px'}),
+                             dbc.Button("invert selected", id='invert_selected_button', style={'width':'100%'}),
+                             html.Div(style={'height':'30px'}), 
+                             html.Div(
+                            "Vertical constraints", style={"fontWeight": "bold", 'textAlign':'center'}),
+                            html.Div(style={'height':'10px'}),
+                            dbc.Button("Loose", id='vc_loose_button', color='secondary', outline=True, style={'width':'100%'}),
+                            html.Div(style={'height':'10px'}),
+                            dbc.Button("Medium",id='vc_medium_button',color='primary',outline=False,style={'width':'100%'}),
+                            html.Div(style={'height':'10px'}),
+                            dbc.Button("Tight", id='vc_tight_button',color='secondary', outline=True, style={'width':'100%'}),
+                            html.Div(style={'height':'30px'}), 
+                             html.Div(
+                            "Horizontal constraints", style={"fontWeight": "bold", 'textAlign':'center'}),
+                            html.Div(style={'height':'10px'}),
+                             dbc.Button("Loose", id='hc_loose_button', color='secondary', outline=True, style={'width':'100%'}),
+                             html.Div(style={'height':'10px'}),
+                             dbc.Button("Medium",id="hc_medium_button",color="primary",outline=False,style={"width": "100%"}),
+                             html.Div(style={'height':'10px'}),
+                             dbc.Button("Tight", id='hc_tight_button',color='secondary', outline=True, style={'width':'100%'}),
+                             html.Div(style={'height':'30px'}),
+                             dbc.Button("Starting model", id='reset_inv_model_button', color='secondary', style={'width':'100%'}),
+                             html.Div(style={'height':'40px'}),
+                             html.Div("Elapsed time: 0:00",id="inv-timer",style={"fontWeight": "bold","whiteSpace":"pre-line"}),] , width=2),
+                             dbc.Tooltip('The sounding panel shows the selected data', target='invert_selected_button')
+                ], style={'height':'100%'})], style={'height':'95%', 'padding':'25px'}),
+                # html.Div(
+                #             "Elapsed time: 0:00",
+                #             id="inv-timer",
+                #             style={"fontWeight": "bold"}
+                #         ),
+                 gear_maker(self.id)], style={'height': '100%', 'overflow': 'hidden'},
+                  )
+        return init                   
+    
+    def add_callbacks(self, app):
+        super().add_callbacks(app)
+
+        @app.callback(
+            Output(self.id, 'figure', allow_duplicate=True),
+            Output("inv-timer", "children"),
+            Input('inv-log-poll', 'n_intervals'),
+            prevent_initial_call=True
+        )
+
+        def update_misfit(n_intervals):
+            log_time_value = None
+            elapsed_seconds = n_intervals
+            minutes, seconds = divmod(elapsed_seconds, 60)
+            timer_text = f"Elapsed time: {int(minutes)}:{int(seconds):02d}"
+            self.iterations = []
+            self.misfit = []
+            log_path = "inversion_log.txt"
+
+            with open("inversion_log.txt", "r") as file:
+                for line in file:
+                    if not line.strip():
+                        continue  # skip empty lines
+
+                    parts = line.split()
+
+                    # Iteration number is the first token
+                    if not parts[0].isdigit():
+                        continue  # skip lines that don't start with an iteration number
+                    iteration = int(parts[0])
+
+                    # Find "Total misfit:" and take the number after it
+                    total_misfit_index = parts.index("Total") + 2
+                    total_misfit = float(parts[total_misfit_index])
+
+                    self.iterations.append(iteration)
+                    self.misfit.append(total_misfit)
+
+                    if "Last" in parts:
+                        last_index = parts.index("Last")
+                        target_index = last_index + 3
+                        if target_index < len(parts):
+                            log_time_value = parts[target_index]
+
+            timer_text = f"Elapsed time: {int(minutes)}:{int(seconds):02d}"
+            if log_time_value is not None:
+                timer_text += f"\nLast iteration: {log_time_value} s"
+            return self.render(), timer_text
+        @app.callback(
+            Output("starting_model", "figure"),
+            Input("starting-model", "data"),
+        )
+        def sync_starting_model(data):
+            df = pd.DataFrame({
+                "resistivity": [data["rho"]] * len(data["depth"]),
+                "depth": data["depth"]
+            })
+            self.dataframe = df
+            return self.render()
+        
+        @app.callback(
+            Output("multi_inv", "figure", allow_duplicate=True),
+            Input("reset_inv_model_button", "n_clicks"),
+            prevent_initial_call=True
+        )
+        def reset_inv_model(n_clicks):
+            self.starting_rho = 10
+            return self.render_init()
+
+
+        
+        @app.callback(
+                Output('review_layout', 'disabled', allow_duplicate=True),
+            Input('invert_all_button', 'n_clicks'),
+            State('review_layout', 'n_clicks'),  # Add this state to get current value
+            State("vc-level", "data"),
+            State("hc-level", "data"),
+            State("starting-model", "data"),
+            running=[(Output("invert_all_button", "disabled"), True, False),
+            (Output("invert_selected_button", "disabled"), True, False), 
+            (Output("inv-log-poll", "disabled"), False, True),    
+            (Output("vc_loose_button", "disabled"), True, False),
+            (Output("vc_medium_button", "disabled"), True, False),
+            (Output("vc_tight_button", "disabled"), True, False),
+            (Output("hc_loose_button", "disabled"), True, False),
+            (Output("hc_medium_button", "disabled"), True, False),
+            (Output("hc_tight_button", "disabled"), True, False),
+            (Output('reset_inv_model_button', "disabled"), True, False)],
+            prevent_initial_call=True
+        )
+        def launch_inversion(n_clicks, current_review_clicks, vc_level,hc_level,starting_model):
+            from __main__ import sesh
+            if n_clicks:
+                from torch import from_numpy, tensor
+                print('starting model:', starting_model["rho"])
+                rho = tensor(starting_model["rho"]).repeat(len(starting_model["depth"]))
+                z   = tensor(starting_model["depth"][:-1])
+
+                if vc_level == "loose":
+                    Vert = 1.0
+                elif vc_level == "medium":
+                    Vert = 0.5
+                elif vc_level == "tight":
+                    Vert = 0.1
+
+                if hc_level == "loose":
+                    Horz = 1.0
+                elif hc_level == "medium":
+                    Horz = 0.6
+                elif hc_level == "tight":
+                    Horz = 0.3
+                res_start                        = LogResistivity.smooth(rho,z) 
+                # print(TABLES['data'])
+                sesh.models, sesh.data = sesh.data.invert(res_start,vc = Vert, hc = Horz)
+                new_review_clicks = (current_review_clicks or 0) + 1
+                # layouts.invert = layouts.invert_multi_first
+                return False#,new_review_clicks,  0mod2.render(), dbdt1.render(), 
+            raise PreventUpdate
+        
+        @app.callback(
+            Output("vc-level", "data"),
+            Output("vc_loose_button",  "color"),
+            Output("vc_medium_button","color"),
+            Output("vc_tight_button", "color"),
+            Output("vc_loose_button",  "outline"),
+            Output("vc_medium_button","outline"),
+            Output("vc_tight_button", "outline"),
+            Input("vc_loose_button", "n_clicks"),
+            Input("vc_medium_button", "n_clicks"),
+            Input("vc_tight_button", "n_clicks"),
+            State("vc-level", "data"),
+            prevent_initial_call=True
+        )
+        def select_vc_constraint(loose, medium, tight, current):
+            if not ctx.triggered:
+                raise PreventUpdate
+
+            trigger = ctx.triggered[0]["prop_id"].split(".")[0]
+
+            if trigger == "vc_loose_button":
+                selected = "loose"
+            elif trigger == "vc_medium_button":
+                selected = "medium"
+            elif trigger == "vc_tight_button":
+                selected = "tight"
+            else:
+                selected = current
+
+            def style(name):
+                selected_flag = (selected == name)
+                return (
+                    "primary" if selected_flag else "secondary",
+                    not selected_flag   # outline=True if NOT selected
+                )
+
+            loose_color, loose_outline = style("loose")
+            med_color,   med_outline   = style("medium")
+            tight_color, tight_outline = style("tight")
+
+            return (
+                selected,
+                loose_color, med_color, tight_color,
+                loose_outline, med_outline, tight_outline
+            )
+        @app.callback(
+            Output("hc-level", "data"),
+            Output("hc_loose_button", "color"),
+            Output("hc_medium_button", "color"),
+            Output("hc_tight_button", "color"),
+            Output("hc_loose_button", "outline"),
+            Output("hc_medium_button", "outline"),
+            Output("hc_tight_button", "outline"),
+            Input("hc_loose_button", "n_clicks"),
+            Input("hc_medium_button", "n_clicks"),
+            Input("hc_tight_button", "n_clicks"),
+            State("hc-level", "data"),
+            prevent_initial_call=True
+        )
+        def select_hc_constraint(loose, medium, tight, current):
+            if not ctx.triggered:
+                raise PreventUpdate
+
+            trigger = ctx.triggered[0]["prop_id"].split(".")[0]
+
+            if trigger == "hc_loose_button":
+                selected = "loose"
+            elif trigger == "hc_medium_button":
+                selected = "medium"
+            elif trigger == "hc_tight_button":
+                selected = "tight"
+            else:
+                selected = current
+
+            def style(name):
+                is_selected = (selected == name)
+                return (
+                    "primary" if is_selected else "secondary",  # color
+                    not is_selected                              # outline
+                )
+
+            loose_color, loose_outline   = style("loose")
+            med_color, med_outline       = style("medium")
+            tight_color, tight_outline  = style("tight")
+
+            return (
+                selected,
+                loose_color, med_color, tight_color,
+                loose_outline, med_outline, tight_outline
+            )
+        
+        @app.callback(
+            Output(self.id, 'figure', allow_duplicate=True),
+            Input(self.id, 'relayoutData'),
+            prevent_initial_call=True
+        )
+        def update_starting_model(relayoutData):
+            self.starting_rho = int(relayoutData.get('shapes[0].x0', self.starting_rho))
+            self.dataframe['resistivity'] = self.starting_rho
+            return self.render()
+        
+
+
+    @classmethod
+    def standard(cls, misfit=None, rho=10.):
+        return cls(data=misfit, rho=rho)
+
+@nosj
+class SinglesiteSettings(PanelSettings):
+    line_color: str='#ff0000'
+
+class Single_site(Panel):
+    def __init__(self, dataframe,rho=10., **kwargs):
+        self.starting_rho = rho
+        settings = SinglesiteSettings(id='inv-single', **kwargs)
+        super().__init__(id='inv-single', settings=settings)
+        self.dataframe = dataframe
+
+    def render(self, curves=None):
+        COMMON_LAYOUT = dict(
+            width=1000,
+            height=850,
+            margin=dict(l=60, r=40, t=90, b=45),
+        )
+        if curves is None:
+            from __main__ import sesh
+            df = pd.DataFrame({
+                'resistivity': [self.starting_rho] * 31,
+                'depth': np.cumsum(np.logspace(0, 1.3, 31))
+            })
+            depth = df['depth'].values# if 'depth' in df.columns else np.cumsum(np.logspace(0, 1.3, 31))
+            rho = df['resistivity'][:31] if 'resistivity' in df.columns else [self.starting_rho]*31
+            
+
+            fig = make_subplots(
+                rows=1,
+                cols=2,
+                column_widths=[0.45, 0.55],
+                subplot_titles=(
+                    "Starting Model",
+                    "Sounding curve"
+                )
+            )
+
+            # ---- Resistivity model (left subplot) ----
+            fig.add_trace(
+                go.Scatter(
+                    x=df['resistivity'],
+                    y=df['depth'],
+                    mode='lines+markers',
+                    line=dict(color=self.settings.line_color),
+                    marker=dict(color=self.settings.line_color),
+                    hovertemplate="Resistivity: %{x:.2f} Ω⋅m<br>Depth: %{y:.2f} m<extra></extra>",
+                    name="Starting model"
+                ),
+                row=1,
+                col=1
+            )
+            fig.add_shape(type='line', x0=self.starting_rho, x1=self.starting_rho,
+                y0=df['depth'].min(), y1=df['depth'].max(),
+                xref='x1', yref='y1',
+                line=dict(color=self.settings.line_color, dash='dash'),
+                editable=True)
+
+            fig.update_xaxes(title_text='Resistivity [Ω⋅m]',type='log',range=[0, 2.7],row=1,col=1,showline=True,mirror=True           )
+
+            fig.update_yaxes(
+                title_text='Depth [m]',
+                range=[180, -0.5],  # depth increasing downward
+                row=1,
+                col=1,
+                showline=True,
+                mirror=True,
+            )
+
+            fig.update_xaxes(title_text='Time [s]',type = 'log',range=[-6,-2.1],showline=True,mirror=True,row=1,col=2        )
+            fig.update_yaxes(title_text='dB/dt [V / m²]',type = 'log',range = [-12, -5],showline=True,mirror=True,row=1,col=2        )
+
+            fig.add_trace(go.Scatter(x=[1e-6, 1e-2],y=[1e-10, 1e-3],mode="markers",marker=dict(opacity=0),showlegend=False),row=1,col=2            )
+            fig.update_layout(
+                **COMMON_LAYOUT,
+                title='Select constraints and interact with map',
+                showlegend=False
+            )
+            if sesh.data is None:
+                fig.add_trace(go.Scatter(x=[1e-6, 1e-2],y=[1e-10, 1e-3],mode="markers",marker=dict(opacity=0),showlegend=False),row=1,col=2            )
+            else:
+                global_median = sesh.data['dbdt'].median()
+
+                # 2. Median per site
+                site_medians = (
+                    sesh.data
+                        .dropna(subset=['dbdt'])
+                        .groupby('site_id')['dbdt']
+                        .median()
+                )
+                site_with_median_dbdt = (site_medians - global_median).abs().idxmin()
+                # print(depth)
+                # print(rho)
+                d_err = sesh.data[sesh.data['site_id']==site_with_median_dbdt].error.dropna().values
+                d_obs = sesh.data[sesh.data['site_id']==site_with_median_dbdt].dbdt.dropna().values
+                dbdt = sesh.data.dmfwr(rho,depth).exp()
+                e = d_err / 100
+
+                err_plus  = d_obs * e
+                err_minus = d_obs * e / (1 + e)
+                # print(len(sesh.data[sesh.data['site_id']==1].time),len(dbdt))
+                time = sesh.data[sesh.data['site_id']==site_with_median_dbdt].time.dropna().values
+                fig.add_trace(go.Scatter(x=time,y=dbdt,mode="lines",line=dict(color=self.settings.line_color),name="Starting model"), row=1, col=2        )
+                fig.add_trace(go.Scatter(x=time,y=d_obs,mode="markers",name="Observed dB/dt",marker=dict(color="black",size=6,),
+                error_y=dict(type="data",array=err_plus,arrayminus=err_minus,visible=True,thickness=1,width=0),),row=1,col=2)
+            return fig
+
+        
+        VC_COLORS = {
+        "loose":  "#2D81FF",
+        "medium": "#00A676",
+        "tight":  "#E63946",
+        }
+
+        fig = make_subplots(rows=1,cols=2,column_widths=[0.45, 0.55],subplot_titles=(    "Resistivity Model",    "Sounding curve")        )
+
+        include = curves[0][9]   # include mask (same for all curves)
+        time    = curves[0][7]
+        dbdt_obs = curves[0][5]
+        error    = curves[0][8]
+
+        opacity = np.where(include, 1.0, 0.2)
+
+
+        inc = include
+
+        y = dbdt_obs[inc]
+        e = error[inc] / 100
+
+        err_plus  = y * e
+        err_minus = y * e / (1 + e)
+
+        fig.add_trace(go.Scatter(x=time[inc],y=y,mode="markers",name="Observed dB/dt",marker=dict(color="black",size=6,),
+        error_y=dict(type="data",array=err_plus,arrayminus=err_minus,visible=True,thickness=1,width=0),),row=1,col=2)
+        
+        exc = ~include
+
+        fig.add_trace(go.Scatter(x=time[exc],y=dbdt_obs[exc],mode="markers",showlegend=False,marker=dict(color="black",size=6,opacity=0.2,),),row=1,col=2,        )
+
+        for (vc,rho,depth,misfit,df_layers,dbdt_obs,dbdt_syn,time,error,include, doi) in curves:
+            rho = np.insert(np.array(rho),0,rho[0])
+            depth = np.insert(np.array(depth),0,0)
+            color = VC_COLORS.get(vc, "black")
+
+            fig.add_trace(
+                go.Scatter(
+                    x=rho,
+                    y=depth,
+                    mode="lines",
+                    line=dict(color=color, width=3),
+                    line_shape="hv",
+                    name=f"{vc.capitalize()} (misfit = {misfit:.2f})",
+                    legendgroup=vc,
+                ),
+                row=1,
+                col=1
+            )
+
+            fig.add_trace(go.Scatter(x=time,y=dbdt_syn,mode="lines",line=dict(color=color),name=f"{vc} syn",legendgroup=vc,showlegend=False), row=1, col=2 )
+        
+        fig.add_trace(go.Scatter(x=[0.1,1000],y=[doi[0],doi[0]],mode="lines",line=dict(color="black",width=2,dash="dash"),showlegend=False),row=1,col=1)
+        fig.update_yaxes(range=[180, -0.5],title_text="Depth [m]",row=1,col=1,showline=True,mirror=True,linewidth=1,linecolor='black')
+
+        fig.update_xaxes(type="log",range=[0,2.7],title_text="Resistivity [Ωm]",row=1,col=1,showline=True,mirror=True,linewidth=1,linecolor='black')
+
+        fig.update_xaxes(title_text='Time [s]',type = 'log',range=[-6,-2.1],showline=True,mirror=True,row=1,col=2)
+
+        fig.update_yaxes(title_text='dB/dt [V / m²]',type = 'log',range = [-12, -5],showline=True,mirror=True,row=1,col=2)
+
+        # ---- LAYOUT ----
+        fig.update_layout(
+            **COMMON_LAYOUT,
+            legend=dict(
+                #title="Vertical constraint",
+                orientation="h",
+                yanchor="bottom",
+                y=1.05,
+                xanchor="center",
+                x=0.5,
+            ),
+            modebar=dict(remove=['toImage', 'zoom', 'zoomIn', 'zoomOut', 'pan', 'select']),
+        )
+
+        return fig
+    
+
+    def initialize(self):
+        init = html.Div([dbc.Container([
+                dbc.Row([
+                    dbc.Col(
+                        dcc.Graph(figure=self.render(), id=self.id, mathjax=True, 
+                                    config=dict(edits={'shapePosition':True}, displayModeBar=False)),
+                            width=10),
+                    dbc.Col([html.Div(
+                            "Vertical constraints", style={"fontWeight": "bold", 'textAlign':'center'}),
+                            html.Div(style={'height':'10px'}),
+                             dbc.Button("Loose", id='vc_sing_loose_button', color='secondary', outline=True, style={'width':'100%'}),
+                             html.Div(style={'height':'10px'}),
+                             dbc.Button("Medium",id="vc_sing_medium_button",color="primary",outline=False,style={"width": "100%"}),
+                             html.Div(style={'height':'10px'}),
+                             dbc.Button("Tight", id='vc_sing_tight_button',color='secondary', outline=True, style={'width':'100%'}),
+                             html.Div(style={'height':'30px'}), 
+                             html.Div(style={'height':'10px'}),
+                             dbc.Button("Starting model",id="reset_single_model_button",color="secondary",style={"width": "100%"})], width=2),
+                             dbc.Tooltip('The sounding panel shows the selected data', target='invert_selected_button')
+                ], style={'height':'100%'})], style={'height':'95%', 'padding':'25px'}),
+                 gear_maker(self.id)], style={'height': '100%', 'overflow': 'hidden'},
+                  )
+        return init
+    
+    def add_callbacks(self, app):
+        super().add_callbacks(app)
+        
+        @app.callback(
+            Output("starting_model_Sing", "figure"),
+            Input("starting-model", "data"),
+        )
+        def sync_starting_model(data):
+            df = pd.DataFrame({
+                "resistivity": [data["rho"]] * len(data["depth"]),
+                "depth": data["depth"]
+            })
+            self.dataframe = df
+            return self.render()
+
+        @app.callback(
+            Output("inv-single", "figure", allow_duplicate=True),
+            Input("reset_single_model_button", "n_clicks"),
+            prevent_initial_call=True
+        )
+        def reset_inv_model(n_clicks):
+            curves = None
+            return self.render()
+
+        @app.callback(
+            Output("selected-site-id", "data"),
+            Input("map", "clickData"),
+            prevent_initial_call=True
+        )
+        def select_site_from_map(click_data):
+            if not click_data or "points" not in click_data:
+                raise PreventUpdate
+
+            site_id = int(click_data["points"][0]["pointNumber"])
+            return site_id
+        
+        @app.callback(
+            Output("vc-single-levels", "data"),
+            Output("vc_sing_loose_button", "color"),
+            Output("vc_sing_medium_button", "color"), 
+            Output("vc_sing_tight_button", "color"),
+            Output("vc_sing_loose_button",  "outline"),
+            Output("vc_sing_medium_button","outline"),
+            Output("vc_sing_tight_button", "outline"),
+            Input("vc_sing_loose_button", "n_clicks"),
+            Input("vc_sing_medium_button", "n_clicks"),
+            Input("vc_sing_tight_button", "n_clicks"),
+            State("vc-single-levels", "data"),
+            prevent_initial_call=True
+        )
+        def toggle_single_site_vc(loose, medium, tight, active):
+            if not ctx.triggered:
+                raise PreventUpdate
+
+            button = ctx.triggered_id.replace("vc_sing_", "").replace("_button", "")
+
+            if button in active:
+                active.remove(button)
+            else:
+                active.append(button)
+
+            def style(name):
+                is_active = name in active
+                return (
+                    "primary" if is_active else "secondary",  # color
+                    not is_active                              # outline
+                )
+
+            loose_color,  loose_outline  = style("loose")
+            med_color,    med_outline    = style("medium")
+            tight_color,  tight_outline  = style("tight")
+
+            return (
+                active,
+                loose_color, med_color, tight_color,
+                loose_outline, med_outline, tight_outline
+            )
+        @app.callback(
+            Output("inv-single", "figure", allow_duplicate=True),
+            # Output("map", "figure", allow_duplicate=True),
+            Input("map", "clickData"),
+            State("vc-single-levels", "data"),
+            State("starting-model", "data"),
+            State("invert_layout", "color"),
+            running=[(Output("vc_sing_loose_button", "disabled"), True, False),
+            (Output("vc_sing_medium_button", "disabled"), True, False), 
+            (Output("vc_sing_tight_button", "disabled"), True, False),
+            (Output('reset_single_model_button', "disabled"), True, False)],
+            prevent_initial_call=True
+        )
+        def invert_single_site(click_data, vc_levels, starting_model, layout):
+            if not click_data or 'points' not in click_data or not layout=='primary':
+                raise PreventUpdate
+            from __main__ import sesh
+            from torch import tensor
+            site_id = int(click_data['points'][0]['pointNumber'])
+            curves = []
+            print('starting model:', starting_model["rho"])
+            rho = tensor(starting_model["rho"]).repeat(len(starting_model["depth"]))
+            z   = tensor(starting_model["depth"][:-1])
+
+            for vc in vc_levels:
+                
+                Vert = {"loose": 1.0, "medium": 0.5, "tight": 0.1}[vc]
+                res_start = LogResistivity.smooth(rho, z)
+                df_layers, df_site, _ = sesh.data.invert_site(site_id=site_id,res_start=res_start,vc=Vert)
+
+                curves.append((vc, df_layers['resistivity'].values, df_layers['bottom_depth'].values,df_layers['misfit'].values[-1],df_layers, df_site['dbdt'].values, df_site['dbdt_syn'].values, df_site['time'].values, df_site['error'].values,df_site['include'].values, df_layers['doi'].values))
+
+            return self.render(curves)
+        
+        @app.callback(
+            Output(self.id, 'figure', allow_duplicate=True),
+            Input(self.id, 'relayoutData'),
+            prevent_initial_call=True
+        )
+        def update_starting_model(relayoutData):
+            self.starting_rho = int(relayoutData.get('shapes[0].x0', self.starting_rho))
+            self.dataframe['resistivity'] = self.starting_rho
+            return self.render()
+        
+
+
+    @classmethod
+    def standard(cls, misfit=None, rho=10.):
+        return cls(data=misfit, rho=rho)#cls(data=df)
