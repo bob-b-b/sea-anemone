@@ -1,4 +1,5 @@
 import sys, os
+import base64
 from tkinter import filedialog, Tk
 
 
@@ -11,11 +12,12 @@ session_tracker = fpath+'/recent_projects.txt'
 from panels import *
 
 from dash import dcc
-from dash import Dash, callback_context
+from dash import Dash, callback_context, ALL
 from dash.exceptions import PreventUpdate
 from dash_bootstrap_components import Button, ButtonGroup, themes
 import dash_bootstrap_components as dbc
 from dash.dash import no_update
+from flask import send_from_directory
 
 from temframe import TEMframe
 
@@ -23,18 +25,207 @@ external_stylesheets = [themes.BOOTSTRAP]
 app = Dash(__name__, suppress_callback_exceptions=True, assets_folder='assets',  external_stylesheets=external_stylesheets)
 app.title = "Sea Anemone"
 
+docs_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'docs', 'build', 'html'))
+
+@app.server.route('/help/<path:filename>')
+def serve_help_docs(filename):
+    return send_from_directory(docs_root, filename)
+
 
 import os
+import subprocess
+import requests
+import re
+import shutil
 
 
 
 import pandas as pd
+import numpy as np
 # df_overview = pd.DataFrame(columns=['date', 'daytime', 'latitude', 'longitude', 'elevation', 'utm_x', 'utm_y', 'distance'])
 
 import session
 
 global sesh
 sesh = session.Session()
+
+
+def _sanitize_filename(name: str, fallback: str = "dem.tif") -> str:
+    if not name:
+        return fallback
+    base = os.path.basename(name)
+    base = re.sub(r"[<>:\"/\\|?*]", "_", base)
+    base = re.sub(r"[\x00-\x1f]", "_", base)
+    base = base.strip(" .")
+    if not base:
+        return fallback
+    root, ext = os.path.splitext(base)
+    if not ext:
+        ext = ".tif"
+    max_root = 80
+    if len(root) > max_root:
+        root = root[:max_root]
+    return f"{root}{ext}"
+
+
+def build_data_summary():
+    if sesh.data is None:
+        return html.Div("No data loaded.")
+
+    df = sesh.data
+    if 'site_id' in df.columns:
+        df_valid = df.loc[df['site_id'] != -1]
+        n_sites = int(df_valid['site_id'].nunique())
+    else:
+        df_valid = df
+        n_sites = int(len(df_valid))
+    n_rows = int(len(df))
+
+    summary_children = [
+        html.Div(f"Loaded sites: {n_sites}, rows: {n_rows}")
+    ]
+
+    return html.Div(summary_children)
+
+
+def _configure_tk_dpi_awareness():
+    try:
+        import ctypes
+        try:
+            ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        except Exception:
+            ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
+
+def _sample_dem_at_points(lons, lats, dem_path):
+    import rasterio
+    from rasterio.warp import transform
+
+    with rasterio.open(dem_path) as src:
+        if src.crs and src.crs.to_epsg() != 4326:
+            xs, ys = transform("EPSG:4326", src.crs, lons, lats)
+            coords = list(zip(xs, ys))
+        else:
+            coords = list(zip(lons, lats))
+
+        samples = list(src.sample(coords))
+        dem_vals = np.array([s[0] if s is not None else np.nan for s in samples], dtype=float)
+        if src.nodata is not None:
+            dem_vals = np.where(dem_vals == src.nodata, np.nan, dem_vals)
+    return dem_vals
+
+
+def build_gps_dem_summary():
+    if sesh.data is None or not sesh.dem_path:
+        return html.Div("GPS vs DEM: no DEM loaded.")
+
+    df = sesh.data
+    try:
+        import rasterio
+        from rasterio.warp import transform
+    except Exception:
+        return html.Div("DEM loaded. Install rasterio to compute GPS vs DEM.")
+
+    if not all(col in df.columns for col in ['longitude', 'latitude', 'elevation']):
+        return html.Div("GPS vs DEM: missing longitude/latitude/elevation columns.")
+
+    if 'site_id' in df.columns:
+        df_sites = df.loc[df['site_id'] != -1].drop_duplicates(subset=['site_id'])[['site_id', 'longitude', 'latitude', 'elevation']]
+    else:
+        df_sites = df[['longitude', 'latitude', 'elevation']].copy()
+
+    lons = df_sites['longitude'].astype(float).to_numpy()
+    lats = df_sites['latitude'].astype(float).to_numpy()
+    gps = df_sites['elevation'].astype(float).to_numpy()
+    valid_coords = np.isfinite(lons) & np.isfinite(lats) & np.isfinite(gps)
+    if not valid_coords.any():
+        return html.Div("GPS vs DEM: no valid lon/lat/elevation values.")
+
+    df_sites = df_sites.loc[valid_coords].reset_index(drop=True)
+    lons = lons[valid_coords]
+    lats = lats[valid_coords]
+    gps = gps[valid_coords]
+
+    try:
+        with rasterio.open(sesh.dem_path) as src:
+            if src.crs and src.crs.to_epsg() != 4326:
+                xs, ys = transform("EPSG:4326", src.crs, lons, lats)
+                coords = list(zip(xs, ys))
+            else:
+                coords = list(zip(lons, lats))
+
+            samples = list(src.sample(coords))
+            dem_vals = np.array([s[0] if s is not None else np.nan for s in samples], dtype=float)
+            if src.nodata is not None:
+                dem_vals = np.where(dem_vals == src.nodata, np.nan, dem_vals)
+    except Exception as exc:
+        return html.Div(f"GPS vs DEM failed: {exc}")
+
+    diff = gps - dem_vals
+    valid = np.isfinite(diff)
+    n_valid = int(valid.sum())
+    if n_valid == 0:
+        return html.Div("GPS vs DEM: no valid samples.")
+
+
+    stats = {
+        'mean': float(np.nanmean(diff)),
+        'median': float(np.nanmedian(diff)),
+        'std': float(np.nanstd(diff)),
+        'min': float(np.nanmin(diff)),
+        'max': float(np.nanmax(diff)),
+    }
+
+    try:
+        import plotly.express as px
+    except Exception:
+        px = None
+
+    plot_div = html.Div("Plot unavailable (plotly missing).")
+    if px is not None:
+        if 'site_id' in df_sites.columns:
+            x_values = df_sites['site_id'].to_numpy()[valid]
+            x_label = 'site_id'
+        else:
+            x_values = np.arange(len(diff))[valid]
+            x_label = 'index'
+
+        df_plot = pd.DataFrame({
+            x_label: x_values,
+            'gps_minus_dem': diff[valid]
+        })
+
+        fig = px.scatter(
+            df_plot,
+            x=x_label,
+            y='gps_minus_dem',
+            title='GPS - DEM by site',
+        )
+        fig.update_layout(
+            height=260,
+            margin={"l": 40, "r": 10, "t": 30, "b": 40},
+            yaxis_title="GPS - DEM (m)",
+            xaxis_title=x_label,
+        )
+
+        plot_div = dcc.Graph(figure=fig, config={"displayModeBar": False})
+
+    return html.Div([
+        html.Div([
+            html.Div("GPS vs DEM (GPS - DEM, meters):"),
+            html.Ul([
+                html.Li(f"Samples: {n_valid}"),
+                html.Li(f"Mean: {stats['mean']:.2f}"),
+                html.Li(f"Median: {stats['median']:.2f}"),
+                html.Li(f"Std: {stats['std']:.2f}"),
+                html.Li(f"Min: {stats['min']:.2f}"),
+                html.Li(f"Max: {stats['max']:.2f}"),
+            ])
+        ], style={'width': '45%'}),
+        html.Div(plot_div, style={'width': '55%'})
+    ], style={'display': 'flex', 'gap': '12px', 'alignItems': 'flex-start'})
 
 
 if os.path.exists(session_tracker):
@@ -108,6 +299,9 @@ app.layout = html.Div([
     dcc.Store(id="hc-level", data="medium"),
     dcc.Store(id="starting-model", data={"rho": 10.0,"depth": np.logspace(0, np.log10(300), 31).tolist()}),
     dcc.Store(id="vc-single-levels", data=["medium"]),  # default
+    dcc.Store(id="dem-applied", data=False),
+    dcc.Store(id="dem-downloaded", data=False),
+    dcc.Store(id="dem-api-keys", data=[], storage_type="local"),
     html.Div([
         dbc.ButtonGroup([
             dbc.Button("1. Load Data",  id="upload_layout",    color="primary"),
@@ -131,11 +325,30 @@ app.layout = html.Div([
         'padding': '0 10px'
     }),
     html.Div([flex_layout], style={'marginTop': '60px'}),  # Push content below fixed header
-    html.Div(id='output-click')
+    html.Div(id='output-click'),
+    dbc.Button(
+        "?",
+        id='help-fab',
+        color='primary',
+        style={
+            'position': 'fixed',
+            'right': '24px',
+            'bottom': '24px',
+            'width': '56px',
+            'height': '56px',
+            'borderRadius': '50%',
+            'fontSize': '24px',
+            'zIndex': 3000,
+            'boxShadow': '0 6px 16px rgba(0,0,0,0.2)'
+        }
+    ),
+    html.Div(id='help-window')
 ])
 
 for panel in panels:
     panel.add_callbacks(app)
+
+
 
 @app.callback(
     [ 
@@ -266,6 +479,24 @@ app.clientside_callback(
     Output("disableButton", "id"),
     Input("disableButton", "id")
 )
+
+app.clientside_callback(
+    """
+        function(n_clicks) {
+            if (n_clicks) {
+                window.open(
+                    '/help/index.html',
+                    '_blank',
+                    'width=1100,height=800,menubar=no,toolbar=no,location=no,status=no,scrollbars=yes,resizable=yes'
+                );
+            }
+            return window.dash_clientside.no_update;
+        }
+    """,
+    Output("help-window", "children"),
+    Input("help-fab", "n_clicks"),
+    prevent_initial_call=True
+)
 @app.callback(
     [
         Output("output-click", "children"),
@@ -307,9 +538,14 @@ def show_value(n1, n2, ttem_selected, sounding_selected):
 )
 def save_session(n1):
     if sesh.save_dir is None:
+        _configure_tk_dpi_awareness()
         root = Tk()
         root.withdraw()  # Hide the root window
-        folder_path = filedialog.askdirectory(title="Select Save Directory")
+        root.attributes('-topmost', True)
+        root.lift()
+        root.focus_force()
+        root.update()
+        folder_path = filedialog.askdirectory(title="Select Save Directory", parent=root)
         print(folder_path)
         root.destroy()  # Destroy the root window after selection
         if not folder_path:
@@ -673,12 +909,20 @@ def reset_polling(n):
 
 @app.callback(
     [Output('output-data-upload', 'children'),
+     Output('output-data-summary', 'children', allow_duplicate=True),
+     Output('upload-toast', 'is_open'),
+     Output('upload-toast', 'children'),
      Output('map', 'figure', allow_duplicate=True),
      Output('sounding', 'figure', allow_duplicate=True),
      Output('tTEM', 'figure', allow_duplicate=True),
      Output('process_layout', 'disabled', allow_duplicate=True),
      Output('invert_layout', 'disabled', allow_duplicate=True),
      Output('process_layout', 'n_clicks', allow_duplicate=True),
+     Output('dem-bbox-minlon', 'value', allow_duplicate=True),
+     Output('dem-bbox-minlat', 'value', allow_duplicate=True),
+     Output('dem-bbox-maxlon', 'value', allow_duplicate=True),
+     Output('dem-bbox-maxlat', 'value', allow_duplicate=True),
+     Output('dem-options-container', 'style', allow_duplicate=True),
     #  Output(t1.id, 'children', allow_duplicate=True),
     ],
     Input('upload-data', 'contents'),
@@ -689,6 +933,9 @@ def reset_polling(n):
 def upload_file(contents, current_process_clicks):
     if contents is None:
         raise PreventUpdate
+    if sesh.save_dir is None:
+        msg = "Please select a working directory first."
+        return html.Div(msg), build_data_summary(), True, msg, m1.render(), dbdt1.render(), dbdt2.render(), True, True, no_update, no_update, no_update, no_update, no_update, {'display': 'none'}
     sesh.data            = TEMframe.from_zip_content(contents[0])
     sesh.data.history    = ['df_data = TEMframe.from_zip_content("uploaded_data_zip.txt")']
     sesh.data['include'] = sesh.data['inuse_manual'].astype(bool, copy=False).fillna(sesh.data['inuse_auto'])
@@ -700,9 +947,666 @@ def upload_file(contents, current_process_clicks):
     mod1.dataframe  = sesh.models
     mod2.dataframe  = sesh.models
     # t1.dataframe = TABLES['overview'].copy()
-    new_process_clicks = (current_process_clicks or 0) + 1
+    new_process_clicks = no_update
 
-    return html.Div("File uploaded successfully."), m1.render(), dbdt1.render(), dbdt2.render(), False, False, new_process_clicks#, t1.render()
+    summary = build_data_summary()
+    if 'site_id' in sesh.data.columns:
+        toast_count = int(sesh.data.loc[sesh.data['site_id'] != -1, 'site_id'].nunique())
+    else:
+        toast_count = int(len(sesh.data))
+    toast_msg = f"Uploaded {toast_count} sites."
+
+    bbox_vals = (no_update, no_update, no_update, no_update)
+    if 'longitude' in sesh.data.columns and 'latitude' in sesh.data.columns:
+        min_lon = float(sesh.data['longitude'].min())
+        max_lon = float(sesh.data['longitude'].max())
+        min_lat = float(sesh.data['latitude'].min())
+        max_lat = float(sesh.data['latitude'].max())
+        pad = 0.01
+        bbox_vals = (min_lon - pad, min_lat - pad, max_lon + pad, max_lat + pad)
+
+    return html.Div("File uploaded successfully."), summary, True, toast_msg, m1.render(), dbdt1.render(), dbdt2.render(), False, False, new_process_clicks, *bbox_vals, {'display': 'block'}#, t1.render()
+
+
+@app.callback(
+    Output('output-dem-upload', 'children'),
+    Output('output-data-summary', 'children', allow_duplicate=True),
+    Output('dem-downloaded', 'data', allow_duplicate=True),
+    Input('upload-dem', 'contents'),
+    State('upload-dem', 'filename'),
+    State('use-dem', 'value'),
+    running=[(Output("upload-dem", "disabled"), True, False)],
+    prevent_initial_call=True
+)
+def upload_dem(contents, filename, use_dem):
+    if contents is None:
+        raise PreventUpdate
+    if not use_dem:
+        raise PreventUpdate
+
+    content_type, content_string = contents.split(',', 1)
+    decoded = base64.b64decode(content_string)
+
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    dem_dir = os.path.join(base_dir, 'cache', 'dem')
+    os.makedirs(dem_dir, exist_ok=True)
+
+    if not filename:
+        filename = 'uploaded_dem.tif'
+
+    safe_name = _sanitize_filename(filename, fallback="uploaded_dem.tif")
+    dem_path = os.path.join(dem_dir, safe_name)
+
+    with open(dem_path, 'wb') as f:
+        f.write(decoded)
+
+    sesh.dem_path = dem_path
+    sesh.dem_name = safe_name
+
+    return html.Div(f"DEM uploaded: {safe_name}"), build_data_summary(), False
+
+
+@app.callback(
+    Output('output-dem-download', 'children'),
+    Output('output-data-summary', 'children', allow_duplicate=True),
+    Output('dem-downloaded', 'data', allow_duplicate=True),
+    Input('download-dem', 'n_clicks'),
+    State('use-dem', 'value'),
+    State('dem-source', 'value'),
+    State('dem-api-key', 'value'),
+    State('dem-bbox-minlon', 'value'),
+    State('dem-bbox-minlat', 'value'),
+    State('dem-bbox-maxlon', 'value'),
+    State('dem-bbox-maxlat', 'value'),
+    State('dem-resolution', 'value'),
+    running=[(Output("download-dem", "disabled"), True, False)],
+    prevent_initial_call=True
+)
+def download_dem(n_clicks, use_dem, source, api_key, min_lon, min_lat, max_lon, max_lat, resolution):
+    if not n_clicks:
+        raise PreventUpdate
+    if not use_dem:
+        return html.Div("Enable 'Use DEM' first."), build_data_summary(), False
+
+    if None in (min_lon, min_lat, max_lon, max_lat):
+        return html.Div("Please enter a complete bbox (min/max lon/lat)."), build_data_summary(), False
+    if min_lon >= max_lon or min_lat >= max_lat:
+        return html.Div("Invalid bbox: min values must be less than max values."), build_data_summary(), False
+
+    download_url = None
+    safe_name = None
+    ot_params = None
+    api_key_value = api_key
+
+    if source == 'opentopo':
+        demtype_map = {
+            'opentopo_cop30': 'COP30',
+            'opentopo_srtmgl1': 'SRTMGL1',
+            'opentopo_srtmgl3': 'SRTMGL3',
+            'opentopo_alos': 'ALOS',
+        }
+        demtype = demtype_map.get(resolution)
+        if not demtype:
+            return html.Div("Please choose a global DEM resolution."), build_data_summary(), False
+        if not api_key_value:
+            return html.Div("OpenTopography requires an API key. Paste it above."), build_data_summary(), False
+
+        ot_params = {
+            'demtype': demtype,
+            'south': min_lat,
+            'north': max_lat,
+            'west': min_lon,
+            'east': max_lon,
+            'outputFormat': 'GTiff',
+            'API_Key': api_key_value
+        }
+        download_url = 'https://portal.opentopography.org/API/globaldem'
+        safe_name = _sanitize_filename(f"{demtype}_{min_lat:.6f}_{min_lon:.6f}_{max_lat:.6f}_{max_lon:.6f}.tif")
+    elif source == 'etopo':
+        etopo_map = {
+            'etopo_30s': 'https://www.ngdc.noaa.gov/mgg/global/relief/ETOPO2022/data/30s/30s_surface_elev_gtif/ETOPO_2022_v1_30s_N90W180_surface.tif',
+            'etopo_60s': 'https://www.ngdc.noaa.gov/mgg/global/relief/ETOPO2022/data/60s/60s_surface_elev_gtif/ETOPO_2022_v1_60s_N90W180_surface.tif',
+        }
+        download_url = etopo_map.get(resolution)
+        if not download_url:
+            return html.Div("Please choose an ETOPO resolution."), build_data_summary(), False
+
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        dem_dir = os.path.join(base_dir, 'cache', 'dem')
+        os.makedirs(dem_dir, exist_ok=True)
+
+        global_name = _sanitize_filename(download_url.split('/')[-1])
+        global_path = os.path.join(dem_dir, global_name)
+        if not os.path.exists(global_path):
+            try:
+                with requests.get(download_url, stream=True, timeout=180) as r:
+                    r.raise_for_status()
+                    with open(global_path, 'wb') as f:
+                        for chunk in r.iter_content(chunk_size=1024 * 1024):
+                            if chunk:
+                                f.write(chunk)
+            except Exception as exc:
+                return html.Div(f"ETOPO download failed: {exc}"), build_data_summary(), False
+
+        safe_name = _sanitize_filename(
+            f"etopo_{resolution}_{min_lat:.6f}_{min_lon:.6f}_{max_lat:.6f}_{max_lon:.6f}.tif"
+        )
+        dem_path = os.path.join(dem_dir, safe_name)
+
+        try:
+            import rasterio
+            from rasterio.windows import from_bounds
+
+            with rasterio.open(global_path) as src:
+                window = from_bounds(min_lon, min_lat, max_lon, max_lat, src.transform)
+                window = window.round_offsets().round_lengths()
+                data = src.read(1, window=window, boundless=True, fill_value=src.nodata)
+                transform = src.window_transform(window)
+
+                with rasterio.open(
+                    dem_path,
+                    'w',
+                    driver='GTiff',
+                    height=data.shape[0],
+                    width=data.shape[1],
+                    count=1,
+                    dtype=data.dtype,
+                    crs=src.crs,
+                    transform=transform,
+                    nodata=src.nodata,
+                ) as dst:
+                    dst.write(data, 1)
+        except Exception as exc:
+            return html.Div(f"ETOPO clip failed: {exc}"), build_data_summary(), False
+
+        sesh.dem_path = dem_path
+        sesh.dem_name = safe_name
+
+        return html.Div(f"DEM downloaded: {safe_name}"), build_data_summary(), True
+    elif source == 'gmt':
+        gmt_res_map = {
+            'gmt_01s': '01s',
+            'gmt_15s': '15s',
+            'gmt_30s': '30s',
+            'gmt_01m': '01m',
+            'gmt_02m': '02m',
+            'gmt_05m': '05m',
+        }
+        gmt_res = gmt_res_map.get(resolution)
+        if not gmt_res:
+            return html.Div("Please choose a GMT resolution."), build_data_summary(), False
+
+        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+        dem_dir = os.path.join(base_dir, 'cache', 'dem')
+        os.makedirs(dem_dir, exist_ok=True)
+
+        safe_name = _sanitize_filename(f"earth_relief_{gmt_res}_{min_lat:.6f}_{min_lon:.6f}_{max_lat:.6f}_{max_lon:.6f}.tif")
+        dem_path = os.path.join(dem_dir, safe_name)
+        temp_grd = os.path.join(dem_dir, f"earth_relief_{gmt_res}_{min_lat}_{min_lon}_{max_lat}_{max_lon}.grd")
+        temp_xyz = os.path.join(dem_dir, f"earth_relief_{gmt_res}_{min_lat}_{min_lon}_{max_lat}_{max_lon}.xyz")
+
+        region = f"{min_lon}/{max_lon}/{min_lat}/{max_lat}"
+        try:
+            cmd = ["gmt", "grdcut", f"@earth_relief_{gmt_res}", f"-R{region}", f"-G{temp_grd}"]
+            subprocess.run(cmd, capture_output=True, text=True, check=True)
+
+            with open(temp_xyz, 'w') as f:
+                subprocess.run(["gmt", "grd2xyz", temp_grd], stdout=f, stderr=subprocess.PIPE, text=True, check=True)
+
+            xyz = np.loadtxt(temp_xyz)
+            if xyz.size == 0:
+                return html.Div("GMT download failed: empty grid."), build_data_summary(), False
+            if xyz.ndim == 1:
+                xyz = xyz.reshape(1, -1)
+
+            df_xyz = pd.DataFrame(xyz, columns=['x', 'y', 'z'])
+            grid = df_xyz.pivot(index='y', columns='x', values='z').sort_index(ascending=False)
+            xs = grid.columns.to_numpy()
+            ys = grid.index.to_numpy()
+
+            if len(xs) < 2 or len(ys) < 2:
+                return html.Div("GMT download failed: grid too small."), build_data_summary(), False
+
+            xres = float(xs[1] - xs[0])
+            yres = float(ys[1] - ys[0])
+
+            from rasterio.transform import from_origin
+            import rasterio
+
+            transform = from_origin(float(xs.min()), float(ys.max()), xres, yres)
+            data = grid.to_numpy().astype('float32')
+
+            with rasterio.open(
+                dem_path,
+                'w',
+                driver='GTiff',
+                height=data.shape[0],
+                width=data.shape[1],
+                count=1,
+                dtype='float32',
+                crs='EPSG:4326',
+                transform=transform,
+            ) as dst:
+                dst.write(data, 1)
+        except FileNotFoundError:
+            return html.Div("GMT not found. Please install GMT or choose another source."), build_data_summary(), False
+        except subprocess.CalledProcessError as exc:
+            err = (exc.stderr or exc.stdout or "GMT grdcut/grd2xyz failed").strip()
+            return html.Div(f"GMT download failed: {err}"), build_data_summary(), False
+        except Exception as exc:
+            return html.Div(f"GMT conversion failed: {exc}"), build_data_summary(), False
+        finally:
+            for path in (temp_grd, temp_xyz):
+                try:
+                    if os.path.exists(path):
+                        os.remove(path)
+                except Exception:
+                    pass
+
+        sesh.dem_path = dem_path
+        sesh.dem_name = safe_name
+
+        return html.Div(f"DEM downloaded: {safe_name}"), build_data_summary(), True
+    else:
+        return html.Div("Unknown DEM source."), build_data_summary(), False
+
+    base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
+    dem_dir = os.path.join(base_dir, 'cache', 'dem')
+    os.makedirs(dem_dir, exist_ok=True)
+
+    if not safe_name:
+        safe_name = _sanitize_filename(download_url.split('?')[0])
+
+    dem_path = os.path.join(dem_dir, safe_name)
+
+    try:
+        with requests.get(download_url, params=ot_params, stream=True, timeout=180) as r:
+            r.raise_for_status()
+            with open(dem_path, 'wb') as f:
+                for chunk in r.iter_content(chunk_size=1024 * 1024):
+                    if chunk:
+                        f.write(chunk)
+    except Exception as exc:
+        return html.Div(f"Download failed: {exc}"), build_data_summary(), False
+
+    sesh.dem_path = dem_path
+    sesh.dem_name = safe_name
+
+    return html.Div(f"DEM downloaded: {safe_name}"), build_data_summary(), True
+
+
+@app.callback(
+    Output('save-dem', 'disabled'),
+    Input('dem-downloaded', 'data'),
+    Input('use-dem', 'value'),
+    prevent_initial_call=False
+)
+def toggle_save_dem_button(dem_downloaded, use_dem):
+    return not bool(dem_downloaded and use_dem)
+
+
+@app.callback(
+    Output('dem-downloaded', 'data', allow_duplicate=True),
+    Input('use-dem', 'value'),
+    prevent_initial_call=True
+)
+def reset_dem_downloaded(use_dem):
+    if use_dem:
+        raise PreventUpdate
+    return False
+
+
+@app.callback(
+    Output('output-dem-save', 'children'),
+    Input('save-dem', 'n_clicks'),
+    State('dem-downloaded', 'data'),
+    State('use-dem', 'value'),
+    prevent_initial_call=True
+)
+def save_dem(n_clicks, dem_downloaded, use_dem):
+    if not n_clicks:
+        raise PreventUpdate
+    if not use_dem:
+        return html.Div("Enable 'Use DEM' first.")
+    if not dem_downloaded:
+        return html.Div("Please download a DEM first.")
+    if not sesh.dem_path or not os.path.exists(sesh.dem_path):
+        return html.Div("No DEM file found to save.")
+    filename = sesh.dem_name or os.path.basename(sesh.dem_path)
+
+    _configure_tk_dpi_awareness()
+    root = Tk()
+    root.withdraw()
+    root.attributes('-topmost', True)
+    root.lift()
+    root.focus_force()
+    root.update()
+    save_path = filedialog.asksaveasfilename(
+        title="Save DEM",
+        defaultextension=".tif",
+        initialfile=filename,
+        filetypes=[("GeoTIFF", "*.tif;*.tiff"), ("All files", "*.*")],
+        parent=root
+    )
+    root.destroy()
+
+    if not save_path:
+        raise PreventUpdate
+
+    try:
+        shutil.copy2(sesh.dem_path, save_path)
+    except Exception as exc:
+        return html.Div(f"DEM save failed: {exc}")
+
+    return html.Div(f"DEM saved to: {save_path}")
+
+
+@app.callback(
+    Output('dem-api-key-list', 'children'),
+    Output('dem-api-key-history', 'children'),
+    Input('dem-api-keys', 'data'),
+    prevent_initial_call=False
+)
+def sync_api_key_options(api_keys):
+    keys = api_keys or []
+    datalist_options = [html.Option(value=key) for key in keys]
+    history_rows = []
+    for key in keys:
+        history_rows.append(
+            html.Div(
+                [
+                    html.Button(
+                        key,
+                        id={'type': 'dem-api-key-select', 'index': key},
+                        n_clicks=0,
+                        style={
+                            'border': 'none',
+                            'background': 'transparent',
+                            'padding': '0',
+                            'textAlign': 'left',
+                            'color': '#0d6efd',
+                            'cursor': 'pointer',
+                            'whiteSpace': 'nowrap'
+                        }
+                    ),
+                    html.Button(
+                        '❌',
+                        id={'type': 'dem-api-key-delete', 'index': key},
+                        n_clicks=0,
+                        title='Remove from history',
+                        style={
+                            'border': 'none',
+                            'background': 'transparent',
+                            'cursor': 'pointer',
+                            'padding': '0',
+                            'marginLeft': '6px'
+                        }
+                    ),
+                ],
+                style={'display': 'flex', 'alignItems': 'center'}
+            )
+        )
+    history_container = html.Div(
+        history_rows,
+        style={'display': 'flex', 'flexDirection': 'column', 'gap': '4px'}
+    ) if history_rows else html.Div("No history yet.", style={'color': '#6c757d', 'fontSize': '12px'})
+    return datalist_options, history_container
+
+
+@app.callback(
+    Output('dem-api-key-history-collapse', 'is_open'),
+    Input('dem-api-key-history-toggle', 'n_clicks'),
+    State('dem-api-key-history-collapse', 'is_open'),
+    prevent_initial_call=True
+)
+def toggle_api_key_history(n_clicks, is_open):
+    if not n_clicks:
+        raise PreventUpdate
+    return not is_open
+
+
+@app.callback(
+    Output('dem-api-key', 'value'),
+    Output('dem-api-keys', 'data', allow_duplicate=True),
+    Input({'type': 'dem-api-key-select', 'index': ALL}, 'n_clicks'),
+    Input({'type': 'dem-api-key-delete', 'index': ALL}, 'n_clicks'),
+    State('dem-api-keys', 'data'),
+    prevent_initial_call=True
+)
+def handle_api_key_history(select_clicks, delete_clicks, api_keys):
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+
+    trigger = ctx.triggered_id
+    keys = list(api_keys or [])
+
+    if isinstance(trigger, dict) and trigger.get('type') == 'dem-api-key-select':
+        key = trigger.get('index')
+        return key, no_update
+
+    if isinstance(trigger, dict) and trigger.get('type') == 'dem-api-key-delete':
+        key = trigger.get('index')
+        keys = [k for k in keys if k != key]
+        return no_update, keys
+
+    raise PreventUpdate
+
+
+@app.callback(
+    Output('dem-api-keys', 'data', allow_duplicate=True),
+    Input('dem-downloaded', 'data'),
+    State('dem-api-key', 'value'),
+    State('dem-api-keys', 'data'),
+    prevent_initial_call=True
+)
+def remember_api_key_on_download(dem_downloaded, api_key, api_keys):
+    if not dem_downloaded:
+        raise PreventUpdate
+    if not api_key:
+        raise PreventUpdate
+
+    keys = list(api_keys or [])
+    if api_key in keys:
+        keys = [k for k in keys if k != api_key]
+    keys.insert(0, api_key)
+    return keys[:20]
+
+
+@app.callback(
+    Output('output-dem-load', 'children'),
+    Output('output-data-summary', 'children', allow_duplicate=True),
+    Output('dem-applied', 'data'),
+    Input('load-dem-vs-gps', 'n_clicks'),
+    State('use-dem', 'value'),
+    prevent_initial_call=True
+)
+def load_dem_vs_gps(n_clicks, use_dem):
+    if not n_clicks:
+        raise PreventUpdate
+    if not use_dem:
+        return html.Div("Enable 'Use DEM' first."), build_data_summary(), False
+    if not sesh.dem_path or not os.path.exists(sesh.dem_path):
+        return html.Div("No DEM found. Please download or upload a DEM first."), build_data_summary(), False
+
+    stats = build_gps_dem_summary()
+    replace_error = None
+    try:
+        df = sesh.data
+        if df is not None:
+            if 'elevation_gps' not in df.columns:
+                df['elevation_gps'] = df['elevation']
+            if 'site_id' in df.columns:
+                df_sites = df.loc[df['site_id'] != -1].drop_duplicates(subset=['site_id'])[['site_id', 'longitude', 'latitude', 'elevation']]
+                lons = df_sites['longitude'].astype(float).to_numpy()
+                lats = df_sites['latitude'].astype(float).to_numpy()
+                valid_coords = np.isfinite(lons) & np.isfinite(lats)
+                df_sites = df_sites.loc[valid_coords].reset_index(drop=True)
+                lons = lons[valid_coords]
+                lats = lats[valid_coords]
+
+                if len(df_sites) > 0:
+                    dem_vals = _sample_dem_at_points(lons, lats, sesh.dem_path)
+                    valid_dem = np.isfinite(dem_vals)
+                    if valid_dem.any():
+                        dem_map = pd.Series(dem_vals[valid_dem], index=df_sites.loc[valid_dem, 'site_id']).to_dict()
+                        dem_series = df['site_id'].map(dem_map)
+                        df.loc[dem_series.notna(), 'elevation'] = dem_series
+            else:
+                lons = df['longitude'].astype(float).to_numpy()
+                lats = df['latitude'].astype(float).to_numpy()
+                valid_coords = np.isfinite(lons) & np.isfinite(lats)
+                if valid_coords.any():
+                    dem_vals = _sample_dem_at_points(lons[valid_coords], lats[valid_coords], sesh.dem_path)
+                    valid_dem = np.isfinite(dem_vals)
+                    idx = df.index[valid_coords]
+                    df.loc[idx[valid_dem], 'elevation'] = dem_vals[valid_dem]
+
+            sesh.data = df
+            if dbdt1.dataframe is not None and 'site_id' in df.columns:
+                dbdt1.dataframe = df[df['site_id'].isin(dbdt1.dataframe['site_id'].unique())]
+            if dbdt2.dataframe is not None and 'site_id' in df.columns:
+                dbdt2.dataframe = df[df['site_id'].isin(dbdt2.dataframe['site_id'].unique())]
+    except Exception as exc:
+        replace_error = exc
+
+    message_children = [
+        html.Div("DEM loaded. GPS vs DEM updated."),
+        stats
+    ]
+    if replace_error is not None:
+        message_children.append(html.Div(f"DEM elevation replace failed: {replace_error}"))
+
+    dem_applied = replace_error is None
+    return html.Div(message_children), build_data_summary(), dem_applied
+
+
+@app.callback(
+    Output('output-dem-load', 'children', allow_duplicate=True),
+    Output('output-data-summary', 'children', allow_duplicate=True),
+    Output('dem-applied', 'data', allow_duplicate=True),
+    Input('restore-gps-elevation', 'n_clicks'),
+    prevent_initial_call=True
+)
+def restore_gps_elevation(n_clicks):
+    if not n_clicks:
+        raise PreventUpdate
+    if sesh.data is None:
+        return html.Div("No data loaded."), build_data_summary(), False
+    df = sesh.data
+    if 'elevation_gps' not in df.columns:
+        return html.Div("No GPS elevation backup found."), build_data_summary(), False
+
+    df['elevation'] = df['elevation_gps']
+    sesh.data = df
+
+    if dbdt1.dataframe is not None and 'site_id' in df.columns:
+        dbdt1.dataframe = df[df['site_id'].isin(dbdt1.dataframe['site_id'].unique())]
+    if dbdt2.dataframe is not None and 'site_id' in df.columns:
+        dbdt2.dataframe = df[df['site_id'].isin(dbdt2.dataframe['site_id'].unique())]
+
+    return html.Div("GPS elevation restored."), build_data_summary(), False
+
+
+@app.callback(
+    Output('restore-gps-elevation', 'disabled'),
+    Input('dem-applied', 'data'),
+    Input('use-dem', 'value'),
+    prevent_initial_call=False
+)
+def toggle_restore_button(dem_applied, use_dem):
+    return not bool(dem_applied and use_dem)
+
+
+@app.callback(
+    Output('dem-upload-container', 'style'),
+    Input('use-dem', 'value'),
+    prevent_initial_call=False
+)
+def toggle_dem_upload(use_dem):
+    if use_dem:
+        return {'display': 'block', 'marginTop': '10px'}
+    sesh.dem_path = None
+    sesh.dem_name = None
+    return {'display': 'none', 'marginTop': '10px'}
+
+
+@app.callback(
+    Output('dem-options-container', 'style'),
+    Input('upload-data', 'contents'),
+    Input('url', 'hash'),
+    prevent_initial_call=False
+)
+def toggle_dem_options(contents, url_hash):
+    if sesh.data is None:
+        return {'display': 'none'}
+    return {'display': 'block'}
+
+
+@app.callback(
+    Output('dem-api-key-container', 'style'),
+    Output('dem-resolution-container', 'style'),
+    Output('dem-resolution', 'options'),
+    Output('dem-resolution', 'value'),
+    Input('dem-source', 'value'),
+    State('dem-resolution', 'value'),
+    prevent_initial_call=False
+)
+def toggle_dem_inputs(source, current_value):
+    resolution_options_map = {
+        'opentopo': [
+            {'label': 'Global Copernicus GLO-30 (~30 m)', 'value': 'opentopo_cop30'},
+            {'label': 'Global SRTMGL1 (~30 m)', 'value': 'opentopo_srtmgl1'},
+            {'label': 'Global SRTMGL3 (~90 m)', 'value': 'opentopo_srtmgl3'},
+            {'label': 'Global ALOS (~30 m)', 'value': 'opentopo_alos'},
+        ],
+        'etopo': [
+            {'label': 'ETOPO2022 30 arc-second (surface, global)', 'value': 'etopo_30s'},
+            {'label': 'ETOPO2022 60 arc-second (surface, global)', 'value': 'etopo_60s'},
+        ],
+        'gmt': [
+            {'label': 'GMT 1 arc-second (global)', 'value': 'gmt_01s'},
+            {'label': 'GMT 15 arc-second (global)', 'value': 'gmt_15s'},
+            {'label': 'GMT 30 arc-second (global)', 'value': 'gmt_30s'},
+            {'label': 'GMT 1 arc-minute (global)', 'value': 'gmt_01m'},
+            {'label': 'GMT 2 arc-minute (global)', 'value': 'gmt_02m'},
+            {'label': 'GMT 5 arc-minute (global)', 'value': 'gmt_05m'},
+        ],
+    }
+
+    options = resolution_options_map.get(source, [])
+    valid_values = {opt['value'] for opt in options}
+    default_value = options[0]['value'] if options else None
+    value = current_value if current_value in valid_values else default_value
+
+    if source == 'opentopo':
+        return {'marginBottom': '8px'}, {'display': 'flex', 'gap': '10px'}, options, value
+    return {'display': 'none'}, {'display': 'flex', 'gap': '10px'}, options, value
+
+
+@app.callback(
+    Output('dem-bbox-minlon', 'value'),
+    Output('dem-bbox-minlat', 'value'),
+    Output('dem-bbox-maxlon', 'value'),
+    Output('dem-bbox-maxlat', 'value'),
+    Input('dem-bbox-from-data', 'n_clicks'),
+    prevent_initial_call=True
+)
+def fill_dem_bbox_from_data(n_clicks):
+    if not n_clicks:
+        raise PreventUpdate
+    if sesh.data is None:
+        return no_update, no_update, no_update, no_update
+    if 'longitude' not in sesh.data.columns or 'latitude' not in sesh.data.columns:
+        return no_update, no_update, no_update, no_update
+
+    min_lon = float(sesh.data['longitude'].min())
+    max_lon = float(sesh.data['longitude'].max())
+    min_lat = float(sesh.data['latitude'].min())
+    max_lat = float(sesh.data['latitude'].max())
+
+    pad = 0.01
+    return min_lon - pad, min_lat - pad, max_lon + pad, max_lat + pad
 
 @app.callback(
     Output('map', 'figure', allow_duplicate=True),
@@ -844,9 +1748,14 @@ def handle_url_hash(url_hash, model):
             res[11]  = False
             res[12]  = True
     elif url_hash.startswith('#change_working'):
+        _configure_tk_dpi_awareness()
         root = Tk()
         root.withdraw()  # Hide the root window
-        folder_path = filedialog.askdirectory(title="Select Working Directory")
+        root.attributes('-topmost', True)
+        root.lift()
+        root.focus_force()
+        root.update()
+        folder_path = filedialog.askdirectory(title="Select Working Directory", parent=root)
         print(folder_path)
         root.destroy()  # Destroy the root window after selection
         if folder_path:
@@ -894,10 +1803,11 @@ def run_python_code(n_clicks, code):
 #     os.kill(os.getpid(), signal.SIGINT)  # Send a signal to the process to terminate
 
 
-try:
-    app.run(port=8050, debug=True, use_reloader=True)
-except Exception as e:
-    print(f"Error running app: {e}")
+if __name__ == "__main__":
+    try:
+        app.run(port=8050, debug=True, use_reloader=True)
+    except Exception as e:
+        print(f"Error running app: {e}")
 # finally:
 #     print('closing app, saving data to zip...')
 #     sesh.save()
