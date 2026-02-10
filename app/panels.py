@@ -773,21 +773,6 @@ class ModelSection(Panel):
         fig.update_yaxes(autorange="reversed")
         fig.update_layout(yaxis2=dict(title='Misfit',overlaying='y',side='right',showgrid=False))
 
-        # misfit_trace = px.line(
-        #     df_layers_long,
-        #     x=self.settings.x_axis,
-        #     y='misfit',
-        # ).data[0]
-
-        # misfit_trace.update(
-        #     yaxis='y2',
-        #     line=dict(color='black', width=2),
-        #     name='Misfit',showlegend=True
-        # )
-        # fig.update_layout(yaxis2=dict(range=[0, 8]))
-
-        # fig.add_trace(misfit_trace)
-
         fig.update_layout(
         legend=dict(x=0.95, y=0.11,xanchor="left",yanchor="top",bgcolor="rgba(255,255,255,0.8)")
             )

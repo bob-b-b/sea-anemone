@@ -443,10 +443,10 @@ class GIS_helpers(Panel):
         # print(f"Longitude overlap: {lon_overlap}")
         # print(f" Latitude overlap: {lat_overlap}")
 
-        # if lon_overlap and lat_overlap:
-        #     print("✅ Bounds OVERLAP correctly")
-        # else:
-        #     print("❌ Bounds DO NOT overlap")
+        if lon_overlap and lat_overlap:
+            print("✅ Bounds OVERLAP correctly")
+        else:
+            print("❌ Bounds DO NOT overlap")
 
     # ------------------- Map layers -------------------
     def _build_map_layers(self, show_google, show_tiff, show_png, google_op, tiff_op, png_op):

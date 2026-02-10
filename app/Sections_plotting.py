@@ -163,7 +163,6 @@ def create_geologic_colorbar(res_min, res_max, plot_height = 300):
                     "marginRight": "15px"
                     })
 
-
 def create_geologic_colorbar_horizontal(res_min, res_max, bar_height=18):
     num_slices = 100
 
@@ -293,7 +292,6 @@ def create_geologic_colorbar_horizontal(res_min, res_max, bar_height=18):
         },
     )
 
-
 # ------------------------ # DEPTH MODEL GENERATOR for TESTING # ------------------------
 def generate_depths():
     depths = list(np.logspace(0, np.log10(depth), num_layers))  # example: 0 → 50 meters
@@ -305,7 +303,6 @@ def generate_res_model():
     return np.random.uniform(settings.res_min, settings.res_max, size=num_layers)
 
 # ----------- BOREHOLES ----------------
-
 def load_borehole_file(file_path):
     with open(file_path, 'r') as f:
         content = f.read()
@@ -618,7 +615,6 @@ def build_combined_borehole_figure(bh_ids, bh_projections, rock_color_map):
     
     return fig
 
-
 # ----------- BOREHOLES ----------------
 # bh_data, rock_color_map = load_borehole_file("C:/Users/au679476/Downloads/boreholes_Gende_Rige_test.bor")
 bh_data, rock_color_map = load_borehole_file("C:/Users/au679476/Downloads/Boreholes_Dollow.bor")
@@ -628,7 +624,6 @@ bh_data, rock_color_map = load_borehole_file("C:/Users/au679476/Downloads/Boreho
 
 # model_frame = TEMframe.from_pandas(pd.read_csv("models.csv"))
 # model_frame = TEMframe.from_pandas(pd.read_csv('test_models_Dollow.csv'))
-
 
 
 def preprocess_new_df(new_df):

@@ -56,44 +56,17 @@ from pyproj import Geod
 from temframe import TEMframe
 from gis import GIS
 
+from GIS_profile_only import *
+
 # --------------------- reading the tiffs and pngs ---------------------
 RASTER_FOLDER = r"C:\Users\au679476\Downloads\test_for_map_pngs_tiffs"
 # we will put the folder of the session
 
-# # --------------------- Instantiate ---------------------
-
-
-
 import pandas as pd
-# df_overview = pd.DataFrame(columns=['date', 'daytime', 'latitude', 'longitude', 'elevation', 'utm_x', 'utm_y', 'distance'])
-
-
-
-
-# # --------------------- Instantiate ---------------------
-# gis = ScatterMapRenderer(
-#     dataframe=None,
-#     settings=settings,
-#     highlighted=None,
-#     tiff_path=None,  # leave empty; we'll load on demand
-#     png_path=None
-#     )
-
-# initial_rasters = gis.build_raster_registry_from_folder(RASTER_FOLDER, include_subfolders=False)
-# gis.initial_rasters = initial_rasters 
-
-
 import session
 
 global sesh
 sesh = session.Session()#.from_folder("C:/Users/au646858/OneDrive - Aarhus Universitet/Documents/anemone_projects/eliya_spring_kenya/")
-# gis = ScatterMapRenderer(
-#     dataframe=sesh.overview,
-#     settings=settings,
-#     highlighted=None,
-#     tiff_path=None,  # leave empty; we'll load on demand
-#     png_path=None
-#     )
 
 # initial_rasters = gis.build_raster_registry_from_folder(RASTER_FOLDER, include_subfolders=False)
 # gis.initial_rasters = initial_rasters 
@@ -118,6 +91,8 @@ mod1 = ModelGraph(   dataframe=sesh.models )
 mod2 = ModelSection( dataframe=sesh.models )
 gis = GIS(sesh.models)
 
+profile = Profile(sesh.models)
+
 
 x = html.Div([dcc.Markdown(children='### buttons and hot keys'),
       html.Div(
@@ -141,13 +116,13 @@ x = html.Div([dcc.Markdown(children='### buttons and hot keys'),
 
 
 
-#stmod = StartingModel.standard(rho=10.)
+#stmod = StartingModel.standard(rho=10.)F
 
 Inv_it = Inversion_iterations.standard(misfit=None,rho=10.)
 
 Sing_site = Single_site.standard(rho=10.)
 
-panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, Inv_it, Sing_site, pyInt, gis]
+panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, Inv_it, Sing_site, pyInt, gis, profile]
 nodes = [node for panel in panels for node in panel.to_nodes()]+[dfl.Tab(id=f'tab-processing_buttons', children=[x]), dfl.Tab(id='tab-panel_list', children=[panel_list])]
 
 
@@ -187,9 +162,8 @@ app.layout = html.Div([
         'alignItems': 'center',
         'padding': '0 10px'
     }),
-    
+    # html.Div(gis.get_shared_stores(), id="shared-store-container"),
     html.Div([flex_layout], style={'marginTop': '60px'}),  # Push content below fixed header
-    # html.Div([gis_layout], style={'marginTop': '60px'}),
     html.Div(id='output-click')
 ])
 
@@ -202,6 +176,7 @@ for panel in panels:
         Output('tTEM',     'figure', allow_duplicate=True),
         Output('model_graph', 'figure', allow_duplicate=True),
         Output('model_section', 'figure', allow_duplicate=True),
+        Output('profile_plot_main', 'figure', allow_duplicate=True)
           ],
     [Input('map', 'relayoutData'), Input('map', 'selectedData')],
     prevent_initial_call="initial_duplicate",
@@ -267,7 +242,7 @@ def handle_map_interactions(relayout_data, selected_data):
         gis.dataframe = new_mod
 
     
-    return dbdt1.render(), dbdt2.render(), mod1.render(), mod2.render(), #gis.render()
+    return dbdt1.render(), dbdt2.render(), mod1.render(), mod2.render(), profile.render()
 
 
 from dash import Input, Output, State, html, dcc, ctx
@@ -513,7 +488,6 @@ def update_starting_model_from_iterations(relayoutData, data):
     data["rho"] = rho
     return data
 
-
 @app.callback(
     Output("vc-level", "data"),
     Output("vc_loose_button", "color"),
@@ -735,6 +709,7 @@ def reset_polling(n):
      Output('sounding', 'figure', allow_duplicate=True),
      Output('tTEM', 'figure', allow_duplicate=True),
      Output('gis', 'figure', allow_duplicate=True),
+
      Output('process_layout', 'disabled', allow_duplicate=True),
      Output('invert_layout', 'disabled', allow_duplicate=True),
      Output('process_layout', 'n_clicks', allow_duplicate=True),
@@ -760,11 +735,13 @@ def upload_file(contents, current_process_clicks):
     mod2.dataframe  = sesh.models
 
     gis.dataframe   = sesh.models
+    profile.dataframe = sesh.models
+    
     
     # t1.dataframe = TABLES['overview'].copy()
     new_process_clicks = (current_process_clicks or 0) + 1
 
-    return html.Div("File uploaded successfully."), m1.render(), dbdt1.render(), dbdt2.render(), gis.render(), False, False, new_process_clicks#, t1.render()
+    return html.Div("File uploaded successfully."), m1.render(), dbdt1.render(), dbdt2.render(), gis.render(),False, False, new_process_clicks#, t1.render()
 
 @app.callback(
     Output('map', 'figure', allow_duplicate=True),
@@ -844,7 +821,6 @@ layout_output_list = [
         Output('tTEM', 'figure', allow_duplicate=True),
         Output('model_section', 'figure', allow_duplicate=True),
         Output('flex-layout',    'model', allow_duplicate=True),
-
         Output('upload_layout',  'color',  allow_duplicate=True),
         Output('process_layout', 'color', allow_duplicate=True),
         Output('invert_layout',  'color', allow_duplicate=True),
@@ -883,6 +859,7 @@ def handle_url_hash(url_hash, model):
         m1.dataframe    = sesh.overview.copy() if sesh.data is not None else None
         mod1.dataframe  = sesh.models.copy()   if sesh.models is not None else None
         mod2.dataframe  = sesh.models.copy()   if sesh.models is not None else None
+        profile.dataframe= sesh.models.copy()  if sesh.models is not None else None
 
         res[0] = m1.render()
         res[1] = dbdt1.render()
@@ -1041,7 +1018,7 @@ app.clientside_callback(
     }
     """,
     Output("right-click-index-store", "data"),
-    Input("profile-plot_main", "clickData"),
+    Input("profile_plot_main", "clickData"),
     prevent_initial_call=True
 )
 
@@ -1065,7 +1042,7 @@ app.clientside_callback(
         return window.dash_clientside.no_update;
     }
     """,
-    Output("profile-busy-overlay", "className"), # Dummy output to a safe property
+    Output("profile-busy-overlay_test", "className"), # Dummy output to a safe property
     Input("line-final-store", "data"),
     Input("section-mode-store", "data"),
     Input("selected-line-index", "data"),
@@ -1086,8 +1063,8 @@ app.clientside_callback(
         return window.dash_clientside.no_update;
     }
     """,
-    Output("profile-busy-overlay", "title"), # Different dummy property
-    Input("profile-plot-content", "children"), # Replace with your plot container ID
+    Output("profile-busy-overlay_TEST", "title"), # Different dummy property
+    Input("profile-plot-content_2", "children"), # Replace with your plot container ID
     prevent_initial_call=True
 )
 
@@ -1267,7 +1244,7 @@ def update_map_view(relayout, view):
     if "map._derived" in relayout and "coordinates" in relayout["map._derived"]:
         coords = relayout["map._derived"]["coordinates"]
 
-        print("✔ Updated BBOX:", coords)
+        print("✔ Updated BBOX:") #, coords
 
         # keep previous center, zoom if available
         center = relayout.get("map.center", (view or {}).get("center"))
@@ -1394,7 +1371,10 @@ def auto_close_layers(layer_values, opacity_values, menu_clicks, style):
 import time
 
 @app.callback(
-    Output("profile-plot-content", "children"),
+    
+    # Output("profile-plot-content_2", "children"),
+    Output("profile_plot_main", "figure", allow_duplicate=True),
+    Output("flex-layout", "action"),
     Input("line-final-store", "data"),
     Input("section-mode-store", "data"),
     Input("selected-line-index", "data"),
@@ -1402,127 +1382,17 @@ import time
     prevent_initial_call=True
 )
 
-def update_section(  lines, mode, selected_idx, view, ):
-    
-    df_up_map, color_master_map, existing_attrs = preprocess_new_df(gis.dataframe)
+def update_profile_callback(lines, mode, selected_idx, view):
+    print("PROFILE CALLBACK FIRED")
+    # fig = profile.render(lines=lines, mode=mode, selected_idx=selected_idx, view=view)
+    fig = profile.get_figure(
+        lines=lines,
+        mode=mode,
+        selected_idx=selected_idx,
+        view=view
+    )
+    return fig, {"type": "select", "tabId": "tab-profile_plot-main"}
 
-    
-    if not lines:
-        msg1 = f"Draw a line to plot"
-        blank_fig = go.Figure()
-        blank_fig.add_annotation(text=msg1, showarrow=False, font=dict(size=15, color="gray"))
-        blank_fig.update_layout(plot_bgcolor="white",paper_bgcolor="white",template="none",xaxis=dict(visible=False),yaxis=dict(visible=False),margin=dict(t=0, b=0, l=0, r=0))      
-        return [dcc.Graph(id="profile-plot_main", figure=blank_fig, config={'displayModeBar': False}, style={"height": "100%", "width": "100%"})],
-    
-    try:
-        current_line = lines[selected_idx]
-    except:
-        current_line = lines[-1]
-
-    # 1. Gather all data
-    y_depth = np.array(df_up_map["Depths"].iloc[0])[:-1]
-    all_x, interp_lons, interp_lats = get_polyline_profile(current_line, df_up_map, resolution_m=50)
-    
-    # Get Stations and Boreholes
-    stations_on_line = get_station_projections(current_line, df_up_map, search_radius_m=Settings.radius)
-    if bh_data is not None:
-        bh_projections = get_borehole_projections(current_line, bh_data, view, search_radius_m=Settings.radius)
-
-    # 2. FAILSAFE: If nothing is near the line, show a message
-    if not stations_on_line and not bh_projections:
-        msg = f"No data (Soundings or Boreholes) found within {Settings.radius}m"
-        blank_fig = go.Figure()
-        blank_fig.add_annotation(text=msg, showarrow=False, font=dict(size=15, color="gray"))
-        blank_fig.update_layout(plot_bgcolor="white",paper_bgcolor="white",template="none",xaxis=dict(visible=False),yaxis=dict(visible=False),margin=dict(t=0, b=0, l=0, r=0))   
-        return html.Div(dcc.Graph(figure=blank_fig, config={'displayModeBar': False}), 
-                        style={"height": "100%", "width": "100%", "background": "white", 
-                               "display": "flex", "alignItems": "center", "justifyContent": "center"})
-
-    # 3. Calculate Path Elevations (Terrain)
-    if stations_on_line:
-        st_x = [s['dist_x'] for s in stations_on_line]
-        st_z = [s['elev'] for s in stations_on_line]
-        
-        # If only 1 station exists, np.interp needs a fallback
-        if len(st_x) == 1:
-            path_elevations = np.full_like(all_x, st_z[0])
-        else:
-            path_elevations = np.interp(all_x, st_x, st_z)
-    else:
-        # Fallback if only boreholes exist: use borehole elevation as flat terrain
-        if bh_projections:
-            avg_elev = np.mean([b['elev'] for b in bh_projections])
-            path_elevations = np.full_like(all_x, avg_elev)
-        else:
-            path_elevations = np.zeros_like(all_x)
-
-    # 4. Initialize Figure based on Mode
-    if mode == "blocky":
-        if stations_on_line:
-            fig = create_blocky_polygons(stations_on_line, y_depth, bar_width=30)
-        else:
-            fig = go.Figure() # Start empty, add boreholes below
-            
-    elif mode == "interp":
-        samples = np.vstack([interp_lons, interp_lats]).T
-        res_models, elevations, _, _ = interpolate_nearest(df_up_map, samples, radius=Settings.radius)
-        fig = plot_section_topographic(all_x, y_depth, res_models, elev=path_elevations)
-        
-    elif mode == "combined":
-        samples = np.vstack([interp_lons, interp_lats]).T
-        res_models, elevations, _, _ = interpolate_nearest(df_up_map, samples, radius=Settings.radius)
-        fig = combine_sections_final(all_x, y_depth, res_models, path_elevations, stations_on_line)
-
-    # 5. Add Boreholes
-    if bh_projections:
-        fig = add_boreholes_to_fig(fig, bh_projections, rock_color_map)
-
-    # 6. ADJUST AXIS BOUNDS (The Fix for Zoom)
-    # Collect all X coordinates from both sources
-    all_x_vals = list(all_x)
-    if stations_on_line:
-        all_x_vals.extend([s['dist_x'] for s in stations_on_line])
-    if bh_projections:
-        # Include the left and right edges of the borehole columns
-        for b in bh_projections:
-            all_x_vals.append(b['dist_x'] - 20) # 20m margin
-            all_x_vals.append(b['dist_x'] + 20)
-
-    x_min, x_max = min(all_x_vals), max(all_x_vals)
-    padding = (x_max - x_min) * 0.1 if x_max != x_min else 50
-    
-    fig.update_layout(
-        xaxis=dict(range=[x_min - padding, x_max + padding]),
-        hovermode='closest')
-    
-    show_colorbar = mode in ["blocky", "interp", "combined"] and len(stations_on_line) > 0
-
-    graph =  html.Div(dcc.Graph(id="profile-plot_main", figure=fig, style={"height": "100%", "width": "100%"},
-        config={"doubleClick": "reset+autosize", "doubleClickDelay": 200, "displayModeBar": True},),
-        style={"width": "100%", "height": "100%", "minHeight": 0})
-    
-    show_colorbar = (stations_on_line is not None and len(stations_on_line) > 0 and mode in ["blocky", "interp", "combined"])
-    has_colorbar = show_colorbar 
-    # 2. Build the legend only if needed
-    legend_element = None
-    if has_colorbar:
-        legend_bar = create_geologic_colorbar_horizontal(settings.res_min, settings.res_max, bar_height=18)
-        legend_element = html.Div(legend_bar,style={"width": "80%", "margin": "0 auto", "marginTop": "2px"})
-
-    # 3. Define the graph wrapper
-    graph_wrapper = html.Div(graph, style={"width": "100%", "height": "100%", "flex": "0 1 auto","minHeight": 0} )
-
-    # 4. Construct the children list dynamically
-    children_list = [graph_wrapper]
-    if legend_element:
-        children_list.append(legend_element)
-
-    # 5. Final Return 
-    content = html.Div(
-        children=children_list,
-        style={"display": "flex","flexDirection": "column","height": "100%","width": "100%","justifyContent": "center","alignItems": "center",})
-    
-    return html.Div(content, id=f"plot-wrapper-{time.time()}") #content
 
 
 # --------------------- MULTI LINE select profile dropdown and clear all or selected ---------------------
@@ -1655,7 +1525,7 @@ def on_draw_polyline(relayout, view, store): #, current_fig
 # --------------------- hover on map ---------------------
 @app.callback(
     Output("map-hover-marker-store", "data"),
-    Input("profile-plot_main", "hoverData"),
+    Input("profile_plot_main", "hoverData"),
     State("line-final-store", "data"),
     State("selected-line-index", "data"),
     prevent_initial_call=True

@@ -118,7 +118,6 @@ class GIS(Panel):
             self._check_bounds_match()
         self.view = {}
         
-    
     def _compute_df_center(self, dataframe):
         """Return dict(lat=..., lon=...) as the center of the dataframe points"""
         if dataframe is None or dataframe.empty:
@@ -128,7 +127,6 @@ class GIS(Panel):
             lat=dataframe["latitude"].mean(),
             lon=dataframe["longitude"].mean()
         )
-
 
     def _build_map_layers(self, show_google, show_tiff, show_png, google_op, tiff_op, png_op):
             layers = []
@@ -210,7 +208,7 @@ class GIS(Panel):
        
         # figure without the points to keep the map on when all points are off
        
-        fig = px.scatter_map(processed_df,#.iloc[0:0],  # empty base
+        fig = px.scatter_map(processed_df.iloc[0:0],  # empty base
                              lat="latitude",lon="longitude",zoom=zoom,center=center,)
 
         fig.update_layout(map_style="white-bg", coloraxis_showscale=False, 
@@ -220,7 +218,7 @@ class GIS(Panel):
                     "sourceattribution": "Google Earth (C)",
                     "source": ['https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}']
                 }]) #,coloraxis_showscale=False
-        fig.update_traces(marker=dict(color=self.settings.color,showscale=False) )        # is_numeric = False
+        # fig.update_traces(marker=dict(color=self.settings.color,showscale=False) )        # is_numeric = False
         # return fig
 
         if self.settings.show_points and not processed_df.empty: #self.dataframe is not None:
@@ -435,42 +433,17 @@ class GIS(Panel):
             # Moving these to the top ensures they exist before any callbacks fire
             html.Div("trigger",id="dummy-output", style={"display": "none"}),
             html.Div(id="test-display"),
-            # --- for ctrl + alt + left click and show models  ---
-            html.Div(id="window-container", style={"position": "relative", "zIndex": 9999}),
-            dcc.Store(id="combined-window-store", data={"window_id": None, "indices": []}),            
-            dcc.Store(id="right-click-index-store", data=None),
-            dcc.Store(id='active-windows-store', data=[]),
             # --- show a message to the user if line drawn without zoom in---
             dcc.ConfirmDialog(
-                                id='zoom-warning-dialog',
-                                message='⛔ Drawing Error: Please zoom or pan the map once to initialize the coordinate system before drawing.',
+                    id='zoom-warning-dialog',
+                    message='⛔ Drawing Error: Please zoom or pan the map once to initialize the coordinate system before drawing.',
                             ),
             # --- STORES ---
             dcc.Store(id="raster-load-trigger", data=0),
             dcc.Store(id="raster-busy-store", data=False),                      
             dcc.Store(id="raster-registry-store", data=initial_rasters),      # list of loaded rasters
             dcc.Store(id="layers-store", data=default_layers),  # sensible defaults
- 
             dcc.Store(id="opacity-store", data = default_opacity),
-            dcc.Store(id="line-preview-store"),
-            dcc.Store(id="line-final-store"),
-            dcc.Store(id="section-mode-store", data="blocky"),
-            dcc.Store(id="map-view-store"),
-            dcc.Store(id="selected-line-index", data=0),
-            dcc.Store(id="map-hover-marker-store", data=None),
-            dcc.Store(id="map-settings-store", data={}), # plot_attribute': 'date', 'color': '#ff0000'
-            dcc.Store(id='global-color-map-store', data=color_master_map if self.dataframe is not None else None),
-            dcc.Store(id="points-available-attrs-store", data=existing_attrs if self.dataframe is not None else 'date'),
- 
-            dcc.Store(id="profile-busy-store", data=False),
-            dcc.Store(id="profile-load-trigger", data=0),
-            dcc.Store(id="profile-last-sig", data=None),  # used to detect changes
- 
-            # --- MAIN UI CONTAINER ---
-            # html.Div(
-            #     id='gis',
-            #     style={"height": "320px", "position": "relative", "fontFamily": "sans-serif"},
-            #     children=[
                    
                     # ---- TOP CONTROL BAR ----
                     html.Div(
@@ -642,60 +615,59 @@ class GIS(Panel):
  
                             # ================= RIGHT: PROFILE =================
                        
-                           html.Div(
-                                    id="profile-plot-container",
-                                    style={
-                                        "flex": "1", "position": "relative", "minHeight": 0,
-                                        "background": "white", "borderRadius": "8px",
-                                        "boxShadow": "0 0 10px rgba(0,0,0,0.15)", "padding": "5px",
-                                        "display": "flex", "flexDirection": "column", "overflow": "hidden",
-                                    },
-                                    children=[
-
-                                        # 1. THE OVERLAY (Now outside the content div)
-                                        html.Div(
-                                            id="profile-busy-overlay",
-                                            children= "Preparing profile...",                                            
-                                            style={
-                                                "display": "none", # Hidden by default
-                                                "position": "absolute", "top": "120px", "left": "12px", "right": "auto",
-                                                "padding": "6px 15px", "background": "rgba(0,0,0,0.8)",
-                                                "color": "white", "zIndex": 9999, "borderRadius": "6px"
-                                            }
-                                        ),
- 
-                                        # 2. THE CONTENT AREA (This is what the callback targets)
-                                        html.Div(
-                                            id="profile-plot-content",
-                                            style= {"flex": "1","width": "100%", "height": "100%","justifyContent": "center","alignItems": "center"},
-                                            children=[
-                                                dcc.Graph(
-                                                    id="profile-plot_main", 
-                                                    figure={
-                                                        "data": [],
-                                                        "layout": {
-                                                            "plot_bgcolor": "white",
-                                                            "paper_bgcolor": "white",
-                                                            "template": "none",
-                                                            "xaxis": {"visible": False, "showgrid": False, "zeroline": False},
-                                                            "yaxis": {"visible": False, "showgrid": False, "zeroline": False},
-                                                            "margin": {"t": 0, "b": 0, "l": 0, "r": 0},
-                                                            "annotations": [{
-                                                                "text": "Select or draw a line to generate a profile",
-                                                                "showarrow": False,
-                                                                "font": {"size": 16, "color": "gray"}
-                                                            }],
-                                                        },
-                                                    },
-                                                style={ "height": "100%", "width": "100%", "background": "white", "borderRadius": "8px", "boxShadow": "0 -2px 10px rgba(0,0,0,0.1)" }
-                                                )]
-                                        )
-                                    ]
-                                )
-                       
-                       
+                        #    html.Div(
+                        #             id="profile-plot-container",
+                        #             style={
+                        #                 "flex": "1", "position": "relative", "minHeight": 0,
+                        #                 "background": "white", "borderRadius": "8px",
+                        #                 "boxShadow": "0 0 10px rgba(0,0,0,0.15)", "padding": "5px",
+                        #                 "display": "flex", "flexDirection": "column", "overflow": "hidden",
+                        #             },
+                        #             children=[
+                        #                 # 1. THE OVERLAY (Now outside the content div)
+                        #                 html.Div(
+                        #                     id="profile-busy-overlay",
+                        #                     children= "Preparing profile...",                                            
+                        #                     style={
+                        #                         "display": "none", # Hidden by default
+                        #                         "position": "absolute", "top": "120px", "left": "12px", "right": "auto",
+                        #                         "padding": "6px 15px", "background": "rgba(0,0,0,0.8)",
+                        #                         "color": "white", "zIndex": 9999, "borderRadius": "6px"
+                        #                     }
+                        #                 ),
+                        #                 # 2. THE CONTENT AREA (This is what the callback targets)
+                        #                 html.Div(
+                        #                     id="profile-plot-content_2",
+                        #                     style= {"flex": "1","width": "100%", "height": "100%","justifyContent": "center","alignItems": "center"},
+                        #                     children=[
+                        #                         dcc.Graph(
+                        #                             id="profile-plot_main", 
+                        #                             figure={
+                        #                                 "data": [],
+                        #                                 "layout": {
+                        #                                     "plot_bgcolor": "red",
+                        #                                     "paper_bgcolor": "white",
+                        #                                     "template": "none",
+                        #                                     "xaxis": {"visible": False, "showgrid": False, "zeroline": False},
+                        #                                     "yaxis": {"visible": False, "showgrid": False, "zeroline": False},
+                        #                                     "margin": {"t": 0, "b": 0, "l": 0, "r": 0},
+                        #                                     "annotations": [{
+                        #                                         "text": "Select or draw a line to generate a profile",
+                        #                                         "showarrow": False,
+                        #                                         "font": {"size": 16, "color": "gray"}
+                        #                                     }],
+                        #                                 },
+                        #                             },
+                        #                         style={ "height": "100%", "width": "100%", "background": "white", "borderRadius": "8px", "boxShadow": "0 -2px 10px rgba(0,0,0,0.1)" 
+                        #                                }
+                        #                             )
+                        #                         ],
+                        #                 ),
+                        #             ],
+                        #         ),                       
                         ],
-                    ), gear_maker(self.id)
+                    ), 
+                    gear_maker(self.id)])
            
-        ])
+        # ])
         # ])
