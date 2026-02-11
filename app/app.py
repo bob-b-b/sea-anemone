@@ -108,11 +108,8 @@ flex_layout = dfl.FlexLayout(
 app.layout = html.Div([
     dcc.Location(id='url', refresh='callback-nav'),
     dcc.Interval(id= "inv-log-poll", interval=1000, n_intervals=0, disabled=True),  # Poll every 2 seconds
-    dcc.Store(id="vc-level", data="medium"),
-    dcc.Store(id="hc-level", data="medium"),
     dcc.Store(id="selected-site-id", data=None),
     dcc.Store(id="starting-model", data={"rho": 10.0,"depth": np.cumsum(np.logspace(0, 1.3, 31)).tolist()}),
-    dcc.Store(id="vc-single-levels", data=["medium"]),  # default
     dcc.Store(id='starting-model-selected',data=[]),
     html.Div([
         dbc.ButtonGroup([
@@ -352,7 +349,8 @@ def save_session(n1):
         Output('map', 'figure', allow_duplicate=True),
         Output('model_graph', 'figure', allow_duplicate=True),
         Output('sounding', 'figure', allow_duplicate=True),
-        Output('multi_inv', 'figure', allow_duplicate=True)
+        Output('multi_inv', 'figure', allow_duplicate=True),
+        Output('model_section', 'figure', allow_duplicate=True),
     ],
     Input('highlight_prev', 'n_clicks'),
     Input('highlight_next', 'n_clicks'),
@@ -379,13 +377,14 @@ def highlight_change(n1, n2, invert_layout_color):
     df_data = sesh.data
     m1.highlighted = highlighted
     mod1.highlighted = highlighted
+    mod2.highlighted = highlighted
     dbdt1.dataframe = df_data[df_data['site_id'] == highlighted]
     print('invert layout color:', invert_layout_color)
     if invert_layout_color == 'primary':
         print('will launch an inversion next time')
     
 
-    return ctx.triggered_id, m1.render(), mod1.render(), dbdt1.render(), Multi_inv.render()
+    return ctx.triggered_id, m1.render(), mod1.render(), dbdt1.render(), Multi_inv.render(), mod2.render()
 
 
 
@@ -422,6 +421,8 @@ def highlight_change(n1, n2, invert_layout_color):
     Output('map', 'figure', allow_duplicate=True),
     Output('model_graph', 'figure', allow_duplicate=True),
     Output('sounding', 'figure', allow_duplicate=True),
+    Output('model_section', 'figure', allow_duplicate=True),
+        #Output('table_overview', 'figure', allow_duplicate=True)
     #Output('starting_model', 'figure', allow_duplicate=True),
     [
         Input('model_section', 'clickData'),
@@ -454,6 +455,7 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color):
     # Sing_inv.dataframe = df_data[df_data['site_id'] == site_id]
     m1.highlighted = site_id
     mod1.highlighted = site_id
+    mod2.highlighted = site_id
     dbdt1.dataframe = df_data[df_data['site_id'] == site_id]
     # if invert_layout_color == 'primary':
     #     # df_layers, df_site, _ = df_data.invert_site(site_id)
@@ -461,7 +463,7 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color):
     #     #     df_layers = pd.concat([mod1.dataframe[df_data['site_id'] != site_id], df_layers], ignore_index=True)
     #     mod1.dataframe = df_layers
     #     dbdt1.dataframe = df_site
-    return m1.render(), mod1.render(), dbdt1.render()
+    return m1.render(), mod1.render(), dbdt1.render(), mod2.render()
 
 # @app.callback(
 #     Output("starting-model", "data"),

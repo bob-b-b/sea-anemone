@@ -753,9 +753,10 @@ class ModelGraph(Panel):
 @nosj
 class ModelSectionSettings(PanelSettings):
     z: Literal['depth', 'elevation'] = 'depth'
-    x_axis: Literal['daytime', 'site_id', 'longitude', 'latitude', 'distance'] = 'daytime'
+    x_axis: Literal['daytime', 'site_id', 'longitude', 'latitude', 'distance'] = 'site_id'
 
 class ModelSection(Panel):
+    highlighted: int = None
     def __init__(self, **kwargs):
         settings = kwargs.pop('settings', ModelSectionSettings(id='model_section'))
         super().__init__(id='model_section', settings=settings)
@@ -786,9 +787,27 @@ class ModelSection(Panel):
             origin='lower',
             color_continuous_scale='turbo',
             labels={'x': self.settings.x_axis, 'y': 'Depth [m]', 'color': 'Resistivity [Ω·m]'},
-            title='Resistivity',
             zmin=0,#heatmap_df.min().min(),
             zmax=2.7,#heatmap_df.max().max(),
+        )
+        fig.update_layout(
+            coloraxis_colorbar=dict(
+                tickvals = [0, 1, 2, np.log10(500)],
+                ticktext = ["1", "10", "100", "500"],
+                orientation="h",     # horizontal
+                y=-0.45,              # move below plot
+                x=0.5,               # center horizontally
+                xanchor="center",
+                len=0.5,
+                thickness = 10,
+                title=dict(
+            text="Resistivity [Ωm]",
+            side="bottom"))
+        )
+        fig.update_layout(
+            xaxis=dict(
+                title_standoff=4   # default is ~15–20
+            )
         )
         fig.update_layout(hovermode="x")
         fig.update_yaxes(autorange="reversed")
@@ -809,7 +828,7 @@ class ModelSection(Panel):
         fig.add_trace(misfit_trace)
 
         fig.update_layout(
-        legend=dict(x=0.89, y=0.15,xanchor="left",yanchor="top",bgcolor="rgba(255,255,255,0.8)")
+        legend=dict(x=0.89, y=0.2,xanchor="left",yanchor="top",bgcolor="rgba(255,255,255,0.8)")
             )
 
         fig.update_layout(yaxis2=dict(title=dict(text="Misfit",standoff=10),overlaying="y",side="right",showgrid=False)
@@ -843,6 +862,28 @@ class ModelSection(Panel):
             )
         )
 
+        if self.highlighted is not None and self.dataframe is not None:
+
+            # Get x coordinate of selected site
+            selected_df = df_layers_long[df_layers_long["site_id"] == self.highlighted]
+
+            if not selected_df.empty:
+
+                x_value = selected_df[self.settings.x_axis].iloc[0]
+
+                # Width of highlight box
+                dx = 0.5  # adjust depending on spacing
+
+                fig.add_shape(
+                    type="rect",
+                    x0=x_value - dx,
+                    x1=x_value + dx,
+                    y0=df_layers_long["depth"].min(),
+                    y1=df_layers_long["depth"].max()+20,
+                    line=dict(color="rgba(0,0,0,0.5)", width=1.5),
+                    fillcolor="rgba(0,0,0,0.0)",
+                    layer="above"
+                )
         fig.update_yaxes(
             range=[doi_df["doi"].max()+8, y_min-8],
             autorange=False,

@@ -159,7 +159,8 @@ class MultiInversion(Panel):
     
 
     def initialize(self):
-        init = html.Div([dbc.Container([
+        init = html.Div([dcc.Store(id="vc-level", data="medium"),dcc.Store(id="hc-level", data="medium"),
+            dbc.Container([
                 dbc.Row([
                     dbc.Col(
                         dcc.Graph(figure=self.render_init(), id=self.id, mathjax=True, 
@@ -613,7 +614,7 @@ class Single_site(Panel):
     
 
     def initialize(self):
-        init = html.Div([dbc.Container([
+        init = html.Div([dbc.Container([dcc.Store(id="vc-single-levels", data=["medium"]),
                 dbc.Row([
                     dbc.Col(
                         dcc.Graph(figure=self.render(), id=self.id, mathjax=True, 
