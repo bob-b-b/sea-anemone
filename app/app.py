@@ -1,5 +1,5 @@
 import sys, os
-# from tkinter import filedialog, Tk
+from tkinter import filedialog, Tk
 
 
 fpath = os.path.dirname(os.path.abspath(__file__))
@@ -184,7 +184,7 @@ app.layout = html.Div([
         'padding': '0 10px'
     }),
     
-    html.Div([flex_layout], style={'marginTop': '60px'})
+    html.Div([flex_layout], style={'marginTop': '60px'}),
     html.Div(id='output-click')
 ])
 
