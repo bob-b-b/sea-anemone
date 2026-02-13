@@ -173,3 +173,5 @@ scripts/plog_opener.cmd
 *.md~
 .gitignore~
 stb_reader_lib/*
+inversion_log.txt
+app/recent_projects.txt

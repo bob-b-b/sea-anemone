@@ -54,6 +54,8 @@ pyInt = PyInterpretter()
 m1    = Map(data=sesh.overview)
 dbdt1 = dbdtSounding(dataframe=sesh.data)
 dbdt2 = dbdtSection(dataframe=sesh.data)
+rhoa  = rhoaSounding(dataframe=sesh.data)
+
 u1    = Upload(session_files=session_files)
 # t1    = Table(df_overview, id='table_overview', settings=TableSettings('table_overview', visible_columns=[True]*len(df_overview.columns)))
 mod1 = ModelGraph(   dataframe=sesh.models )
@@ -62,7 +64,6 @@ Multi_inv = MultiInversion( dataframe=sesh.data )
 
 
 x = html.Div([
-      dcc.Markdown(children='### buttons and hot keys'),
       html.Div(
           [
             dbc.ButtonGroup([
@@ -90,7 +91,7 @@ x = html.Div([
 
 Sing_inv = Single_site( dataframe=sesh.data, rho=10 )
 
-panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, Multi_inv, Sing_inv, pyInt]
+panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, Multi_inv, Sing_inv, pyInt, rhoa]
 nodes = [node for panel in panels for node in panel.to_nodes()]+[dfl.Tab(id=f'tab-processing_buttons', children=[x]), dfl.Tab(id='tab-panel_list', children=[panel_list])]
 
 
@@ -586,6 +587,7 @@ def reset_polling(n):
      Output('map', 'figure', allow_duplicate=True),
      Output('sounding', 'figure', allow_duplicate=True),
      Output('tTEM', 'figure', allow_duplicate=True),
+     Output('rhoa', 'figure', allow_duplicate=True),
      Output('process_layout', 'disabled', allow_duplicate=True),
      Output('invert_layout', 'disabled', allow_duplicate=True),
      Output('process_layout', 'n_clicks', allow_duplicate=True),
@@ -606,6 +608,7 @@ def upload_file(contents, current_process_clicks):
 
     dbdt1.dataframe = sesh.data.copy()
     dbdt2.dataframe = sesh.data.copy()
+    rhoa.dataframe = sesh.data.copy()
     Multi_inv.dataframe = sesh.data.copy()
     Sing_inv.dataframe = sesh.data.copy()
     m1.dataframe    = sesh.overview
@@ -614,7 +617,7 @@ def upload_file(contents, current_process_clicks):
     # t1.dataframe = TABLES['overview'].copy()
     new_process_clicks = (current_process_clicks or 0) + 1
 
-    return html.Div("File uploaded successfully."), m1.render(), dbdt1.render(), dbdt2.render(), False, False, new_process_clicks#, t1.render()
+    return html.Div("File uploaded successfully."), m1.render(), dbdt1.render(), dbdt2.render(), rhoa.render(), False, False, new_process_clicks#, t1.render()
 
 @app.callback(
     Output('map', 'figure', allow_duplicate=True),

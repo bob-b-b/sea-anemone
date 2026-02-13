@@ -280,27 +280,10 @@ class dbdtSounding(Panel):
             dragmode='select'
         )
         return fig
-    # def
-    # @app.callback(
-    #     Output(self.id, "figure", allow_duplicate=True),
-    #     Input("selected-site-id", "data"),
-    #     prevent_initial_call=True
-    # )
-    # def update_sounding(site_id):
-    #     if site_id is None:
-    #         raise PreventUpdate
-
-    #     self.dataframe = sesh.data[sesh.data["site_id"] == site_id]
-    #     return self.render()
-    
+   
 
 
-class rhoaSounding(Panel):
-    lm_time: None
-    lm_data: None
-    hm_time: None
-    hm_data: None
-
+class rhoaSounding(dbdtSounding):
     @staticmethod
     def to_rhoa(time, dbdt, area=1., current=1.):
         from numpy import pi
@@ -319,34 +302,138 @@ class rhoaSounding(Panel):
         super().__init__(id='rhoa', settings=settings)
         for key, value in kwargs.items():
             setattr(self, key, value)
-    
-    def render(self):
-        if self.dataframe is None: return self.empty_render()
-        fig = go.Figure()
-        # print(self.lm_data.ndim)
-        lm_data = self.lm_data if self.lm_data.ndim > 1 else self.lm_data[np.newaxis,:]
-        hm_data = self.hm_data if self.hm_data.ndim > 1 else self.hm_data[np.newaxis,:]
 
-        lm_data = rhoaSounding.to_rhoa(self.lm_time*1., np.abs(lm_data))
-        hm_data = rhoaSounding.to_rhoa(self.hm_time*1., np.abs(hm_data))
+    def compare_synthetic(self):
 
-        fig.add_trace(go.Scatter(x=self.lm_time, y=np.abs(lm_data[0]), mode='lines+markers', name='Low Moment',  line_color=self.settings.lm_color))
-        fig.add_trace(go.Scatter(x=self.hm_time, y=np.abs(hm_data[0]), mode='lines+markers', name='High Moment', line_color=self.settings.hm_color))
+        y_axis                                             = 'dbdt_syn'
 
-        if lm_data.shape[0] > 1:
-            for i in range(1, lm_data.shape[0]):
-                fig.add_trace(go.Scatter(x=self.lm_time, y=np.abs(lm_data[i]), mode='lines+markers', showlegend=False, line_color=self.settings.lm_color))
-                fig.add_trace(go.Scatter(x=self.hm_time, y=np.abs(hm_data[i]), mode='lines+markers', showlegend=False, line_color=self.settings.hm_color))
+        df_tmp                                             = self.dataframe.sort_values(['site_id', 'system_id',  self.settings.x_axis])
+        df_tmp['rhoa'] = self.to_rhoa(df_tmp['time'].values(), df_tmp['dbdt'].values())
+        df_tmp['rhoa_syn'] = self.to_rhoa(df_tmp['time'].values(), df_tmp['dbdt_syn'].values())
+        df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto'])
+        df_tmp.loc[df_tmp['site_id'] == -1, 'include']  = False
+
+
+        df_tmp['system_id']                                = df_tmp['system_id'].map({1: 'hm', 0: 'lm'})
+
+        error_ub,error_lb = 'error_ub', 'error_lb'
+        # if True:
+        #     error_ub = None
+        #     error_lb = None
         
-        fig.update_layout(
-            xaxis_type="log",
-            yaxis_type="log",
-            xaxis_title="time [s]",
-            yaxis_title="$\\frac{dB}{dt}$ [V / m$^2$]",
-            margin={"l": 50, "r": 50, "t": 50, "b": 50},
-            dragmode='select'
+        fig = px.scatter(
+            df_tmp,
+            x=self.settings.x_axis,
+            y='rhoa',
+            color_discrete_sequence=["gray", "gray"],
+            color="system_id",
+            title="Apparent Resistivity",
+            custom_data=["system_id", "data_id", "site_id"],
+            error_y=error_ub,
+            error_y_minus=error_lb
         )
-        return fig
+
+        df_tmp.loc[df_tmp['site_id'] == -1, 'include'] = True
+        df_tmp.loc[(~df_tmp['include']), 'dbdt']       = np.nan
+        df_tmp.loc[(~df_tmp['include']), 'dbdt_syn']   = np.nan
+
+
+        
+        fig3 = px.scatter(
+            df_tmp,
+            x=self.settings.x_axis,
+            y='rhoa',
+            color_discrete_sequence=["black", "black"],
+            color="system_id",
+            title="dbdt vs time by site_id",
+            # custom_data=["system_id", "data_id"],
+            error_y=error_ub,
+            error_y_minus=error_lb,
+        )
+
+        fig2 = px.line(
+            df_tmp,
+            x=self.settings.x_axis,
+            y='rhoa_syn',
+            color="system_id",
+            color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
+            title="dbdt vs time by site_id",
+            custom_data=["system_id", "data_id", "site_id"],
+        )
+
+        for trace in fig3.data:
+            fig.add_trace(trace)
+
+        for trace in fig2.data:
+            fig.add_trace(trace)
+
+        return fig    
+
+    def observed_only(self):
+
+        y_axis                                             = 'dbdt_syn'
+        df_tmp                                             = self.dataframe.sort_values(['site_id', 'system_id',  self.settings.x_axis])
+        df_tmp['rhoa'] = self.to_rhoa(df_tmp['time'].values, df_tmp['dbdt'].values)
+        df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto']).astype(bool)
+        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
+        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
+        df_tmp.loc[df_tmp['site_id'] == -1, 'include']  = False
+
+        df_tmp['system_id']                                = df_tmp['system_id'].map({1: 'hm', 0: 'lm'})
+
+        error_ub,error_lb = 'error_ub', 'error_lb'
+        # if True:
+        #     error_ub = None
+        #     error_lb = None
+        
+        fig = px.scatter(
+            df_tmp,
+            x=self.settings.x_axis,
+            y='rhoa',
+            color_discrete_sequence=["gray", "gray"],
+            color="system_id",
+            title="Apparent Resistivity",
+            custom_data=["system_id", "data_id", "site_id"],
+            error_y=error_ub,
+            error_y_minus=error_lb
+        )
+
+        df_tmp.loc[df_tmp['site_id'] == -1, 'include'] = True
+        df_tmp.loc[(~df_tmp['include']), 'dbdt'] = np.nan
+
+
+        
+        fig2 = px.scatter(
+            df_tmp,
+            x=self.settings.x_axis,
+            y='rhoa',
+            color_discrete_sequence=["black", "black"],
+            color="system_id",
+            title="dbdt vs time by site_id",
+            # custom_data=["system_id", "data_id"],
+            error_y=error_ub,
+            error_y_minus=error_lb,
+        )
+
+        fig3 = px.line(
+            df_tmp,
+            x=self.settings.x_axis,
+            y='rhoa',
+            color="system_id",
+            color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
+            title="dbdt vs time by site_id",
+            custom_data=["system_id", "data_id", "site_id"],
+        )
+        
+        for trace in fig2.data:
+            fig.add_trace(trace)
+
+        for trace in fig3.data:
+            fig.add_trace(trace)
+
+
+
+        return fig  
 
 
 @nosj
