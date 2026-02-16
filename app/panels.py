@@ -797,7 +797,6 @@ class ModelSection(Panel):
 
         df_layers_long = df_layers_long.drop(columns=['depth_type'])
         df_layers_long['log_resistivity'] = np.log10(df_layers_long['resistivity'])
-        df_layers_long["below_doi"] = (df_layers_long["depth"] > df_layers_long["doi"])
 
         heatmap_df = df_layers_long.pivot_table(
             index='depth', columns=self.settings.x_axis, values='log_resistivity'
