@@ -33,7 +33,6 @@ def serve_help_docs(filename):
 
 
 import os
-import subprocess
 import requests
 import re
 import shutil
@@ -82,7 +81,7 @@ def build_data_summary():
     n_rows = int(len(df))
 
     summary_children = [
-        html.Div(f"Loaded sites: {n_sites}, rows: {n_rows}")
+        html.Div(f"Loaded sites: {n_sites}")
     ]
 
     return html.Div(summary_children)
@@ -115,6 +114,80 @@ def _sample_dem_at_points(lons, lats, dem_path):
         if src.nodata is not None:
             dem_vals = np.where(dem_vals == src.nodata, np.nan, dem_vals)
     return dem_vals
+
+
+def _export_kml_points(df, output_path):
+    if df is None or df.empty:
+        return "No data to export."
+
+    required = {'longitude', 'latitude'}
+    if not required.issubset(df.columns):
+        return "Missing longitude/latitude columns."
+
+    use_cols = ['longitude', 'latitude']
+    name_col = 'site_id' if 'site_id' in df.columns else None
+    elev_col = 'elevation' if 'elevation' in df.columns else None
+
+    df_points = df.copy()
+    df_points = df_points.dropna(subset=['longitude', 'latitude'])
+    if df_points.empty:
+        return "No valid lon/lat rows."
+
+    def _safe_text(value):
+        if value is None:
+            return ""
+        text = str(value)
+        return (text.replace("&", "&amp;")
+                    .replace("<", "&lt;")
+                    .replace(">", "&gt;")
+                    .replace('"', "&quot;")
+                    .replace("'", "&apos;"))
+
+    lines = [
+        "<?xml version=\"1.0\" encoding=\"UTF-8\"?>",
+        "<kml xmlns=\"http://www.opengis.net/kml/2.2\">",
+        "  <Document>",
+        "    <name>Sea Anemone Points</name>",
+    ]
+
+    for _, row in df_points.iterrows():
+        lon = row['longitude']
+        lat = row['latitude']
+        try:
+            lon_f = float(lon)
+            lat_f = float(lat)
+        except Exception:
+            continue
+
+        name = f"site_{row[name_col]}" if name_col else "site"
+        name = _safe_text(name)
+
+        desc_parts = []
+        if name_col:
+            desc_parts.append(f"site_id: {row[name_col]}")
+        if elev_col:
+            desc_parts.append(f"elevation: {row[elev_col]}")
+        desc = _safe_text("; ".join(desc_parts))
+
+        lines.extend([
+            "    <Placemark>",
+            f"      <name>{name}</name>",
+            f"      <description>{desc}</description>",
+            "      <Point>",
+            f"        <coordinates>{lon_f},{lat_f},0</coordinates>",
+            "      </Point>",
+            "    </Placemark>",
+        ])
+
+    lines.extend([
+        "  </Document>",
+        "</kml>",
+    ])
+
+    with open(output_path, 'w', encoding='utf-8') as f:
+        f.write("\n".join(lines))
+
+    return f"KML exported: {output_path}"
 
 
 def build_gps_dem_summary():
@@ -559,6 +632,16 @@ def save_session(n1):
 
     sesh.save(folder=sesh.save_dir)
     print(f'Session saved to {sesh.save_dir}')
+    kml_msg = None
+    try:
+        if sesh.data is not None:
+            kml_path = os.path.join(sesh.save_dir, 'sites_with_elevation.kml')
+            kml_msg = _export_kml_points(sesh.data, kml_path)
+    except Exception as exc:
+        kml_msg = f"KML export failed: {exc}"
+
+    if kml_msg:
+        return f"Session saved to {sesh.save_dir}. {kml_msg}"
     return f'Session saved to {sesh.save_dir}'
 
 @app.callback(
@@ -933,9 +1016,9 @@ def reset_polling(n):
 def upload_file(contents, current_process_clicks):
     if contents is None:
         raise PreventUpdate
+    warning_msg = None
     if sesh.save_dir is None:
-        msg = "Please select a working directory first."
-        return html.Div(msg), build_data_summary(), True, msg, m1.render(), dbdt1.render(), dbdt2.render(), True, True, no_update, no_update, no_update, no_update, no_update, {'display': 'none'}
+        warning_msg = "No working directory selected. You can still explore data; choose Save to set one."
     sesh.data            = TEMframe.from_zip_content(contents[0])
     sesh.data.history    = ['df_data = TEMframe.from_zip_content("uploaded_data_zip.txt")']
     sesh.data['include'] = sesh.data['inuse_manual'].astype(bool, copy=False).fillna(sesh.data['inuse_auto'])
@@ -965,7 +1048,11 @@ def upload_file(contents, current_process_clicks):
         pad = 0.01
         bbox_vals = (min_lon - pad, min_lat - pad, max_lon + pad, max_lat + pad)
 
-    return html.Div("File uploaded successfully."), summary, True, toast_msg, m1.render(), dbdt1.render(), dbdt2.render(), False, False, new_process_clicks, *bbox_vals, {'display': 'block'}#, t1.render()
+    upload_msg = "File uploaded successfully."
+    if warning_msg:
+        upload_msg = f"{upload_msg} {warning_msg}"
+
+    return html.Div(upload_msg), summary, True, toast_msg, m1.render(), dbdt1.render(), dbdt2.render(), False, False, new_process_clicks, *bbox_vals, {'display': 'block'}#, t1.render()
 
 
 @app.callback(
@@ -1123,90 +1210,6 @@ def download_dem(n_clicks, use_dem, source, api_key, min_lon, min_lat, max_lon, 
         sesh.dem_name = safe_name
 
         return html.Div(f"DEM downloaded: {safe_name}"), build_data_summary(), True
-    elif source == 'gmt':
-        gmt_res_map = {
-            'gmt_01s': '01s',
-            'gmt_15s': '15s',
-            'gmt_30s': '30s',
-            'gmt_01m': '01m',
-            'gmt_02m': '02m',
-            'gmt_05m': '05m',
-        }
-        gmt_res = gmt_res_map.get(resolution)
-        if not gmt_res:
-            return html.Div("Please choose a GMT resolution."), build_data_summary(), False
-
-        base_dir = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
-        dem_dir = os.path.join(base_dir, 'cache', 'dem')
-        os.makedirs(dem_dir, exist_ok=True)
-
-        safe_name = _sanitize_filename(f"earth_relief_{gmt_res}_{min_lat:.6f}_{min_lon:.6f}_{max_lat:.6f}_{max_lon:.6f}.tif")
-        dem_path = os.path.join(dem_dir, safe_name)
-        temp_grd = os.path.join(dem_dir, f"earth_relief_{gmt_res}_{min_lat}_{min_lon}_{max_lat}_{max_lon}.grd")
-        temp_xyz = os.path.join(dem_dir, f"earth_relief_{gmt_res}_{min_lat}_{min_lon}_{max_lat}_{max_lon}.xyz")
-
-        region = f"{min_lon}/{max_lon}/{min_lat}/{max_lat}"
-        try:
-            cmd = ["gmt", "grdcut", f"@earth_relief_{gmt_res}", f"-R{region}", f"-G{temp_grd}"]
-            subprocess.run(cmd, capture_output=True, text=True, check=True)
-
-            with open(temp_xyz, 'w') as f:
-                subprocess.run(["gmt", "grd2xyz", temp_grd], stdout=f, stderr=subprocess.PIPE, text=True, check=True)
-
-            xyz = np.loadtxt(temp_xyz)
-            if xyz.size == 0:
-                return html.Div("GMT download failed: empty grid."), build_data_summary(), False
-            if xyz.ndim == 1:
-                xyz = xyz.reshape(1, -1)
-
-            df_xyz = pd.DataFrame(xyz, columns=['x', 'y', 'z'])
-            grid = df_xyz.pivot(index='y', columns='x', values='z').sort_index(ascending=False)
-            xs = grid.columns.to_numpy()
-            ys = grid.index.to_numpy()
-
-            if len(xs) < 2 or len(ys) < 2:
-                return html.Div("GMT download failed: grid too small."), build_data_summary(), False
-
-            xres = float(xs[1] - xs[0])
-            yres = float(ys[1] - ys[0])
-
-            from rasterio.transform import from_origin
-            import rasterio
-
-            transform = from_origin(float(xs.min()), float(ys.max()), xres, yres)
-            data = grid.to_numpy().astype('float32')
-
-            with rasterio.open(
-                dem_path,
-                'w',
-                driver='GTiff',
-                height=data.shape[0],
-                width=data.shape[1],
-                count=1,
-                dtype='float32',
-                crs='EPSG:4326',
-                transform=transform,
-            ) as dst:
-                dst.write(data, 1)
-        except FileNotFoundError:
-            return html.Div("GMT not found. Please install GMT or choose another source."), build_data_summary(), False
-        except subprocess.CalledProcessError as exc:
-            err = (exc.stderr or exc.stdout or "GMT grdcut/grd2xyz failed").strip()
-            return html.Div(f"GMT download failed: {err}"), build_data_summary(), False
-        except Exception as exc:
-            return html.Div(f"GMT conversion failed: {exc}"), build_data_summary(), False
-        finally:
-            for path in (temp_grd, temp_xyz):
-                try:
-                    if os.path.exists(path):
-                        os.remove(path)
-                except Exception:
-                    pass
-
-        sesh.dem_path = dem_path
-        sesh.dem_name = safe_name
-
-        return html.Div(f"DEM downloaded: {safe_name}"), build_data_summary(), True
     else:
         return html.Div("Unknown DEM source."), build_data_summary(), False
 
@@ -1273,6 +1276,7 @@ def save_dem(n_clicks, dem_downloaded, use_dem):
     if not sesh.dem_path or not os.path.exists(sesh.dem_path):
         return html.Div("No DEM file found to save.")
     filename = sesh.dem_name or os.path.basename(sesh.dem_path)
+    filename = os.path.splitext(filename)[0]
 
     _configure_tk_dpi_awareness()
     root = Tk()
@@ -1283,9 +1287,7 @@ def save_dem(n_clicks, dem_downloaded, use_dem):
     root.update()
     save_path = filedialog.asksaveasfilename(
         title="Save DEM",
-        defaultextension=".tif",
         initialfile=filename,
-        filetypes=[("GeoTIFF", "*.tif;*.tiff"), ("All files", "*.*")],
         parent=root
     )
     root.destroy()
@@ -1294,11 +1296,42 @@ def save_dem(n_clicks, dem_downloaded, use_dem):
         raise PreventUpdate
 
     try:
-        shutil.copy2(sesh.dem_path, save_path)
+        save_path_effective = save_path
+        valid_exts = {".tif", ".tiff", ".asc", ".bil", ".dem", ".xyz"}
+        ext = os.path.splitext(save_path_effective)[1].lower()
+        if ext not in valid_exts:
+            save_path_effective = save_path_effective + ".tif"
+        shutil.copy2(sesh.dem_path, save_path_effective)
     except Exception as exc:
         return html.Div(f"DEM save failed: {exc}")
 
-    return html.Div(f"DEM saved to: {save_path}")
+    kml_msg = None
+    kml_path = None
+    try:
+        if sesh.data is not None:
+            kml_path = os.path.splitext(save_path_effective)[0] + ".kml"
+            kml_msg = _export_kml_points(sesh.data, kml_path)
+    except Exception as exc:
+        kml_msg = f"KML export failed: {exc}"
+
+    if kml_path and kml_msg and not kml_msg.startswith("KML export failed"):
+        return html.Div([
+            html.Div("DEM(tiff) and KML exported:"),
+            html.Ul([
+                html.Li(save_path_effective),
+                html.Li(kml_path),
+            ])
+        ])
+    if kml_msg:
+        return html.Div([
+            html.Div("DEM saved:"),
+            html.Ul([html.Li(save_path_effective)]),
+            html.Div(kml_msg)
+        ])
+    return html.Div([
+        html.Div("DEM saved:"),
+        html.Ul([html.Li(save_path_effective)])
+    ])
 
 
 @app.callback(
@@ -1564,14 +1597,6 @@ def toggle_dem_inputs(source, current_value):
             {'label': 'ETOPO2022 30 arc-second (surface, global)', 'value': 'etopo_30s'},
             {'label': 'ETOPO2022 60 arc-second (surface, global)', 'value': 'etopo_60s'},
         ],
-        'gmt': [
-            {'label': 'GMT 1 arc-second (global)', 'value': 'gmt_01s'},
-            {'label': 'GMT 15 arc-second (global)', 'value': 'gmt_15s'},
-            {'label': 'GMT 30 arc-second (global)', 'value': 'gmt_30s'},
-            {'label': 'GMT 1 arc-minute (global)', 'value': 'gmt_01m'},
-            {'label': 'GMT 2 arc-minute (global)', 'value': 'gmt_02m'},
-            {'label': 'GMT 5 arc-minute (global)', 'value': 'gmt_05m'},
-        ],
     }
 
     options = resolution_options_map.get(source, [])
@@ -1805,7 +1830,8 @@ def run_python_code(n_clicks, code):
 
 if __name__ == "__main__":
     try:
-        app.run(port=8050, debug=True, use_reloader=True)
+        is_frozen = getattr(sys, "frozen", False)
+        app.run(port=8050, debug=not is_frozen, use_reloader=not is_frozen)
     except Exception as e:
         print(f"Error running app: {e}")
 # finally:

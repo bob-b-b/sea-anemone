@@ -589,7 +589,6 @@ class Upload(Panel):
                                                     id='dem-source',
                                                     options=[
                                                         {'label': 'OpenTopography (global)', 'value': 'opentopo'},
-                                                        {'label': 'GMT Earth Relief (global, no key, requires GMT)', 'value': 'gmt'},
                                                         {'label': 'NCEI ETOPO 2022 (global GeoTIFF)', 'value': 'etopo'},
                                                     ],
                                                     value='opentopo',
@@ -665,14 +664,8 @@ class Upload(Panel):
                                                         {'label': 'Global ALOS (~30 m)', 'value': 'opentopo_alos'},
                                                         {'label': 'ETOPO2022 30 arc-second (surface, global)', 'value': 'etopo_30s'},
                                                         {'label': 'ETOPO2022 60 arc-second (surface, global)', 'value': 'etopo_60s'},
-                                                        {'label': 'GMT 1 arc-second (global)', 'value': 'gmt_01s'},
-                                                        {'label': 'GMT 15 arc-second (global)', 'value': 'gmt_15s'},
-                                                        {'label': 'GMT 30 arc-second (global)', 'value': 'gmt_30s'},
-                                                        {'label': 'GMT 1 arc-minute (global)', 'value': 'gmt_01m'},
-                                                        {'label': 'GMT 2 arc-minute (global)', 'value': 'gmt_02m'},
-                                                        {'label': 'GMT 5 arc-minute (global)', 'value': 'gmt_05m'},
                                                     ],
-                                                    value='gmt_01s',
+                                                    value='opentopo_cop30',
                                                     clearable=False,
                                                 )
                                             ], style={'width': '60%'}),
@@ -684,7 +677,7 @@ class Upload(Panel):
                                                     style={'flex': '1', 'height': '42px'}
                                                 ),
                                                 dbc.Button(
-                                                    'Save DEM',
+                                                    'Save DEM + KML',
                                                     id='save-dem',
                                                     color='secondary',
                                                     outline=True,
