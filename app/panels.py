@@ -114,7 +114,7 @@ class Map(Panel):
 @nosj
 class dbdtSoundingSettings(PanelSettings):
     lm_color: str = '#ff0000'
-    hm_color: str = '#0000ff'
+    hm_color: str = '#2D81FF'
     lm_factor: float = 20.0
     hm_factor: float = 1.0
     plot_error: bool = False
