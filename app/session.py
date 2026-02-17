@@ -22,6 +22,7 @@ import pandas as pd
 class Session:
     data:   TEMframe  = None
     models: DataFrame = None
+    site:   DataFrame = None
     forwards: List[Forward] = None
     settings: SessionSettings = None
     save_dir: str = None
@@ -43,6 +44,9 @@ class Session:
         if other.models is not None:
             other.models.to_csv(folder+'models.csv', index=False)
             other.models = 'models.csv'
+        if other.site is not None:
+            other.site.to_csv(folder+'site.csv', index=False)
+            other.site = 'site.csv'                        
 
         if other.forwards is not None:
             for i in range(len(other.forwards)):
@@ -57,20 +61,24 @@ class Session:
             f.write(res)        
 
     def load_dataframes(self):
-        #print
-        if self.data is not None and isinstance(self.data, str):
-            self.data = TEMframe.from_pandas(pd.read_csv(self.save_dir+self.data))
-        if self.models is not None and isinstance(self.models, str):
-            self.models = pd.read_csv(self.save_dir+self.models)
+        fwd_list = []
         if self.forwards is not None and isinstance(self.forwards, list):
-            fwd_list = []
             for fwd_path in self.forwards:
                 fwd = Forward.load(self.save_dir+fwd_path).logify()
                 fwd_list.append(fwd)
+
+        if self.data is not None and isinstance(self.data, str):
+            self.data = TEMframe.from_pandas(pd.read_csv(self.save_dir+self.data), forward_operators=fwd_list)
             self.forwards = fwd_list
             self.data.forward_operators = fwd_list
             self.data.dmfwr = self.forwards[0]+self.forwards[1]
             self.data.dmfwr = self.data.dmfwr.logify()
+        if self.models is not None and isinstance(self.models, str):
+            self.models = pd.read_csv(self.save_dir+self.models)
+        if self.site is not None and isinstance(self.site, str):
+            self.site = pd.read_csv(self.save_dir+self.site)
+        else:
+            self.site = self.data.overview()
 
     @classmethod
     def from_folder(cls, folder):
