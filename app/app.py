@@ -347,19 +347,22 @@ def save_session(n1):
 @app.callback(
     [
         Output("output-click", "children", allow_duplicate=True),
+        Output("selected-site-id", "data", allow_duplicate=True),
         Output('map', 'figure', allow_duplicate=True),
         Output('model_graph', 'figure', allow_duplicate=True),
         Output('sounding', 'figure', allow_duplicate=True),
         Output('multi_inv', 'figure', allow_duplicate=True),
         Output('model_section', 'figure', allow_duplicate=True),
+        Output('tTEM', 'figure', allow_duplicate=True),
     ],
     Input('highlight_prev', 'n_clicks'),
     Input('highlight_next', 'n_clicks'),
     State('invert_layout',  'color'),
+    State('flex-layout', 'model'),
     prevent_initial_call=True,
     allow_duplicate=True
 )
-def highlight_change(n1, n2, invert_layout_color):
+def highlight_change(n1, n2, invert_layout_color,model):
     # ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
@@ -379,13 +382,36 @@ def highlight_change(n1, n2, invert_layout_color):
     m1.highlighted = highlighted
     mod1.highlighted = highlighted
     mod2.highlighted = highlighted
+    dbdt2.highlighted = highlighted
     dbdt1.dataframe = df_data[df_data['site_id'] == highlighted]
     print('invert layout color:', invert_layout_color)
-    if invert_layout_color == 'primary':
-        print('will launch an inversion next time')
+    def get_active_tab_id(model):
+        if model is None:
+            return None
+
+        def search(node):
+            if node.get("type") == "tabset":
+                return node.get("selected")
+            for child in node.get("children", []):
+                result = search(child)
+                if result:
+                    return result
+            return None
+
+        return search(model.get("layout", {}))
+
+    active_tab = get_active_tab_id(model)
+    # print()
+    # if active_tab == 1:
+        # Sing_inv.invert_single_site(df_data[df_data['site_id'] == highlighted])
+        # print('here?')
+    # if invert_layout_color == 'primary':
+    #     print('will launch an inversion next time')
+        
+    
     
 
-    return ctx.triggered_id, m1.render(), mod1.render(), dbdt1.render(), Multi_inv.render(), mod2.render()
+    return ctx.triggered_id, highlighted, m1.render(), mod1.render(), dbdt1.render(), Multi_inv.render(), mod2.render(), dbdt2.render()
 
 
 
@@ -423,6 +449,7 @@ def highlight_change(n1, n2, invert_layout_color):
     Output('model_graph', 'figure', allow_duplicate=True),
     Output('sounding', 'figure', allow_duplicate=True),
     Output('model_section', 'figure', allow_duplicate=True),
+    Output('tTEM', 'figure', allow_duplicate=True),
         #Output('table_overview', 'figure', allow_duplicate=True)
     #Output('starting_model', 'figure', allow_duplicate=True),
     [
@@ -457,6 +484,7 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color):
     m1.highlighted = site_id
     mod1.highlighted = site_id
     mod2.highlighted = site_id
+    dbdt2.highlighted = site_id
     dbdt1.dataframe = df_data[df_data['site_id'] == site_id]
     # if invert_layout_color == 'primary':
     #     # df_layers, df_site, _ = df_data.invert_site(site_id)
@@ -464,7 +492,7 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color):
     #     #     df_layers = pd.concat([mod1.dataframe[df_data['site_id'] != site_id], df_layers], ignore_index=True)
     #     mod1.dataframe = df_layers
     #     dbdt1.dataframe = df_site
-    return m1.render(), mod1.render(), dbdt1.render(), mod2.render()
+    return m1.render(), mod1.render(), dbdt1.render(), mod2.render(), dbdt2.render()
 
 # @app.callback(
 #     Output("starting-model", "data"),

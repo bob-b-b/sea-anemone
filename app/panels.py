@@ -446,8 +446,10 @@ class dbdtSectionSettings(PanelSettings):
     y_axis: str = 'dbdt_syn'
     plot_disabled: bool = True
 
+
 class dbdtSection(Panel):
     dataframe = None
+    highlighted: int = None
 
     def __init__(self, **kwargs):
         settings = kwargs.pop('settings', dbdtSectionSettings(id='tTEM'))
@@ -603,6 +605,27 @@ class dbdtSection(Panel):
         else:
             fig = self.observed_only()
 
+        if self.highlighted is not None and self.dataframe is not None:
+            # Get x coordinate of selected site
+            selected_df = self.dataframe[self.dataframe["site_id"] == self.highlighted]
+            if not selected_df.empty:
+
+                x_value = selected_df[self.settings.x_axis].iloc[0]
+
+                # Width of highlight box
+                dx = 0.5  # adjust depending on spacing
+
+                fig.add_shape(
+                    type="rect",
+                    x0=x_value - dx,
+                    x1=x_value + dx,
+                    y0=selected_df["dbdt"].min()*0.5,
+                    y1=selected_df["dbdt"].max()*25,
+                    line=dict(color="rgba(0,0,0,0.8)", width=1.5),
+                    fillcolor="rgba(0,0,0,0.0)",
+                    # hoverinfo="skip",
+                    layer="above"
+                )
         fig.update_layout(
             yaxis_type="log",
             xaxis_title=self.settings.x_axis,
@@ -861,7 +884,6 @@ class ModelSection(Panel):
 
         df_layers_long = df_layers_long.drop(columns=['depth_type'])
         df_layers_long['log_resistivity'] = np.log10(df_layers_long['resistivity'])
-        df_layers_long["below_doi"] = (df_layers_long["depth"] > df_layers_long["doi"])
 
         heatmap_df = df_layers_long.pivot_table(
             index='depth', columns=self.settings.x_axis, values='log_resistivity'
@@ -899,6 +921,12 @@ class ModelSection(Panel):
         fig.update_layout(hovermode="x")
         fig.update_yaxes(autorange="reversed")
         fig.update_layout(yaxis2=dict(title='Misfit',overlaying='y',side='right',showgrid=False))
+
+        x = df_layers_long[self.settings.x_axis]
+        y = df_layers_long['misfit']
+        y_dashed = y.copy()
+        y_dashed[y <= 8] = np.nan
+        y_dashed[y > 8] = 7.95
         misfit_trace = px.line(
             df_layers_long,
             x=self.settings.x_axis,
@@ -911,6 +939,16 @@ class ModelSection(Panel):
             name='Misfit',showlegend=True
         )
         fig.update_layout(yaxis2=dict(range=[0, 8]))
+        fig.add_trace(go.Scatter(
+            x=x,
+            y=y_dashed,
+            mode="lines",
+            line=dict(color="rgb(0,0,0,0.7)", dash="dash"),
+            # hoverinfo="skip",
+            showlegend=False, yaxis='y2'
+        ))
+
+
 
         fig.add_trace(misfit_trace)
 
@@ -944,7 +982,7 @@ class ModelSection(Panel):
                 fill="toself",
                 fillcolor="rgba(255,255,255,0.6)",
                 line=dict(width=0),
-                hoverinfo="skip",
+                # hoverinfo="skip",
                 name="Below DOI",
             )
         )
@@ -969,6 +1007,7 @@ class ModelSection(Panel):
                     y1=df_layers_long["depth"].max()+20,
                     line=dict(color="rgba(0,0,0,0.5)", width=1.5),
                     fillcolor="rgba(0,0,0,0.0)",
+                    # hoverinfo="skip",
                     layer="above"
                 )
         fig.update_yaxes(

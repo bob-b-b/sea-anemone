@@ -24,13 +24,12 @@ class MultiInversion(Panel):
     dbdt = None
     def __init__(self, dataframe,rho=10., **kwargs):
         self.starting_rho = rho
+        self.title = "Spatially Constrained Inversion"
         settings = MultiInversionSettings(id='multi_inv', **kwargs)
         super().__init__(id='multi_inv', settings=settings)
         self.dataframe = dataframe
     def render_init(self):
         COMMON_LAYOUT = dict(
-            width=1000,
-            height=850,
             margin=dict(l=60, r=40, t=90, b=45),
         )
         # self.dataframe = self.dataframe.reset_index(drop=True)
@@ -79,8 +78,7 @@ class MultiInversion(Panel):
                     .median()
             )
             site_with_median_dbdt = (site_medians - global_median).abs().idxmin()
-            print(depth)
-            print(rho)
+
             d_err = sesh.data[sesh.data['site_id']==site_with_median_dbdt].error.dropna().values
             d_obs = sesh.data[sesh.data['site_id']==site_with_median_dbdt].dbdt.dropna().values
             dbdt = sesh.data.dmfwr(rho,depth).exp()
@@ -105,7 +103,7 @@ class MultiInversion(Panel):
         fig.update_yaxes(title_text='dB/dt [V / m²]',type = 'log',range = [-12, -5],showline=True,mirror=True,row=1,col=2        )
 
         fig.update_layout(
-            title = "Spatially Constrained Inversion",
+            title = self.title,
             showlegend=False,
             modebar=dict(
                 remove=['toImage', 'zoom', 'zoomIn', 'zoomOut', 'pan', 'select']
@@ -125,7 +123,8 @@ class MultiInversion(Panel):
 
         elif len(self.misfit) == 0:
             fig = go.Figure()
-            fig.update_layout(title='Inversion',xaxis_title='Iterations',yaxis_title='Misfit',xaxis_type='linear',yaxis_type='log',yaxis=dict(range=[-1,2]), 
+            self.title = "Inversion in progress"
+            fig.update_layout(title=self.title,xaxis_title='Iterations',yaxis_title='Misfit',xaxis_type='linear',yaxis_type='log',yaxis=dict(range=[-1,2]), 
             xaxis=dict(range=[-0.1,3+len(self.misfit)]),showlegend=True)
             fig.update_xaxes(showline=True, mirror=True)
             fig.update_yaxes(showline=True, mirror=True)
@@ -151,7 +150,7 @@ class MultiInversion(Panel):
 
             fig.update_traces(name="Total misfit", showlegend=True)
 
-            fig.update_layout(title='Inversion',xaxis_title='Iterations',yaxis_title='Misfit',xaxis_type='linear',yaxis_type='log',yaxis=dict(range=[-1,2]),
+            fig.update_layout(title=self.title,xaxis_title='Iterations',yaxis_title='Misfit',xaxis_type='linear',yaxis_type='log',yaxis=dict(range=[-1,2]),
             xaxis=dict(range=[-0.1,3+len(self.misfit)]),  showlegend=True            )
             fig.update_xaxes(showline=True, mirror=True)
             fig.update_yaxes(showline=True, mirror=True)
@@ -274,7 +273,9 @@ class MultiInversion(Panel):
 
         
         @app.callback(
-                Output('review_layout', 'disabled', allow_duplicate=True),
+                [Output('review_layout', 'disabled', allow_duplicate=True),
+                Output("multi_inv", "figure", allow_duplicate=True),
+                Output("review_layout","color", allow_duplicate=True),],
             Input('invert_all_button', 'n_clicks'),
             State('review_layout', 'n_clicks'),  # Add this state to get current value
             State("vc-level", "data"),
@@ -316,9 +317,10 @@ class MultiInversion(Panel):
                 res_start                        = LogResistivity.smooth(rho,z) 
                 # print(TABLES['data'])
                 sesh.models, sesh.data = sesh.data.invert(res_start,vc = Vert, hc = Horz)
+                self.title = "Inversion Finished!!!"
                 new_review_clicks = (current_review_clicks or 0) + 1
                 # layouts.invert = layouts.invert_multi_first
-                return False#,new_review_clicks,  0mod2.render(), dbdt1.render(), 
+                return False, self.render(), "success" #,new_review_clicks,  0mod2.render(), dbdt1.render(), 
             raise PreventUpdate
         
         @app.callback(
@@ -441,8 +443,6 @@ class Single_site(Panel):
 
     def render(self, curves=None):
         COMMON_LAYOUT = dict(
-            width=1000,
-            height=850,
             margin=dict(l=60, r=40, t=90, b=45),
         )
         if curves is None:
@@ -502,7 +502,8 @@ class Single_site(Panel):
             fig.add_trace(go.Scatter(x=[1e-6, 1e-2],y=[1e-10, 1e-3],mode="markers",marker=dict(opacity=0),showlegend=False),row=1,col=2            )
             fig.update_layout(
                 **COMMON_LAYOUT,
-                title='Select constraints and interact with map',
+                # title='Select constraints and interact with map',
+                uirevision="single_site",
                 showlegend=False
             )
             if sesh.data is None:
@@ -518,8 +519,7 @@ class Single_site(Panel):
                         .median()
                 )
                 site_with_median_dbdt = (site_medians - global_median).abs().idxmin()
-                # print(depth)
-                # print(rho)
+
                 d_err = sesh.data[sesh.data['site_id']==site_with_median_dbdt].error.dropna().values
                 d_obs = sesh.data[sesh.data['site_id']==site_with_median_dbdt].dbdt.dropna().values
                 dbdt = sesh.data.dmfwr(rho,depth).exp()
@@ -616,9 +616,8 @@ class Single_site(Panel):
     def initialize(self):
         init = html.Div([dbc.Container([dcc.Store(id="vc-single-levels", data=["medium"]),
                 dbc.Row([
-                    dbc.Col(
-                        dcc.Graph(figure=self.render(), id=self.id, mathjax=True, 
-                                    config=dict(edits={'shapePosition':True}, displayModeBar=False)),
+                    dbc.Col([html.Div("Select constraints and interact with map",id="single-inv-status",style={"fontWeight": "bold", "textAlign": "center", "fontSize": "20px"}),
+                        dcc.Graph(figure=self.render(),id=self.id,mathjax=True,config=dict(edits={'shapePosition':True}, displayModeBar=False, responsive=True),style={"height": "100%","width": "100%"}),],
                             width=10),
                     dbc.Col([html.Div(
                             "Vertical constraints", style={"fontWeight": "bold", 'textAlign':'center'}),
@@ -630,7 +629,8 @@ class Single_site(Panel):
                              dbc.Button("Tight", id='vc_sing_tight_button',color='secondary', outline=True, style={'width':'100%'}),
                              html.Div(style={'height':'30px'}), 
                              html.Div(style={'height':'10px'}),
-                             dbc.Button("Starting model",id="reset_single_model_button",color="secondary",style={"width": "100%"})], width=2),
+                             dbc.Button("Starting model",id="reset_single_model_button",color="secondary",style={"width": "100%"}),
+                             ], width=2),
                              dbc.Tooltip('The sounding panel shows the selected data', target='invert_selected_button')
                 ], style={'height':'100%'})], style={'height':'95%', 'padding':'25px'}),
                  gear_maker(self.id)], style={'height': '100%', 'overflow': 'hidden'},
@@ -718,21 +718,33 @@ class Single_site(Panel):
             Output("inv-single", "figure", allow_duplicate=True),
             # Output("map", "figure", allow_duplicate=True),
             Input("map", "clickData"),
+            Input("selected-site-id", "data"),
             State("vc-single-levels", "data"),
             State("starting-model", "data"),
             State("invert_layout", "color"),
             running=[(Output("vc_sing_loose_button", "disabled"), True, False),
             (Output("vc_sing_medium_button", "disabled"), True, False), 
             (Output("vc_sing_tight_button", "disabled"), True, False),
-            (Output('reset_single_model_button', "disabled"), True, False)],
+            (Output('reset_single_model_button', "disabled"), True, False),
+            (Output("single-inv-status", "children"), "Inversion running", "Select constraints and interact with map       ")],
             prevent_initial_call=True
         )
-        def invert_single_site(click_data, vc_levels, starting_model, layout):
+        def invert_single_site(click_data, selected_site_id, vc_levels, starting_model, layout):
             if not click_data or 'points' not in click_data or not layout=='primary':
                 raise PreventUpdate
             from __main__ import sesh
             from torch import tensor
-            site_id = int(click_data['points'][0]['pointNumber'])
+            if not ctx.triggered:
+                raise PreventUpdate
+            trigger = ctx.triggered_id
+            if trigger == "map" and click_data and "points" in click_data:
+                site_id = int(click_data['points'][0]['pointNumber'])
+            elif trigger == "selected-site-id":
+                site_id = selected_site_id
+            else:
+                raise PreventUpdate
+            if site_id is None:
+                raise PreventUpdate
             curves = []
             print('starting model:', starting_model["rho"])
             rho = tensor(starting_model["rho"]).repeat(len(starting_model["depth"]))
@@ -743,7 +755,6 @@ class Single_site(Panel):
                 Vert = {"loose": 1.0, "medium": 0.5, "tight": 0.1}[vc]
                 res_start = LogResistivity.smooth(rho, z)
                 df_layers, df_site, _ = sesh.data.invert_site(site_id=site_id,res_start=res_start,vc=Vert)
-
                 curves.append((vc, df_layers['resistivity'].values, df_layers['bottom_depth'].values,df_layers['misfit'].values[-1],df_layers, df_site['dbdt'].values, df_site['dbdt_syn'].values, df_site['time'].values, df_site['error'].values,df_site['include'].values, df_layers['doi'].values))
 
             return self.render(curves)
