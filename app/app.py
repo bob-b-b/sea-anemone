@@ -70,8 +70,39 @@ x = html.Div([
               dbc.Button("enable  [ctrl+e]", id='enableButton'),
             ]),
             dbc.ButtonGroup([
-              dbc.Button("previous [<-]", id='highlight_prev'),
-              dbc.Button("next [->]", id='highlight_next'),
+                dbc.Button("Previous buffer [<<-]", id='prev-buffer', style={"marginRight": "6px"}),
+                dbc.Button("Previous [<-]", id='highlight_prev', style={"marginRight": "6px"}),
+                dbc.Button("Next [->]", id='highlight_next', style={"marginRight": "6px"}),
+                dbc.Button("Next buffer [->>]", id='next-buffer', style={"marginRight": "12px"}),
+                html.Div(
+                    [
+                        html.Small(
+                            "Buffer length:",
+                            style={
+                                "marginLeft": "12px",
+                                "marginRight": "6px",
+                                "color": "#555",
+                                "fontSize": "12px",
+                            }
+                        ),
+                        dcc.Input(
+                            id='buffer-length-input',
+                            type='number',
+                            min=1,
+                            step=1,
+                            value=50,
+                            style={
+                                "width": "70px",
+                                "height": "32px",
+                                "fontSize": "13px"
+                            }
+                        ),
+                    ],
+                    style={
+                        "display": "flex",
+                        "alignItems": "center",
+                    }
+                )
             ]),
             dbc.ButtonGroup([
                 dbc.Button("save [ctrl+s]", id='saveButton'),
@@ -111,6 +142,7 @@ app.layout = html.Div([
     dcc.Store(id="selected-site-id", data=None),
     dcc.Store(id="starting-model", data={"rho": 10.0,"depth": np.cumsum(np.logspace(0, 1.3, 31)).tolist()}),
     dcc.Store(id='starting-model-selected',data=[]),
+    dcc.Store(id='data-buffer',data={"length": 50, "start_site":0}),
     html.Div([
         dbc.ButtonGroup([
             dbc.Button("1. Load Data",  id="upload_layout",    color="primary"),
@@ -302,6 +334,97 @@ def show_value(n1, n2, ttem_selected, sounding_selected):
     dbdt1.dataframe = df_data[df_data['site_id'].isin(dbdt1.dataframe['site_id'].unique())]
     dbdt2.dataframe = df_data[df_data['site_id'].isin(dbdt2.dataframe['site_id'].unique())]
     return ctx.triggered_id, dbdt2.render(), dbdt1.render()
+
+@app.callback(
+    Output('data-buffer', 'data'),
+    Input('next-buffer', 'n_clicks'),
+    Input('prev-buffer', 'n_clicks'),
+    State('data-buffer', 'data'),
+    prevent_initial_call=True
+)
+def update_buffer(next_clicks, prev_clicks, buffer_data):
+    if not ctx.triggered:
+        raise PreventUpdate
+
+    trigger = ctx.triggered_id
+
+    length = buffer_data["length"]
+    start  = buffer_data["start_site"]
+
+    # Get total number of sites from models (safer than tTEM)
+    if dbdt2.dataframe is None:
+        raise PreventUpdate
+
+    unique_sites = np.sort(dbdt2.dataframe['site_id'].unique())
+    n_sites = len(unique_sites)
+
+    if trigger == "next-buffer":
+        start += length
+    elif trigger == "prev-buffer":
+        start -= length
+
+    # Clamp safely
+    start = max(0, min(start, max(0, n_sites - length)))
+
+    buffer_data["start_site"] = start
+    return buffer_data
+
+@app.callback(
+    Output('model_section', 'figure', allow_duplicate=True),
+    Output('tTEM', 'figure', allow_duplicate=True),
+    Output('sounding', 'figure', allow_duplicate=True),
+    Output('map', 'figure', allow_duplicate=True),
+    Input('data-buffer', 'data'),
+    prevent_initial_call=True,
+    allow_duplicate=True
+)
+def update_model_section_from_buffer(buffer_data):
+    start  = buffer_data["start_site"]
+    length = buffer_data["length"]
+
+    # Update model section buffer
+    mod2.buffer_start = start
+    mod2.buffer_len   = length
+
+    # Update tTEM buffer
+    dbdt2.buffer_start = start
+    dbdt2.buffer_len   = length
+
+    # Determine visible site IDs from models (authoritative source)
+
+    visible_sites = np.sort(dbdt2.dataframe['site_id'].unique())
+    visible_sites = visible_sites[start:start+length]
+
+    # ---- Update dbdt1 (Sounding panel) ----
+    df_data = sesh.data
+    dbdt1.dataframe = df_data[df_data['site_id'].isin(visible_sites)]
+
+    # ---- Update Map buffer indicator ----
+    m1.buffer_sites = visible_sites
+
+    if mod2.dataframe is None:
+        return mod2.empty_render(), dbdt2.render(), dbdt1.render(), m1.render()
+    else:
+        return mod2.render(), dbdt2.render(), dbdt1.render(), m1.render()
+
+
+@app.callback(
+    Output('data-buffer', 'data', allow_duplicate=True),
+    Input('buffer-length-input', 'value'),
+    State('data-buffer', 'data'),
+    prevent_initial_call=True,
+    allow_duplicate=True
+)
+def update_buffer_length(new_length, buffer_data):
+    if new_length is None or new_length <= 0:
+        raise PreventUpdate
+
+    buffer_data["length"] = int(new_length)
+
+    # reset start if necessary to avoid overflow
+    buffer_data["start_site"] = max(0, buffer_data["start_site"])
+
+    return buffer_data
 
 @app.callback(
     Output("model_section", "figure", allow_duplicate=True),
@@ -636,7 +759,13 @@ def upload_file(contents, current_process_clicks):
     dbdt2.dataframe = sesh.data.copy()
     Multi_inv.dataframe = sesh.data.copy()
     Sing_inv.dataframe = sesh.data.copy()
-    m1.dataframe    = sesh.overview
+    # m1.dataframe    = sesh.overview
+    m1.dataframe = sesh.data.copy()
+    buffer_length = 50
+    unique_sites = np.sort(sesh.data['site_id'].unique())
+    initial_sites = unique_sites[:buffer_length]
+
+    m1.buffer_sites = initial_sites.tolist()
     mod1.dataframe  = sesh.models
     mod2.dataframe  = sesh.models
     # t1.dataframe = TABLES['overview'].copy()

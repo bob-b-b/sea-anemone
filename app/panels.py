@@ -49,12 +49,14 @@ class MapSettings(PanelSettings):
     zoom: int = 14
     color: str = '#ff0000'
     highlight_color: str= '#ffff00'  # Default highlight color
+    buffer_color: str= '#0000ff'  # Default buffer color
 
 
 
 class Map(Panel):
     dataframe: None
     highlighted: int = None
+    buffer_sites: list = None
 
     def __init__(self, data, **kwargs):
         settings = MapSettings(id='map', **kwargs)
@@ -65,6 +67,25 @@ class Map(Panel):
         if self.dataframe is None: return self.empty_render()
 
         fig = px.scatter_map(self.dataframe, lat="latitude", lon="longitude", zoom=self.settings.zoom, color_discrete_sequence=[self.settings.color])
+        if self.buffer_sites is not None and len(self.buffer_sites) > 0 and self.dataframe is not None:
+            df_buffer = self.dataframe[self.dataframe["site_id"].isin(self.buffer_sites)]
+
+            if not df_buffer.empty:
+                buffer_trace = px.scatter_map(
+                    df_buffer,
+                    lat="latitude",
+                    lon="longitude",
+                    # color_discrete_sequence=["#00cc96"],  # soft green
+                )
+
+                buffer_trace.update_traces(
+                    marker=dict(size=12, color=self.settings.buffer_color),
+                    name="Buffer window"
+                )
+
+                for trace in buffer_trace.data:
+                    fig.add_trace(trace)
+
         fig.update_layout(map_style="white-bg",
             map_layers=[
                 {
@@ -363,6 +384,8 @@ class dbdtSectionSettings(PanelSettings):
 class dbdtSection(Panel):
     dataframe = None
     highlighted: int = None
+    buffer_start: int = 0
+    buffer_len: int = 50
 
     def __init__(self, **kwargs):
         settings = kwargs.pop('settings', dbdtSectionSettings(id='tTEM'))
@@ -383,10 +406,31 @@ class dbdtSection(Panel):
         df_tmp.loc[df_tmp['site_id'] ==  -1, 'include']  = False
         df_tmp['system_id']                                = df_tmp['system_id'].map({0: 'hm', 1: 'lm'})
 
-        x_axis = df_tmp[self.settings.x_axis].unique()#.values
+        # x_axis = df_tmp[self.settings.x_axis].unique()#.values
+        # if self.settings.x_axis == 'site_id':
+        #     x_axis = x_axis[x_axis>-1]
+        # xmin,xmax = np.nanmin(x_axis), np.nanmax(x_axis)
+
+        x_vals = np.sort(df_tmp[self.settings.x_axis].unique())
+
         if self.settings.x_axis == 'site_id':
-            x_axis = x_axis[x_axis>-1]
-        xmin,xmax = np.nanmin(x_axis), np.nanmax(x_axis)
+            x_vals = x_vals[x_vals > -1]
+
+        n_sites = len(x_vals)
+
+        plot_start = max(0, self.buffer_start)
+        plot_end   = min(n_sites, self.buffer_start + self.buffer_len)
+
+        x_slice = x_vals[plot_start:plot_end]
+
+        if len(x_slice) > 0:
+            xmin = x_slice.min()
+            xmax = x_slice.max()
+        else:
+            xmin = x_vals.min()
+            xmax = x_vals.max()
+
+        dx = xmax - xmin
 
         error_ub,error_lb = 'error_ub', 'error_lb'
         if True:
@@ -439,7 +483,7 @@ class dbdtSection(Panel):
         for trace in fig2.data:
             fig.add_trace(trace)
         dx = xmax - xmin
-        fig.update_xaxes(range=[xmin-0.1*dx, xmax+0.1*dx])
+        fig.update_xaxes(range=[xmin-0.01*dx, xmax+0.01*dx])
         return fig    
 
     def observed_only(self):
@@ -452,16 +496,45 @@ class dbdtSection(Panel):
         df_tmp.loc[df_tmp['site_id'] ==  -1, 'include']  = False
         df_tmp['system_id']                                = df_tmp['system_id'].map({0: 'hm', 1: 'lm'})
 
-        x_axis = df_tmp[self.settings.x_axis].unique()#.values
-        if self.settings.x_axis == 'site_id':
-            x_axis = x_axis[x_axis>-1]
-        xmin,xmax = np.nanmin(x_axis), np.nanmax(x_axis)
+        # x_axis = df_tmp[self.settings.x_axis].unique()#.values
+        # if self.settings.x_axis == 'site_id':
+        #     x_axis = x_axis[x_axis>-1]
+        # xmin,xmax = np.nanmin(x_axis), np.nanmax(x_axis)
 
+        x_vals = np.sort(df_tmp[self.settings.x_axis].unique())
+
+        if self.settings.x_axis == 'site_id':
+            x_vals = x_vals[x_vals > -1]
+
+        n_sites = len(x_vals)
+
+        plot_start = max(0, self.buffer_start)
+        plot_end   = min(n_sites, self.buffer_start + self.buffer_len)
+
+        x_slice = x_vals[plot_start:plot_end]
+
+        if len(x_slice) > 0:
+            xmin = x_slice.min()
+            xmax = x_slice.max()
+        else:
+            xmin = x_vals.min()
+            xmax = x_vals.max()
+
+        dx = xmax - xmin
 
         error_ub,error_lb = 'error_ub', 'error_lb'
         if True:
             error_ub = None
             error_lb = None
+        buffer_start = self.buffer_start
+        buffer_len   = self.buffer_len
+
+        x_values = df_tmp.columns.tolist()
+        n_sites  = len(x_values)
+        plot_start = max(0, buffer_start)
+        plot_end   = min(n_sites, buffer_start + buffer_len)
+
+        x_slice = x_values[plot_start:plot_end]
         
         fig = px.scatter(
             df_tmp,
@@ -507,7 +580,7 @@ class dbdtSection(Panel):
             fig.add_trace(trace)
         dx = xmax - xmin
         
-        fig.update_xaxes(range=[xmin-0.1*dx, xmax+0.1*dx])
+        fig.update_xaxes(range=[xmin-0.01*dx, xmax+0.01*dx])
         
         return fig  
 
@@ -532,7 +605,7 @@ class dbdtSection(Panel):
                     type="rect",
                     x0=x_value - dx,
                     x1=x_value + dx,
-                    y0=selected_df["dbdt"].min()*0.5,
+                    y0=abs(selected_df["dbdt"]).min()*0.5,
                     y1=selected_df["dbdt"].max()*25,
                     line=dict(color="rgba(0,0,0,0.8)", width=1.5),
                     fillcolor="rgba(0,0,0,0.0)",
@@ -780,6 +853,8 @@ class ModelSectionSettings(PanelSettings):
 
 class ModelSection(Panel):
     highlighted: int = None
+    buffer_len = 50
+    buffer_start = 0
     def __init__(self, **kwargs):
         settings = kwargs.pop('settings', ModelSectionSettings(id='model_section'))
         super().__init__(id='model_section', settings=settings)
@@ -802,15 +877,26 @@ class ModelSection(Panel):
             index='depth', columns=self.settings.x_axis, values='log_resistivity'
         )        
         heatmap_df = heatmap_df.sort_index(ascending=True)
+        buffer_start = self.buffer_start
+        buffer_len   = self.buffer_len
+
+        x_values = heatmap_df.columns.tolist()
+        n_sites  = len(x_values)
+
+        plot_start = max(0, buffer_start)
+        plot_end   = min(n_sites, buffer_start + buffer_len)
+
+        x_slice = x_values[plot_start:plot_end]
+        df_layers_long = df_layers_long[df_layers_long[self.settings.x_axis].isin(x_slice)]
 
         fig = px.imshow(
-            heatmap_df,
+            heatmap_df[x_slice],
             aspect='auto',
             origin='lower',
             color_continuous_scale='turbo',
             labels={'x': self.settings.x_axis, 'y': 'Depth [m]', 'color': 'Resistivity [Ω·m]'},
-            zmin=0,#heatmap_df.min().min(),
-            zmax=2.7,#heatmap_df.max().max(),
+            zmin=0,
+            zmax=2.7,
         )
         fig.update_layout(
             coloraxis_colorbar=dict(
@@ -835,31 +921,51 @@ class ModelSection(Panel):
         fig.update_yaxes(autorange="reversed")
         fig.update_layout(yaxis2=dict(title='Misfit',overlaying='y',side='right',showgrid=False))
 
-        x = df_layers_long[self.settings.x_axis]
-        y = df_layers_long['misfit']
-        y_dashed = y.copy()
-        y_dashed[y <= 8] = np.nan
-        y_dashed[y > 8] = 7.95
-        misfit_trace = px.line(
-            df_layers_long,
-            x=self.settings.x_axis,
-            y='misfit',
-        ).data[0]
-
-        misfit_trace.update(
-            yaxis='y2',
-            line=dict(color='black', width=2),
-            name='Misfit',showlegend=True
+        # ---- Misfit only for buffered sites ----
+        misfit_df = (
+            df_layers_long
+            .groupby(self.settings.x_axis)['misfit']
+            .first()
+            .reset_index()
         )
-        fig.update_layout(yaxis2=dict(range=[0, 8]))
+
+        misfit_trace = go.Scatter(
+            x=misfit_df[self.settings.x_axis],
+            y=misfit_df['misfit'],
+            mode='lines',
+            line=dict(color='black', width=2),
+            name='Misfit',
+            yaxis='y2'
+        )
+
+        y_dashed = misfit_df['misfit'].copy()
+        y_dashed[y_dashed <= 8] = np.nan
+        y_dashed[y_dashed > 8] = 7.95
+
         fig.add_trace(go.Scatter(
-            x=x,
+            x=misfit_df[self.settings.x_axis],
             y=y_dashed,
             mode="lines",
-            line=dict(color="rgb(0,0,0,0.7)", dash="dash"),
-            # hoverinfo="skip",
-            showlegend=False, yaxis='y2'
+            line=dict(color="rgba(0,0,0,0.7)", dash="dash"),
+            showlegend=False,
+            yaxis='y2'
         ))
+
+
+        # misfit_trace.update(
+        #     yaxis='y2',
+        #     line=dict(color='black', width=2),
+        #     name='Misfit',showlegend=True
+        # )
+        # fig.update_layout(yaxis2=dict(range=[0, 8]))
+        # fig.add_trace(go.Scatter(
+        #     x=x,
+        #     y=y_dashed,
+        #     mode="lines",
+        #     line=dict(color="rgb(0,0,0,0.7)", dash="dash"),
+        #     # hoverinfo="skip",
+        #     showlegend=False, yaxis='y2'
+        # ))
 
 
 
@@ -871,34 +977,32 @@ class ModelSection(Panel):
 
         fig.update_layout(yaxis2=dict(title=dict(text="Misfit",standoff=10),overlaying="y",side="right",showgrid=False)
 )
-        x_vals = heatmap_df.columns.values
-        x_min, x_max = np.nanmin(x_vals), np.nanmax(x_vals)
-
-        y_min = df_layers_long["depth"].min()
-        y_max = df_layers_long["depth"].max()
-        ymax = df_layers_long["depth"].max()
         doi_df = (df_layers_long.groupby(self.settings.x_axis)["doi"].first().reset_index())
-        fig.add_trace(
-            go.Scatter(
-                x=np.concatenate([
-                    [x_min],
-                    doi_df[self.settings.x_axis].values,
-                    [x_max],
-                    [x_min]
-                ]),
-                y=np.concatenate([
-                    [y_max+50],
-                    doi_df["doi"].values,
-                    [y_max+50],
-                    [y_max+50]
-                ]),
-                fill="toself",
-                fillcolor="rgba(255,255,255,0.6)",
-                line=dict(width=0),
-                # hoverinfo="skip",
-                name="Below DOI",
+        if not doi_df.empty:
+            x_min = min(x_slice)
+            x_max = max(x_slice)
+            y_max = df_layers_long["depth"].max()
+
+            fig.add_trace(
+                go.Scatter(
+                    x=np.concatenate([
+                        [x_min],
+                        doi_df[self.settings.x_axis].values,
+                        [x_max],
+                        [x_min]
+                    ]),
+                    y=np.concatenate([
+                        [y_max + 50],
+                        doi_df["doi"].values,
+                        [y_max + 50],
+                        [y_max + 50]
+                    ]),
+                    fill="toself",
+                    fillcolor="rgba(255,255,255,0.6)",
+                    line=dict(width=0),
+                    name="Below DOI",
+                )
             )
-        )
 
         if self.highlighted is not None and self.dataframe is not None:
 
@@ -924,7 +1028,7 @@ class ModelSection(Panel):
                     layer="above"
                 )
         fig.update_yaxes(
-            range=[doi_df["doi"].max()+8, y_min-8],
+            range=[doi_df["doi"].max()+8, df_layers_long["depth"].min()-8],
             autorange=False,
             #title="Depth [m]"
         )
@@ -935,6 +1039,51 @@ class ModelSection(Panel):
         )
         fig.update_layout(yaxis2=dict(range=[0, 8]))
         return fig
+    # def add_callbacks(self, app):
+    #     super().add_callbacks(app)
+
+    #     @app.callback(
+    #         Output(self.id, 'figure', allow_duplicate=True),
+    #         Output('data-buffer','data', allow_duplicate=True),
+    #         Input('next-buffer', 'data'),
+    #         Input('prev-buffer', 'data'),
+    #         State('buffer','length'),
+    #         prevent_initial_call=True
+    #     )
+    #     def update_buffer(data,length):
+    #         if not ctx.triggered:
+    #             raise PreventUpdate
+    #         trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
+    #         highlighted = m1.highlighted
+    #         if trigger_id == 'next-buffer':
+    #             self.buffer_start += length
+    #             if self.buffer_start > len(self.dataframe): self.buffer_start-=length 
+    #         elif trigger_id == 'prev-buffer':
+    #             self.buffer_start -= length
+    #             if self.buffer_start>0: self.buffer_start=0
+                
+    #         return self.render(), {"length": length, "start_site": self.buffer_start}
+        
+    #     @app.callback(
+    #         Output(self.id, 'figure', allow_duplicate=True),
+    #         Input('next-buffer', 'data'),
+    #         prevent_initial_call=True
+    #     )
+    #     def update_buffer(data,length):
+    #         if not ctx.triggered:
+    #             raise PreventUpdate
+    #         trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
+    #         highlighted = m1.highlighted
+    #         if trigger_id == 'next-buffer':
+    #             self.buffer_start += length
+    #             if self.buffer_start > len(self.dataframe): self.buffer_start-=length 
+    #         elif trigger_id == 'prev-buffer':
+    #             self.buffer_start -= length
+    #             if self.buffer_start>0: self.buffer_start=0
+    #         return self.render()
+    #     return fig
 
 
 import dash_bootstrap_components as dbc
