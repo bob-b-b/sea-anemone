@@ -1,4 +1,3 @@
-
 import sys, os
 from tkinter import filedialog, Tk
 
@@ -272,29 +271,34 @@ app.clientside_callback(
 )
 @app.callback(
     [
-        Output("output-click", "children"),
         dbdt1.output, dbdt2.output, rhoa.output,
-     ],
+    ],
     Input("disableButton", "n_clicks"),
     Input("enableButton", "n_clicks"),
     State("tTEM", "selectedData"),
     State("sounding", "selectedData"),
+    State("rhoa", "selectedData"),
     prevent_initial_call=True,
     allow_duplicate=True,
 )
-def show_value(n1, n2, ttem_selected, sounding_selected):
+def show_value(n1, n2, ttem_selected, sounding_selected, rhoa_selected):
 
     if str(ctx.triggered_id) == 'disableButton':
         inuse = False
     elif str(ctx.triggered_id) == 'enableButton':
         inuse = True
 
-    if ttem_selected:
+
+    if ttem_selected and len(ttem_selected['points'])>0:
         data_ids = [point['customdata'][1] for point in ttem_selected['points'] if 'customdata' in point]
-    elif sounding_selected:
+    elif sounding_selected and len(sounding_selected['points'])>0:
         data_ids = [point['customdata'][1] for point in sounding_selected['points'] if 'customdata' in point]
+    elif rhoa_selected and len(rhoa_selected['points'])>0:
+        data_ids = [point['customdata'][1] for point in rhoa_selected['points'] if 'customdata' in point]        
     else:
         raise PreventUpdate
+    
+
     df_data = sesh.data
     
     df_data.loc[df_data['data_id'].isin(data_ids), 'inuse_manual'] = inuse
@@ -302,7 +306,7 @@ def show_value(n1, n2, ttem_selected, sounding_selected):
     dbdt1.dataframe = df_data[df_data['site_id'].isin(dbdt1.dataframe['site_id'].unique())]
     dbdt2.dataframe = df_data[df_data['site_id'].isin(dbdt2.dataframe['site_id'].unique())]
     rhoa.dataframe  = df_data[df_data['site_id'].isin(rhoa.dataframe['site_id'].unique())]
-    return ctx.triggered_id, dbdt1.render(), dbdt2.render(), rhoa.render()
+    return dbdt1.render(), dbdt2.render(), rhoa.render()
 
 @app.callback(
     Output("model_section", "figure", allow_duplicate=True),
