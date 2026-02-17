@@ -1,7 +1,3 @@
-import session
-
-global sesh
-sesh = session.Session()
 
 import sys, os
 from tkinter import filedialog, Tk
@@ -10,6 +6,10 @@ from tkinter import filedialog, Tk
 fpath = os.path.dirname(os.path.abspath(__file__))
 if fpath not in sys.path:
     sys.path.append(fpath)
+
+import session
+global sesh
+sesh = session.Session()
 
 session_tracker = fpath+'/recent_projects.txt'
 
@@ -273,8 +273,7 @@ app.clientside_callback(
 @app.callback(
     [
         Output("output-click", "children"),
-        Output("tTEM", "figure", allow_duplicate=True), 
-        Output("sounding", "figure", allow_duplicate=True)
+        dbdt1.output, dbdt2.output, rhoa.output,
      ],
     Input("disableButton", "n_clicks"),
     Input("enableButton", "n_clicks"),
@@ -302,7 +301,8 @@ def show_value(n1, n2, ttem_selected, sounding_selected):
     df_data['include'] = df_data['inuse_manual'].astype(bool, copy=False).fillna(df_data['inuse_auto'])
     dbdt1.dataframe = df_data[df_data['site_id'].isin(dbdt1.dataframe['site_id'].unique())]
     dbdt2.dataframe = df_data[df_data['site_id'].isin(dbdt2.dataframe['site_id'].unique())]
-    return ctx.triggered_id, dbdt2.render(), dbdt1.render()
+    rhoa.dataframe  = df_data[df_data['site_id'].isin(rhoa.dataframe['site_id'].unique())]
+    return ctx.triggered_id, dbdt1.render(), dbdt2.render(), rhoa.render()
 
 @app.callback(
     Output("model_section", "figure", allow_duplicate=True),

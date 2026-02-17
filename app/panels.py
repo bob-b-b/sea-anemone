@@ -119,6 +119,8 @@ class dbdtSoundingSettings(PanelSettings):
     hm_factor: float = 1.0
     plot_error: bool = False
     x_axis: Literal['time', 'gate_id'] = 'time'  # or 'site_id', 'longitude', 'latitude'
+    dbdt_max: float = -3
+    dbdt_min: float = -12
 
 class dbdtSounding(Panel):
     dataframe = None
@@ -129,6 +131,10 @@ class dbdtSounding(Panel):
         super().__init__(id='sounding', settings=settings)
         for key, value in kwargs.items():
             setattr(self, key, value)
+        
+        # if self.dataframe is not None:
+        #     self.settings.dbdt_min = np.abs(self.dataframe['dbdt'].values).min()
+        #     self.settings.dbdt_max = np.abs(self.dataframe['dbdt'].values).max()
 
     def compare_synthetic(self):
 
@@ -158,7 +164,9 @@ class dbdtSounding(Panel):
             title="Sounding curve",
             custom_data=["system_id", "data_id", "site_id"],
             error_y=error_ub,
-            error_y_minus=error_lb
+            error_y_minus=error_lb,
+            # range_y=[self.settings.dbdt_min, self.settings.dbdt_max]
+
         )
 
         df_tmp.loc[df_tmp['site_id'] == -1, 'include'] = True
@@ -177,6 +185,8 @@ class dbdtSounding(Panel):
             # custom_data=["system_id", "data_id"],
             error_y=error_ub,
             error_y_minus=error_lb,
+            # range_y=[self.settings.dbdt_min, self.settings.dbdt_max]
+
         )
 
         fig2 = px.line(
@@ -187,13 +197,20 @@ class dbdtSounding(Panel):
             color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
             title="dbdt vs time by site_id",
             custom_data=["system_id", "data_id", "site_id"],
+            # range_y=[self.settings.dbdt_min, self.settings.dbdt_max]
+
         )
+
+
 
         for trace in fig3.data:
             fig.add_trace(trace)
 
         for trace in fig2.data:
             fig.add_trace(trace)
+
+        # fig.update_layout(yaxis_range=[self.settings.dbdt_min, self.settings.dbdt_max])
+
 
         return fig    
 
@@ -222,7 +239,8 @@ class dbdtSounding(Panel):
             title="Sounding curve",
             custom_data=["system_id", "data_id", "site_id"],
             error_y=error_ub,
-            error_y_minus=error_lb
+            error_y_minus=error_lb,
+            range_y=[self.settings.dbdt_min, self.settings.dbdt_max]
         )
 
         df_tmp.loc[df_tmp['site_id'] == -1, 'include'] = True
@@ -240,6 +258,7 @@ class dbdtSounding(Panel):
             # custom_data=["system_id", "data_id"],
             error_y=error_ub,
             error_y_minus=error_lb,
+            range_y=[self.settings.dbdt_min, self.settings.dbdt_max]
         )
 
         fig3 = px.line(
@@ -250,6 +269,7 @@ class dbdtSounding(Panel):
             color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
             title="dbdt vs time by site_id",
             custom_data=["system_id", "data_id", "site_id"],
+            range_y=[self.settings.dbdt_min, self.settings.dbdt_max]
         )
         
         for trace in fig2.data:
@@ -273,12 +293,14 @@ class dbdtSounding(Panel):
 
         fig.update_layout(
             yaxis_type="log",
+            yaxis_range=[self.settings.dbdt_min, self.settings.dbdt_max],
             xaxis_type="log" if self.settings.x_axis == 'time' else "linear",
             xaxis_title=self.settings.x_axis,
             yaxis_title="$\\frac{dB}{dt}$ \\[V / m$^2$\\]",
             margin={"l": 50, "r": 50, "t": 50, "b": 50},
             dragmode='select'
         )
+
         return fig
    
 
@@ -302,10 +324,13 @@ class rhoaSounding(dbdtSounding):
         super().__init__(id='rhoa', settings=settings)
         for key, value in kwargs.items():
             setattr(self, key, value)
+        self.settings.dbdt_min = 0
+        self.settings.dbdt_max = 3
+
 
     def compare_synthetic(self):
 
-        y_axis                                             = 'dbdt_syn'
+        y_axis                                             = 'rhoa'
 
         df_tmp                                             = self.dataframe.sort_values(['site_id', 'system_id',  self.settings.x_axis])
         df_tmp['rhoa'] = self.to_rhoa(df_tmp['time'].values(), df_tmp['dbdt'].values())
@@ -334,8 +359,8 @@ class rhoaSounding(dbdtSounding):
         )
 
         df_tmp.loc[df_tmp['site_id'] == -1, 'include'] = True
-        df_tmp.loc[(~df_tmp['include']), 'dbdt']       = np.nan
-        df_tmp.loc[(~df_tmp['include']), 'dbdt_syn']   = np.nan
+        df_tmp.loc[(~df_tmp['include']), 'rhoa']       = np.nan
+        df_tmp.loc[(~df_tmp['include']), 'rhoa_syn']   = np.nan
 
 
         
@@ -345,7 +370,7 @@ class rhoaSounding(dbdtSounding):
             y='rhoa',
             color_discrete_sequence=["black", "black"],
             color="system_id",
-            title="dbdt vs time by site_id",
+            title="rhoa vs time",
             # custom_data=["system_id", "data_id"],
             error_y=error_ub,
             error_y_minus=error_lb,
@@ -357,7 +382,7 @@ class rhoaSounding(dbdtSounding):
             y='rhoa_syn',
             color="system_id",
             color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
-            title="dbdt vs time by site_id",
+            title="rhoa vs time",
             custom_data=["system_id", "data_id", "site_id"],
         )
 
@@ -371,12 +396,10 @@ class rhoaSounding(dbdtSounding):
 
     def observed_only(self):
 
-        y_axis                                             = 'dbdt_syn'
+        y_axis                                             = 'rhoa_syn'
         df_tmp                                             = self.dataframe.sort_values(['site_id', 'system_id',  self.settings.x_axis])
         df_tmp['rhoa'] = self.to_rhoa(df_tmp['time'].values, df_tmp['dbdt'].values)
         df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto']).astype(bool)
-        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
-        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
         df_tmp.loc[df_tmp['site_id'] == -1, 'include']  = False
 
         df_tmp['system_id']                                = df_tmp['system_id'].map({1: 'hm', 0: 'lm'})
@@ -399,7 +422,7 @@ class rhoaSounding(dbdtSounding):
         )
 
         df_tmp.loc[df_tmp['site_id'] == -1, 'include'] = True
-        df_tmp.loc[(~df_tmp['include']), 'dbdt'] = np.nan
+        df_tmp.loc[(~df_tmp['include']), 'rhoa'] = np.nan
 
 
         
@@ -435,6 +458,19 @@ class rhoaSounding(dbdtSounding):
 
         return fig  
 
+    def render(self):
+        fig = super().render()
+
+        fig.update_layout(
+            yaxis_type="log",
+            yaxis_range=[self.settings.dbdt_min, self.settings.dbdt_max],
+            xaxis_type="log" if self.settings.x_axis == 'time' else "linear",
+            xaxis_title=self.settings.x_axis,
+            yaxis_title="$\\frac{dB}{dt}$ \\[V / m$^2$\\]",
+            margin={"l": 50, "r": 50, "t": 50, "b": 50},
+            dragmode='select'
+        )
+        return fig
 
 @nosj
 class dbdtSectionSettings(PanelSettings):
@@ -445,7 +481,8 @@ class dbdtSectionSettings(PanelSettings):
     x_axis: Literal['daytime', 'site_id', 'longitude', 'latitude', 'distance'] = 'site_id'#, 'longitude', 'latitude'
     y_axis: str = 'dbdt_syn'
     plot_disabled: bool = True
-
+    dbdt_max: float = -3
+    dbdt_min: float = -12
 
 class dbdtSection(Panel):
     dataframe = None
@@ -628,6 +665,7 @@ class dbdtSection(Panel):
                 )
         fig.update_layout(
             yaxis_type="log",
+            yaxis_range=[self.settings.dbdt_min, self.settings.dbdt_max],
             xaxis_title=self.settings.x_axis,
             yaxis_title="$\\frac{dB}{dt}$ \\[V / m$^2$\\]",
             margin={"l": 50, "r": 50, "t": 50, "b": 50},
