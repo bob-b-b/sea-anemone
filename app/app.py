@@ -62,25 +62,7 @@ mod2 = ModelSection( dataframe=sesh.models )
 Multi_inv = MultiInversion( dataframe=sesh.data )
 
 
-x = html.Div([
-      html.Div(
-          [
-            dbc.ButtonGroup([
-              dbc.Button("disable [ctrl+d]", id='disableButton'),
-              dbc.Button("enable  [ctrl+e]", id='enableButton'),
-            ]),
-            dbc.ButtonGroup([
-              dbc.Button("previous [<-]", id='highlight_prev'),
-              dbc.Button("next [->]", id='highlight_next'),
-            ]),
-            dbc.ButtonGroup([
-                dbc.Button("save [ctrl+s]", id='saveButton'),
-            ])
-          ], style={'padding': '10px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between'}
-        ),
-        dcc.Location(id='url_button'),
-      ]
-, id='processing_buttons')
+
 
 
 
@@ -90,8 +72,10 @@ x = html.Div([
 
 Sing_inv = Single_site( dataframe=sesh.data, rho=10 )
 
-panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, Multi_inv, Sing_inv, pyInt, rhoa]
-nodes = [node for panel in panels for node in panel.to_nodes()]+[dfl.Tab(id=f'tab-processing_buttons', children=[x]), dfl.Tab(id='tab-panel_list', children=[panel_list])]
+hkr = HotKeyReminder()
+
+panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, Multi_inv, Sing_inv, pyInt, rhoa, hkr]
+nodes = [node for panel in panels for node in panel.to_nodes()]#+[dfl.Tab(id=f'tab-processing_buttons', children=[x])]
 
 
 html_header = html.H1('Sea Anemone', style={'width': '100%'})
@@ -142,10 +126,7 @@ for panel in panels:
 
 @app.callback(
     [ 
-        Output('sounding', 'figure', allow_duplicate=True),
-        Output('tTEM',     'figure', allow_duplicate=True),
-        Output('model_graph', 'figure', allow_duplicate=True),
-        Output('model_section', 'figure', allow_duplicate=True),
+        dbdt1.output, dbdt2.output, rhoa.output, mod1.output, mod2.output,
     ],
     [Input('map', 'relayoutData'), Input('map', 'selectedData')],
     prevent_initial_call="initial_duplicate",
@@ -200,6 +181,7 @@ def handle_map_interactions(relayout_data, selected_data):
     new_df = df_data[df_data['site_id'].isin(selected_sites)]
     dbdt1.dataframe = new_df
     dbdt2.dataframe = new_df
+    rhoa.dataframe  = new_df
 
     df_mods = sesh.models
     if df_mods is not None:
@@ -209,63 +191,13 @@ def handle_map_interactions(relayout_data, selected_data):
         mod2.dataframe = new_mod
 
     
-    return dbdt1.render(), dbdt2.render(), mod1.render(), mod2.render()
+    return dbdt1.render(), dbdt2.render(), rhoa.render(), mod1.render(), mod2.render()
 
 
 
 
 app.clientside_callback(
-    """
-        function(id) {
-            document.addEventListener("keydown", function(event) {
-                // Check if focus is on an input element
-                const activeElement = document.activeElement;
-                const isInputFocused = activeElement && (
-                    activeElement.tagName === 'INPUT' || 
-                    activeElement.tagName === 'TEXTAREA' || 
-                    activeElement.contentEditable === 'true'
-                );
-                
-                if (event.ctrlKey) {
-                    if (event.key == 'd') {
-                        document.getElementById('disableButton').click()
-                        event.preventDefault()
-                        event.stopPropagation()
-                    }
-                    if (event.key == 'e') {
-                        document.getElementById('enableButton').click()
-                        event.preventDefault()
-                        event.stopPropagation()
-                    }
-                    
-                    if (event.key == 's') {
-                        if (event.shiftKey) {
-                            document.getElementById('saveAsButton').click()
-                        } else {
-                            document.getElementById('saveButton').click()
-                        }
-                        event.preventDefault()
-                        event.stopPropagation()
-                    }
-                }
-                
-                // Arrow keys without Ctrl, but only if not typing in an input
-                if (!isInputFocused) {
-                    if (event.key == 'ArrowLeft') {
-                        document.getElementById('highlight_prev').click()
-                        event.preventDefault()
-                        event.stopPropagation()
-                    }
-                    if (event.key == 'ArrowRight') {
-                        document.getElementById('highlight_next').click()
-                        event.preventDefault()
-                        event.stopPropagation()
-                    }
-                }
-            });
-            return window.dash_clientside.no_update       
-        }
-    """,
+    hkr.javascript,
     Output("disableButton", "id"),
     Input("disableButton", "id")
 )
@@ -616,10 +548,9 @@ def reset_polling(n):
 
 @app.callback(
     [Output('output-data-upload', 'children'),
-     Output('map', 'figure', allow_duplicate=True),
-     Output('sounding', 'figure', allow_duplicate=True),
-     Output('tTEM', 'figure', allow_duplicate=True),
-     Output('rhoa', 'figure', allow_duplicate=True),
+
+     m1.output, dbdt1.output, dbdt2.output, rhoa.output,
+
      Output('process_layout', 'disabled', allow_duplicate=True),
      Output('invert_layout', 'disabled', allow_duplicate=True),
      Output('process_layout', 'n_clicks', allow_duplicate=True),
@@ -631,8 +562,17 @@ def reset_polling(n):
     prevent_initial_call=True
 )
 def upload_file(contents, current_process_clicks):
+    global sesh
     if contents is None:
         raise PreventUpdate
+    if contents[0].startswith('data:application/json'):
+        import base64
+        codec,info = contents[0].split(';')[1].split(',')
+        sesh_str = base64.b64decode(info).decode().replace('null', 'None')
+        sesh_dict = dict(eval(sesh_str))
+        filepath = sesh_dict['save_dir'].replace(' ', '%20')
+        return [no_update]*5 + [html.Div(f'File: {sesh_dict['save_dir']}'), f"#load={filepath}"]
+    
     sesh.data            = TEMframe.from_zip_content(contents[0])
     sesh.data.history    = ['df_data = TEMframe.from_zip_content("uploaded_data_zip.txt")']
     sesh.data['include'] = sesh.data['inuse_manual'].astype(bool, copy=False).fillna(sesh.data['inuse_auto'])
@@ -696,32 +636,8 @@ def update_layout(model, load_clicks, process_clicks, invert_clicks, review_clic
         return layouts.review, 'secondary', 'secondary', 'secondary', 'primary'
     return model, 'secondary', 'secondary', 'secondary', 'secondary'
 
-# @app.callback(
-#     [
-#         
-#         Output('url', 'hash', allow_duplicate=True)
-#     ],
-#     Input('url', 'hash'),
-#     State("current-working-directory", "children"),
-#     prevent_initial_call=True,
-# )
-# def handle_url_hash(url_hash, current_working_directory):
-#     if url_hash.startswith('#change_working'):
-#         root = Tk()
-#         root.withdraw()  # Hide the root window
-#         folder_path = filedialog.askdirectory(title="Select Working Directory")
-#         print(folder_path)
-#         root.destroy()  # Destroy the root window after selection
-#         sesh.save_dir = folder_path + '/' if not folder_path.endswith('/') else folder_path
-#         return folder_path, ''
-#     else:
-#         return current_working_directory, ''
-
 layout_output_list = [
-        Output('map', 'figure', allow_duplicate=True),
-        Output('sounding', 'figure', allow_duplicate=True),
-        Output('tTEM', 'figure', allow_duplicate=True),
-        Output('model_section', 'figure', allow_duplicate=True),
+        m1.output, dbdt1.output, dbdt2.output, rhoa.output, mod2.output,
         
         Output('flex-layout',    'model', allow_duplicate=True),
 
@@ -758,38 +674,43 @@ def handle_url_hash(url_hash, model):
         folder = url_hash.split('=')[1].replace('%20', ' ').replace('%22', '')
         print(f'loading session from folder: {folder}')
         sesh = session.Session.from_folder(folder)
-        #sesh.
-        dbdt1.dataframe = sesh.data.copy()     if sesh.data is not None else None
-        dbdt2.dataframe = sesh.data.copy()     if sesh.data is not None else None
-        m1.dataframe    = sesh.overview.copy() if sesh.data is not None else None
-        mod1.dataframe  = sesh.models.copy()   if sesh.models is not None else None
-        mod2.dataframe  = sesh.models.copy()   if sesh.models is not None else None
+        res[-2] = sesh.save_dir
 
-        res[0] = m1.render()
-        res[1] = dbdt1.render()
-        res[2] = dbdt2.render()
-        res[3] = mod2.render()
-
+        if sesh.data is not None:
+            dbdt1.dataframe = sesh.data.copy()    
+            dbdt2.dataframe = sesh.data.copy()    
+            m1.dataframe    = sesh.overview.copy()
+            rhoa.dataframe  = sesh.data.copy()    
+            Multi_inv.dataframe = sesh.data.copy()
+            Sing_inv.dataframe = sesh.data.copy()
+            res[0] = m1.render()
+            res[1] = dbdt1.render()
+            res[2] = dbdt2.render()
+            res[3] = rhoa.render()
+        
         if sesh.models is not None:
-            res[4]   = layouts.review
-            res[5]   = 'secondary'
-            res[6]   = 'secondary'
+            mod1.dataframe  = sesh.models.copy()
+            mod2.dataframe  = sesh.models.copy()
+            res[4] = mod2.render()
+            # res[5]   = layouts.review
+            # res[6]   = 'secondary'
             res[7]   = 'secondary'
-            res[8]   = 'primary'
-            res[9]   = False
+            res[8]   = 'secondary'
+            res[9]   = 'success'
             res[10]  = False
             res[11]  = False
             res[12]  = False
+            res[13]  = False
         else:
-            res[4]   = layouts.data
-            res[5]   = 'secondary'
-            res[6]   = 'primary'
-            res[7]   = 'secondary'
+            # res[5]   = layouts.data
+            # res[6]   = 'secondary'
+            res[7]   = 'success'
             res[8]   = 'secondary'
-            res[9]   = False
-            res[10]  = False
+            res[9]   = 'secondary'
+            res[10]   = False
             res[11]  = False
-            res[12]  = True
+            res[12]  = False
+            res[13]  = True
     elif url_hash.startswith('#change_working'):
         root = Tk()
         root.withdraw()  # Hide the root window
@@ -802,37 +723,6 @@ def handle_url_hash(url_hash, model):
             res[-2] = sesh.save_dir
     return res
 
-
-import sys
-import io
-import traceback
-@app.callback(
-    Output('code-output', 'children'),
-    Input('run-btn', 'n_clicks'),
-    State('code-input', 'value')
-)
-def run_python_code(n_clicks, code):
-    if not code:
-        return "No code entered."
-
-    # Redirect stdout and stderr
-    old_stdout = sys.stdout
-    old_stderr = sys.stderr
-    redirected_output = sys.stdout = io.StringIO()
-    redirected_error = sys.stderr = io.StringIO()
-
-    try:
-        # Execute the code in a restricted namespace
-        exec(code)#, {"__builtins__": __builtins__}, {})
-        output = redirected_output.getvalue()
-        errors = redirected_error.getvalue()
-        return output + errors if output or errors else "Code executed successfully (no output)."
-    except Exception:
-        return traceback.format_exc()
-    finally:
-        # Restore stdout and stderr
-        sys.stdout = old_stdout
-        sys.stderr = old_stderr
 
 
 # import signal

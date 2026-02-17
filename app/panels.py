@@ -333,8 +333,8 @@ class rhoaSounding(dbdtSounding):
         y_axis                                             = 'rhoa'
 
         df_tmp                                             = self.dataframe.sort_values(['site_id', 'system_id',  self.settings.x_axis])
-        df_tmp['rhoa'] = self.to_rhoa(df_tmp['time'].values(), df_tmp['dbdt'].values())
-        df_tmp['rhoa_syn'] = self.to_rhoa(df_tmp['time'].values(), df_tmp['dbdt_syn'].values())
+        df_tmp['rhoa'] = self.to_rhoa(df_tmp['time'].values, df_tmp['dbdt'].values)
+        df_tmp['rhoa_syn'] = self.to_rhoa(df_tmp['time'].values, df_tmp['dbdt_syn'].values)
         df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto'])
         df_tmp.loc[df_tmp['site_id'] == -1, 'include']  = False
 
@@ -466,7 +466,7 @@ class rhoaSounding(dbdtSounding):
             yaxis_range=[self.settings.dbdt_min, self.settings.dbdt_max],
             xaxis_type="log" if self.settings.x_axis == 'time' else "linear",
             xaxis_title=self.settings.x_axis,
-            yaxis_title="$\\frac{dB}{dt}$ \\[V / m$^2$\\]",
+            yaxis_title="$\\rho_a$ \\[ $\\Omega$-m\\]",
             margin={"l": 50, "r": 50, "t": 50, "b": 50},
             dragmode='select'
         )
@@ -1199,4 +1199,83 @@ class PyInterpretter(Panel):
     #             # Restore stdout and stderr
     #             sys.stdout = old_stdout
     #             sys.stderr = old_stderr
- 
+
+
+class HotKeyReminder(Panel):
+    javascript =     """
+        function(id) {
+            document.addEventListener("keydown", function(event) {
+                // Check if focus is on an input element
+                const activeElement = document.activeElement;
+                const isInputFocused = activeElement && (
+                    activeElement.tagName === 'INPUT' || 
+                    activeElement.tagName === 'TEXTAREA' || 
+                    activeElement.contentEditable === 'true'
+                );
+                
+                if (event.ctrlKey) {
+                    if (event.key == 'd') {
+                        document.getElementById('disableButton').click()
+                        event.preventDefault()
+                        event.stopPropagation()
+                    }
+                    if (event.key == 'e') {
+                        document.getElementById('enableButton').click()
+                        event.preventDefault()
+                        event.stopPropagation()
+                    }
+                    
+                    if (event.key == 's') {
+                        if (event.shiftKey) {
+                            document.getElementById('saveAsButton').click()
+                        } else {
+                            document.getElementById('saveButton').click()
+                        }
+                        event.preventDefault()
+                        event.stopPropagation()
+                    }
+                }
+                
+                // Arrow keys without Ctrl, but only if not typing in an input
+                if (!isInputFocused) {
+                    if (event.key == 'ArrowLeft') {
+                        document.getElementById('highlight_prev').click()
+                        event.preventDefault()
+                        event.stopPropagation()
+                    }
+                    if (event.key == 'ArrowRight') {
+                        document.getElementById('highlight_next').click()
+                        event.preventDefault()
+                        event.stopPropagation()
+                    }
+                }
+            });
+            return window.dash_clientside.no_update       
+        }
+    """
+
+    def __init__(self):
+        super().__init__(id='processing_buttons')
+
+    def initialize(self):
+        x = html.Div([
+            html.Div(
+                [
+                    dbc.ButtonGroup([
+                    dbc.Button("disable [ctrl+d]", id='disableButton'),
+                    dbc.Button("enable  [ctrl+e]", id='enableButton'),
+                    ]),
+                    dbc.ButtonGroup([
+                    dbc.Button("previous [<-]", id='highlight_prev'),
+                    dbc.Button("next [->]", id='highlight_next'),
+                    ]),
+                    dbc.ButtonGroup([
+                        dbc.Button("save [ctrl+s]", id='saveButton'),
+                    ])
+                ], style={'padding': '10px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between'}
+                ),
+                dcc.Location(id='url_button'),
+            ]
+        , id=self.id)
+        return x
+
