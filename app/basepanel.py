@@ -7,8 +7,7 @@ import dash_flexlayout as dfl
 from dataclasses import dataclass
 from dataclasses_jsonschema import JsonSchemaMixin
 
-# import tkinter as tk
-# from tkinter import filedialog
+
 import plotly.express as px
 
 
@@ -73,7 +72,31 @@ def update_tabset(json_data, target_tab_id, settings_tab_id, change_order=False)
     exec(f'json_data{accessor_string}[\'selected\'] = {tabset.index(settings_tab_id)}')
     return json_data
 
-def add_tabset(json_data, new_tab):
+def close_settings(json_data, target_tab_id, settings_tab_id):
+    accessor_chain = find_tab_by_id(json_data, settings_tab_id)
+    accessor_string = ''
+    for key in accessor_chain[:-1]:
+        if isinstance(key, int):
+            accessor_string += f'[{key}]'
+        else:
+            accessor_string += f'["{key}\"]'
+    tablist = eval('json_data' + accessor_string)
+    tabset = [x['id'] for x in eval('json_data' + accessor_string)]
+    idx = tabset.index(settings_tab_id)
+    tablist.pop(idx)
+    tabset.pop(idx)
+
+    accessor_string = ''
+    for key in accessor_chain[:-2]:
+        if isinstance(key, int):
+            accessor_string += f'[{key}]'
+        else:
+            accessor_string += f'["{key}\"]'
+    
+    exec(f'json_data{accessor_string}[\'selected\'] = {tabset.index(target_tab_id)}')
+    return json_data
+
+def add_tabset(json_data, new_tab, change_order=False):
     accessor_chain = find_tab_by_id(json_data, new_tab)
     accessor_string = ''
     for key in accessor_chain[:-1]:
@@ -204,7 +227,7 @@ class PanelSettings:
         ))
 
         return html.Div([dbc.Form(form_items, style={'margin': '10px'}), 
-                         gear_maker(self.id+'_settings')])
+                         gear_maker(self.id+'_settings')], style={'width':'95%'})
 
     def node(self):
         return dfl.Tab(id=f'tab-{self.id}_settings', children=[self.render()])
@@ -310,7 +333,7 @@ class PanelSettings:
         )
         def hide_settings(n_clicks, model):
             if n_clicks:
-                return update_tabset(model, f'tab-{self.id}_settings', f'tab-{self.id}', change_order=False)
+                return close_settings(model, f'tab-{self.id}', f'tab-{self.id}_settings')
             else:
                 raise PreventUpdate
 
@@ -330,6 +353,7 @@ class Panel:
     id: str
     settings: PanelSettings = None
     childname: str = 'figure'
+    change_count: int = 0
 
     def add_callbacks(self, app):
         if self.settings is not None:
@@ -382,5 +406,8 @@ class Panel:
             'name': f'{self.id.lower()}',
         }
      
+    @property
+    def output(self):
+        return Output(self.id, self.childname, allow_duplicate=True)
         
         

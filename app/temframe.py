@@ -284,7 +284,7 @@ class TEMframe(DataFrame):
     @classmethod
     def from_pandas(cls, dataframe, **kwargs):
         res = cls(dataframe, **kwargs)
-        if not hasattr(res, 'dmfwr'):
+        if not hasattr(res, 'dmfwr') and hasattr(res, 'forward_operators') and len(res.forward_operators)==2:
             res.dmfwr = res.forward_operators[0]+res.forward_operators[1]
         return res
     
@@ -484,9 +484,9 @@ class TEMframe(DataFrame):
             y_list.append(row_meta['utm_y'])
         
         inv = SCI(inv_list, x=np.array(x_list), y=np.array(y_list), log=write_log)
-        inv.data_misfit_acceptance_threshold = 0.95
+        # inv.data_misfit_acceptance_threshold = 0.95
         res_mods = inv.invert(iter_cap=max_iterations)
-        doi = inv.doi
+        doi = [x.item() for x in inv.doi]#.item()
         for i,((id_row, row), (id_meta, row_meta)) in enumerate(zip(pivot_multi.iterrows(), df_overview.iterrows())):
             assert id_meta == id_row, "Site ID mismatch between row and metadata"
 
