@@ -777,6 +777,9 @@ class ModelGraphSettings(PanelSettings):
 
 class ModelGraph(Panel):
     highlighted=None
+    buffer_len = 50
+    buffer_start = 0
+
     def __init__(self, **kwargs):
         settings = kwargs.pop('settings', ModelGraphSettings(id='model_graph'))
         super().__init__(id='model_graph', settings=settings)
@@ -797,8 +800,20 @@ class ModelGraph(Panel):
         df_layers_long = df_layers_long.drop(columns=['depth_type'])
 
         if self.highlighted is None:
+            heatmap_df = df_layers_long.set_index('site_id').sort_index(ascending=True)
+            buffer_start = self.buffer_start
+            buffer_len   = self.buffer_len
+
+            x_values = df_layers_long['site_id'].unique().tolist()
+            n_sites  = len(x_values)
+
+            plot_start = max(0, buffer_start)
+            plot_end   = min(n_sites, buffer_start + buffer_len)
+
+            x_slice = x_values[plot_start:plot_end]
+
             fig = px.line(
-                df_layers_long,
+                df_layers_long[df_layers_long['site_id'].isin(x_slice)],
                 x="resistivity",
                 y="depth",
                 color="site_id",

@@ -374,6 +374,7 @@ def update_buffer(next_clicks, prev_clicks, buffer_data):
     Output('tTEM', 'figure', allow_duplicate=True),
     Output('sounding', 'figure', allow_duplicate=True),
     Output('map', 'figure', allow_duplicate=True),
+    Output('model_graph', 'figure', allow_duplicate=True),
     Input('data-buffer', 'data'),
     prevent_initial_call=True,
     allow_duplicate=True
@@ -385,6 +386,8 @@ def update_model_section_from_buffer(buffer_data):
     # Update model section buffer
     mod2.buffer_start = start
     mod2.buffer_len   = length
+    mod1.buffer_start = start
+    mod1.buffer_len   = length
 
     # Update tTEM buffer
     dbdt2.buffer_start = start
@@ -403,9 +406,9 @@ def update_model_section_from_buffer(buffer_data):
     m1.buffer_sites = visible_sites
 
     if mod2.dataframe is None:
-        return mod2.empty_render(), dbdt2.render(), dbdt1.render(), m1.render()
+        return mod2.empty_render(), dbdt2.render(), dbdt1.render(), m1.render(), mod1.empty_render()
     else:
-        return mod2.render(), dbdt2.render(), dbdt1.render(), m1.render()
+        return mod2.render(), dbdt2.render(), dbdt1.render(), m1.render(), mod1.render()
 
 
 @app.callback(
@@ -767,6 +770,7 @@ def upload_file(contents, current_process_clicks):
 
     m1.buffer_sites = initial_sites.tolist()
     mod1.dataframe  = sesh.models
+    mod1.buffer_sites = initial_sites.tolist()
     mod2.dataframe  = sesh.models
     # t1.dataframe = TABLES['overview'].copy()
     new_process_clicks = (current_process_clicks or 0) + 1
