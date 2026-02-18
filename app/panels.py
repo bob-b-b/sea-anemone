@@ -49,7 +49,7 @@ class MapSettings(PanelSettings):
     zoom: int = 14
     color: str = '#ff0000'
     highlight_color: str= '#ffff00'  # Default highlight color
-
+    plot_by: str = 'misfit'
 
 
 class Map(Panel):
@@ -63,8 +63,10 @@ class Map(Panel):
 
     def render(self):
         if self.dataframe is None: return self.empty_render()
-
-        fig = px.scatter_map(self.dataframe, lat="latitude", lon="longitude", zoom=self.settings.zoom, color_discrete_sequence=[self.settings.color])
+        if self.settings.plot_by in self.dataframe.columns:
+            fig = px.scatter_map(self.dataframe, lat="latitude", lon="longitude", zoom=self.settings.zoom, color=self.settings.plot_by, color_continuous_scale='turbo')
+        else:
+            fig = px.scatter_map(self.dataframe, lat="latitude", lon="longitude", zoom=self.settings.zoom, color_discrete_sequence=[self.settings.color])
         fig.update_layout(map_style="white-bg",
             map_layers=[
                 {
@@ -333,8 +335,8 @@ class rhoaSounding(dbdtSounding):
         y_axis                                             = 'rhoa'
 
         df_tmp                                             = self.dataframe.sort_values(['site_id', 'system_id',  self.settings.x_axis])
-        df_tmp['rhoa'] = self.to_rhoa(df_tmp['time'].values, df_tmp['dbdt'].values)
-        df_tmp['rhoa_syn'] = self.to_rhoa(df_tmp['time'].values, df_tmp['dbdt_syn'].values)
+        df_tmp['rhoa'] = self.to_rhoa(df_tmp['time'].values, np.abs(df_tmp['dbdt'].values))
+        df_tmp['rhoa_syn'] = self.to_rhoa(df_tmp['time'].values, np.abs(df_tmp['dbdt_syn'].values))
         df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto'])
         df_tmp.loc[df_tmp['site_id'] == -1, 'include']  = False
 
@@ -398,7 +400,7 @@ class rhoaSounding(dbdtSounding):
 
         y_axis                                             = 'rhoa_syn'
         df_tmp                                             = self.dataframe.sort_values(['site_id', 'system_id',  self.settings.x_axis])
-        df_tmp['rhoa'] = self.to_rhoa(df_tmp['time'].values, df_tmp['dbdt'].values)
+        df_tmp['rhoa'] = self.to_rhoa(df_tmp['time'].values, np.abs(df_tmp['dbdt'].values))
         df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto']).astype(bool)
         df_tmp.loc[df_tmp['site_id'] == -1, 'include']  = False
 
@@ -478,7 +480,7 @@ class dbdtSectionSettings(PanelSettings):
     hm_color: str = '#2D81FF'
     lm_factor: float = 20.0
     hm_factor: float = 1.0
-    x_axis: Literal['daytime', 'site_id', 'longitude', 'latitude', 'distance'] = 'site_id'#, 'longitude', 'latitude'
+    x_axis: Literal['daytime', 'site_id', 'longitude', 'latitude', 'distance'] = 'site_id'
     y_axis: str = 'dbdt_syn'
     plot_disabled: bool = True
     dbdt_max: float = -3

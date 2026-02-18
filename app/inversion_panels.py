@@ -316,7 +316,8 @@ class MultiInversion(Panel):
                     Horz = 0.3
                 res_start                        = LogResistivity.smooth(rho,z) 
                 # print(TABLES['data'])
-                sesh.models, sesh.data = sesh.data.invert(res_start,vc = Vert, hc = Horz)
+                sesh.models, sesh.data, self.site = sesh.data.invert(res_start,vc = Vert, hc = Horz)
+                # sesh.site = sesh.data.overview()
                 self.title = "Inversion Finished!!!"
                 new_review_clicks = (current_review_clicks or 0) + 1
                 # layouts.invert = layouts.invert_multi_first

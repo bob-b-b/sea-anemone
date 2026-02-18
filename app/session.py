@@ -33,6 +33,7 @@ class Session:
             from os import makedirs
             makedirs('anemone_backup', exist_ok=True)
             folder = 'anemone_backup/'
+            other.save_dir = 'anemone_backup/'
             Warning('No folder specified for saving session, saving to default "anemone_backup/".')
         elif folder is None and other.save_dir is not None:
             folder = other.save_dir
