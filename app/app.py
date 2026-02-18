@@ -355,8 +355,9 @@ def update_buffer(next_clicks, prev_clicks, buffer_data):
     if dbdt2.dataframe is None:
         raise PreventUpdate
 
-    unique_sites = np.sort(dbdt2.dataframe['site_id'].unique())
-    n_sites = len(unique_sites)
+    x_axis = dbdt2.settings.x_axis
+    x_vals = np.sort(dbdt2.dataframe[x_axis].dropna().unique())
+    n_sites = len(x_vals)
 
     if trigger == "next-buffer":
         start += length
@@ -393,17 +394,23 @@ def update_model_section_from_buffer(buffer_data):
     dbdt2.buffer_start = start
     dbdt2.buffer_len   = length
 
-    # Determine visible site IDs from models (authoritative source)
 
-    visible_sites = np.sort(dbdt2.dataframe['site_id'].unique())
-    visible_sites = visible_sites[start:start+length]
+    x_axis = dbdt2.settings.x_axis
+    df = dbdt2.dataframe
 
-    # ---- Update dbdt1 (Sounding panel) ----
-    df_data = sesh.data
-    dbdt1.dataframe = df_data[df_data['site_id'].isin(visible_sites)]
+    x_vals = np.sort(df[x_axis].dropna().unique())
 
-    # ---- Update Map buffer indicator ----
-    m1.buffer_sites = visible_sites
+    x_slice = x_vals[start:start+length]
+
+    buffer_sites = (
+        df[df[x_axis].isin(x_slice)]["site_id"]
+        .dropna()
+        .unique()
+    )
+
+
+    dbdt1.dataframe = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
+    m1.buffer_sites = buffer_sites
 
     if mod2.dataframe is None:
         return mod2.empty_render(), dbdt2.render(), dbdt1.render(), m1.render(), mod1.empty_render()

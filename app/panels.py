@@ -591,26 +591,53 @@ class dbdtSection(Panel):
         else:
             fig = self.observed_only()
 
+        # if self.highlighted is not None and self.dataframe is not None:
+        #     # Get x coordinate of selected site
+        #     selected_df = self.dataframe[self.dataframe["site_id"] == self.highlighted]
+        #     if not selected_df.empty:
+
+        #         x_value = selected_df[self.settings.x_axis].iloc[0]
+
+        #         # Width of highlight box
+        #         dx = 0.5  # adjust depending on spacing
+
+        #         fig.add_shape(
+        #             type="rect",
+        #             x0=x_value - dx,
+        #             x1=x_value + dx,
+        #             y0=abs(selected_df["dbdt"]).min()*0.5,
+        #             y1=selected_df["dbdt"].max()*25,
+        #             line=dict(color="rgba(0,0,0,0.8)", width=1.5),
+        #             fillcolor="rgba(0,0,0,0.0)",
+        #             # hoverinfo="skip",
+        #             layer="above"
+        #         )
         if self.highlighted is not None and self.dataframe is not None:
-            # Get x coordinate of selected site
+
             selected_df = self.dataframe[self.dataframe["site_id"] == self.highlighted]
+
             if not selected_df.empty:
 
-                x_value = selected_df[self.settings.x_axis].iloc[0]
+                x_axis = self.settings.x_axis
+                x_value = selected_df[x_axis].iloc[0]
 
-                # Width of highlight box
-                dx = 0.5  # adjust depending on spacing
+                # Compute spacing dynamically
+                x_vals = np.sort(self.dataframe[x_axis].dropna().unique())
+
+                if len(x_vals) > 1:
+                    diffs = np.diff(x_vals)
+                    dx = np.median(diffs) * 0.5
+                else:
+                    dx = 0.5
 
                 fig.add_shape(
                     type="rect",
                     x0=x_value - dx,
                     x1=x_value + dx,
-                    y0=abs(selected_df["dbdt"]).min()*0.5,
-                    y1=selected_df["dbdt"].max()*25,
+                    y0=self.dataframe["dbdt"].abs().min() * 0.5,
+                    y1=self.dataframe["dbdt"].max() * 25,
                     line=dict(color="rgba(0,0,0,0.8)", width=1.5),
                     fillcolor="rgba(0,0,0,0.0)",
-                    # hoverinfo="skip",
-                    layer="above"
                 )
         fig.update_layout(
             yaxis_type="log",
@@ -1021,15 +1048,20 @@ class ModelSection(Panel):
 
         if self.highlighted is not None and self.dataframe is not None:
 
-            # Get x coordinate of selected site
-            selected_df = df_layers_long[df_layers_long["site_id"] == self.highlighted]
+            selected_df = self.dataframe[self.dataframe["site_id"] == self.highlighted]
 
             if not selected_df.empty:
 
-                x_value = selected_df[self.settings.x_axis].iloc[0]
+                x_axis = self.settings.x_axis
+                x_value = selected_df[x_axis].iloc[0]
 
-                # Width of highlight box
-                dx = 0.5  # adjust depending on spacing
+                x_vals = np.sort(self.dataframe[x_axis].dropna().unique())
+
+                if len(x_vals) > 1:
+                    diffs = np.diff(x_vals)
+                    dx = np.median(diffs) * 0.5
+                else:
+                    dx = 0.5
 
                 fig.add_shape(
                     type="rect",
@@ -1037,11 +1069,10 @@ class ModelSection(Panel):
                     x1=x_value + dx,
                     y0=df_layers_long["depth"].min(),
                     y1=df_layers_long["depth"].max()+20,
-                    line=dict(color="rgba(0,0,0,0.5)", width=1.5),
+                    line=dict(color="black", width=1.5),
                     fillcolor="rgba(0,0,0,0.0)",
-                    # hoverinfo="skip",
-                    layer="above"
                 )
+
         fig.update_yaxes(
             range=[doi_df["doi"].max()+8, df_layers_long["depth"].min()-8],
             autorange=False,
