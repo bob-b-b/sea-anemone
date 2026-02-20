@@ -326,7 +326,57 @@ mod2 = ModelSection( dataframe=sesh.models )
 Multi_inv = MultiInversion( dataframe=sesh.data )
 
 
-
+# x = html.Div([
+#       dcc.Markdown(children='### buttons and hot keys'),
+#       html.Div(
+#           [
+#             dbc.ButtonGroup([
+#               dbc.Button("disable [ctrl+d]", id='disableButton'),
+#               dbc.Button("enable  [ctrl+e]", id='enableButton'),
+#             ]),
+#             dbc.ButtonGroup([
+#                 dbc.Button("Previous buffer [<<-]", id='prev-buffer', style={"marginRight": "6px"}),
+#                 dbc.Button("Previous [<-]", id='highlight_prev', style={"marginRight": "6px"}),
+#                 dbc.Button("Next [->]", id='highlight_next', style={"marginRight": "6px"}),
+#                 dbc.Button("Next buffer [->>]", id='next-buffer', style={"marginRight": "12px"}),
+#                 html.Div(
+#                     [
+#                         html.Small(
+#                             "Buffer length:",
+#                             style={
+#                                 "marginLeft": "12px",
+#                                 "marginRight": "6px",
+#                                 "color": "#555",
+#                                 "fontSize": "12px",
+#                             }
+#                         ),
+#                         dcc.Input(
+#                             id='buffer-length-input',
+#                             type='number',
+#                             min=1,
+#                             step=1,
+#                             value=50,
+#                             style={
+#                                 "width": "70px",
+#                                 "height": "32px",
+#                                 "fontSize": "13px"
+#                             }
+#                         ),
+#                     ],
+#                     style={
+#                         "display": "flex",
+#                         "alignItems": "center",
+#                     }
+#                 )
+#             ]),
+#             dbc.ButtonGroup([
+#                 dbc.Button("save [ctrl+s]", id='saveButton'),
+#             ])
+#           ], style={'padding': '10px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between'}
+#         ),
+#         dcc.Location(id='url_button'),
+#       ]
+# , id='processing_buttons')
 
 
 
@@ -359,6 +409,7 @@ app.layout = html.Div([
     dcc.Store(id="selected-site-id", data=None),
     dcc.Store(id="starting-model", data={"rho": 10.0,"depth": np.cumsum(np.logspace(0, 1.3, 31)).tolist()}),
     dcc.Store(id='starting-model-selected',data=[]),
+    dcc.Store(id='data-buffer',data={"length": 50, "start_site":0}),
     dcc.Store(id="dem-applied", data=False),
     dcc.Store(id="dem-downloaded", data=False),
     dcc.Store(id="dem-api-keys", data=[], storage_type="local"),
@@ -415,8 +466,7 @@ for panel in panels:
         dbdt1.output, dbdt2.output, rhoa.output, mod1.output, mod2.output,
     ],
     [Input('map', 'relayoutData'), Input('map', 'selectedData')],
-    prevent_initial_call="initial_duplicate",
-    allow_duplicate=True
+    prevent_initial_call=True
 )
 def handle_map_interactions(relayout_data, selected_data):
     """Handle both drawing and selection on the map"""
@@ -506,16 +556,13 @@ app.clientside_callback(
     prevent_initial_call=True
 )
 @app.callback(
-    [
-        dbdt1.output, dbdt2.output, rhoa.output,
-    ],
+    dbdt1.output, dbdt2.output, rhoa.output,
     Input("disableButton", "n_clicks"),
     Input("enableButton", "n_clicks"),
     State("tTEM", "selectedData"),
     State("sounding", "selectedData"),
     State("rhoa", "selectedData"),
     prevent_initial_call=True,
-    allow_duplicate=True,
 )
 def show_value(n1, n2, ttem_selected, sounding_selected, rhoa_selected):
 
@@ -543,6 +590,132 @@ def show_value(n1, n2, ttem_selected, sounding_selected, rhoa_selected):
     dbdt2.dataframe = df_data[df_data['site_id'].isin(dbdt2.dataframe['site_id'].unique())]
     rhoa.dataframe  = df_data[df_data['site_id'].isin(rhoa.dataframe['site_id'].unique())]
     return dbdt1.render(), dbdt2.render(), rhoa.render()
+
+@app.callback(
+    Output('data-buffer', 'data', allow_duplicate=True),
+    Input('next-buffer', 'n_clicks'),
+    Input('prev-buffer', 'n_clicks'),
+    State('data-buffer', 'data'),
+    prevent_initial_call=True
+)
+def update_buffer(next_clicks, prev_clicks, buffer_data):
+    if not ctx.triggered:
+        raise PreventUpdate
+
+    trigger = ctx.triggered_id
+
+    length = buffer_data["length"]
+    start  = buffer_data["start_site"]
+
+    # Get total number of sites from models (safer than tTEM)
+    if dbdt2.dataframe is None:
+        raise PreventUpdate
+
+    x_axis = dbdt2.settings.x_axis
+    x_vals = np.sort(dbdt2.dataframe[x_axis].dropna().unique())
+    n_sites = len(x_vals)
+
+    if trigger == "next-buffer":
+        start += length
+    elif trigger == "prev-buffer":
+        start -= length
+
+    # Clamp safely
+    start = max(0, min(start, max(0, n_sites - length)))
+
+    buffer_data["start_site"] = start
+    return buffer_data
+
+@app.callback(
+    mod2.output, dbdt2.output, dbdt1.output, m1.output, mod1.output,
+    Input('data-buffer', 'data'),
+    prevent_initial_call=True
+)
+def update_model_section_from_buffer(buffer_data):
+    start  = buffer_data["start_site"]
+    length = buffer_data["length"]
+
+    # Update model section buffer
+    mod2.buffer_start = start
+    mod2.buffer_len   = length
+    mod1.buffer_start = start
+    mod1.buffer_len   = length
+
+    # Update tTEM buffer
+    dbdt2.buffer_start = start
+    dbdt2.buffer_len   = length
+
+
+    x_axis = dbdt2.settings.x_axis
+    df = dbdt2.dataframe
+
+    x_vals = np.sort(df[x_axis].dropna().unique())
+
+    x_slice = x_vals[start:start+length]
+
+    buffer_sites = (
+        df[df[x_axis].isin(x_slice)]["site_id"]
+        .dropna()
+        .unique()
+    )
+
+
+    dbdt1.dataframe = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
+    m1.buffer_sites = buffer_sites
+
+    return mod2.render(), dbdt2.render(), dbdt1.render(), m1.render(), mod1.render()
+
+@app.callback(
+    Output('data-buffer', 'data'),
+    Input('next-buffer', 'n_clicks'),
+    Input('prev-buffer', 'n_clicks'),
+    State('data-buffer', 'data'),
+    prevent_initial_call=True
+)
+def update_buffer(next_clicks, prev_clicks, buffer_data):
+    if not ctx.triggered:
+        raise PreventUpdate
+
+    trigger = ctx.triggered_id
+
+    length = buffer_data["length"]
+    start  = buffer_data["start_site"]
+
+    # Get total number of sites from models (safer than tTEM)
+    if dbdt2.dataframe is None:
+        raise PreventUpdate
+
+    x_axis = dbdt2.settings.x_axis
+    x_vals = np.sort(dbdt2.dataframe[x_axis].dropna().unique())
+    n_sites = len(x_vals)
+
+    if trigger == "next-buffer":
+        start += length
+    elif trigger == "prev-buffer":
+        start -= length
+
+    # Clamp safely
+    start = max(0, min(start, max(0, n_sites - length)))
+
+    buffer_data["start_site"] = start
+    return buffer_data
+
+@app.callback(
+    Output('data-buffer', 'data', allow_duplicate=True),
+    Input('buffer-length-input', 'value'),
+    State('data-buffer', 'data'),
+    prevent_initial_call=True,
+)
+def update_buffer_length(new_length, buffer_data):
+    if new_length is None or new_length <= 0:
+        raise PreventUpdate
+
+    buffer_data["length"] = int(new_length)
+
+    # reset start if necessary to avoid overflow
+    buffer_data["start_site"] = max(0, buffer_data["start_site"])
+
+    return buffer_data
 
 @app.callback(
     Output("model_section", "figure", allow_duplicate=True),
@@ -600,22 +773,14 @@ def save_session(n1):
     return f'Session saved to {sesh.save_dir}'
 
 @app.callback(
-    [
-        Output("output-click", "children", allow_duplicate=True),
-        Output("selected-site-id", "data", allow_duplicate=True),
-        Output('map', 'figure', allow_duplicate=True),
-        Output('model_graph', 'figure', allow_duplicate=True),
-        Output('sounding', 'figure', allow_duplicate=True),
-        Output('multi_inv', 'figure', allow_duplicate=True),
-        Output('model_section', 'figure', allow_duplicate=True),
-        Output('tTEM', 'figure', allow_duplicate=True),
-    ],
+    Output("output-click", "children", allow_duplicate=True),
+    Output("selected-site-id", "data", allow_duplicate=True),
+    m1.output, mod1.output, dbdt1.output, Multi_inv.output, mod2.output, dbdt2.output,
     Input('highlight_prev', 'n_clicks'),
     Input('highlight_next', 'n_clicks'),
     State('invert_layout',  'color'),
     State('flex-layout', 'model'),
-    prevent_initial_call=True,
-    allow_duplicate=True
+    prevent_initial_call=True
 )
 def highlight_change(n1, n2, invert_layout_color,model):
     # ctx = callback_context
@@ -670,51 +835,13 @@ def highlight_change(n1, n2, invert_layout_color,model):
 
 
 
-
-# @app.callback(
-#     Output('map', 'figure', allow_duplicate=True),
-#     [
-#         Input('model_section', 'hoverData'),
-#         Input('tTEM', 'hoverData'),
-#     ],
-#     prevent_initial_call="initial_duplicate",
-#     allow_duplicate=True
-# )
-# def cross_panel_hover(sounding_hover, ttem_hover):
-#     # ctx = callback_context
-#     if not ctx.triggered:
-#         raise PreventUpdate
-#     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
-#     hover_data = ctx.triggered[0]['value']
-#     if not hover_data or 'points' not in hover_data:
-#         raise PreventUpdate
-#     if trigger_id == 'tTEM':
-#         x_value = hover_data['points'][0]['x']
-#         site_id = dbdt2.dataframe.query(f'{dbdt2.settings.x_axis} == @x_value')['site_id'].iloc[0]
-#         m1.highlighted = site_id
-#     elif trigger_id == 'model_section':
-#         x_value = hover_data['points'][0]['x']
-#         site_id = mod2.dataframe.query(f'{mod2.settings.x_axis} == @x_value')['site_id'].iloc[0]
-#         m1.highlighted = site_id
-
-#     return m1.render()
-
 @app.callback(
-    Output('map', 'figure', allow_duplicate=True),
-    Output('model_graph', 'figure', allow_duplicate=True),
-    Output('sounding', 'figure', allow_duplicate=True),
-    Output('model_section', 'figure', allow_duplicate=True),
-    Output('tTEM', 'figure', allow_duplicate=True),
-        #Output('table_overview', 'figure', allow_duplicate=True)
-    #Output('starting_model', 'figure', allow_duplicate=True),
-    [
-        Input('model_section', 'clickData'),
-        Input('tTEM', 'clickData'),
-        Input('map', 'clickData'),
-        State('invert_layout',  'color'),
-    ],
-    prevent_initial_call="initial_duplicate",
-    allow_duplicate=True
+    m1.output, mod1.output, dbdt1.output, mod2.output, dbdt2.output,
+    Input('model_section', 'clickData'),
+    Input('tTEM', 'clickData'),
+    Input('map', 'clickData'),
+    State('invert_layout',  'color'),
+    prevent_initial_call=True
 )
 def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color):
     # ctx = callback_context
@@ -748,34 +875,6 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color):
     #     mod1.dataframe = df_layers
     #     dbdt1.dataframe = df_site
     return m1.render(), mod1.render(), dbdt1.render(), mod2.render(), dbdt2.render()
-
-# @app.callback(
-#     Output("starting-model", "data"),
-#     Input("multi_inv", "relayoutData"),
-#     Input("inv-single", "relayoutData"),
-#     State("starting-model", "data"),
-#     prevent_initial_call=True
-# )
-# def update_starting_model_from_iterations(multi_inv_data, sing_site_data, data):
-
-#     if not ctx.triggered:
-#         raise PreventUpdate
-
-#     trigger_id = ctx.triggered[0]["prop_id"].split(".")[0]
-
-#     if trigger_id == "multi_inv":
-#         relayoutData = multi_inv_data
-#     elif trigger_id == "inv-single":
-#         relayoutData = sing_site_data
-#     else:
-#         raise PreventUpdate
-
-#     if not relayoutData or "shapes[0].x0" not in relayoutData:
-#         raise PreventUpdate
-
-#     rho = float(relayoutData["shapes[0].x0"])
-#     data["rho"] = rho
-#     return data
 
 @app.callback(
     Output("starting-model", "data", allow_duplicate=True),
@@ -819,42 +918,6 @@ def update_starting_model_from_single_drag(relayout, model):
 
 
 
-
-# @app.callback(
-#     Output("starting-model-selected", "data"),
-#     Input("multi_inv", "selectedData"),
-#     prevent_initial_call=True
-# )
-# def launch_inversion(n_clicks, current_review_clicks, vc_level,hc_level,starting_model):
-#     if n_clicks:
-#         from torch import from_numpy, tensor
-#         # print('starting model:', starting_model["rho"])
-#         rho = tensor(starting_model["rho"]).repeat(len(starting_model["depth"]))
-#         z   = tensor(starting_model["depth"][:-1])
-        
-#         if vc_level == "loose":
-#             Vert = 5.0
-#         elif vc_level == "medium":
-#             Vert = 0.5
-#         elif vc_level == "tight":
-#             Vert = 0.1
-
-#         if hc_level == "loose":
-#             Horz = 5.0
-#         elif hc_level == "medium":
-#             Horz = 0.6
-#         elif hc_level == "tight":
-#             Horz = 0.3
-#         res_start                        = LogResistivity.smooth(rho,z) 
-#         sesh.models, sesh.data = sesh.data.invert(res_start,vc = Vert, hc = Horz)
-#         mod1.dataframe                   = sesh.models.copy()
-#         mod2.dataframe                   = sesh.models.copy()
-#         dbdt1.dataframe                  = sesh.data.copy()
-#         dbdt2.dataframe                  = sesh.data.copy()
-#         new_review_clicks = (current_review_clicks or 0) + 1
-#         layouts.invert = layouts.invert_multi_first
-#         return mod2.render(), dbdt1.render(), new_review_clicks, False#, 0
-#     raise PreventUpdate
 
 
 @app.callback(
@@ -914,8 +977,15 @@ def upload_file(contents, current_process_clicks):
     rhoa.dataframe = sesh.data.copy()
     Multi_inv.dataframe = sesh.data.copy()
     Sing_inv.dataframe = sesh.data.copy()
-    m1.dataframe    = sesh.overview
+    # m1.dataframe    = sesh.overview
+    m1.dataframe = sesh.data.copy()
+    buffer_length = 50
+    unique_sites = np.sort(sesh.data['site_id'].unique())
+    initial_sites = unique_sites[:buffer_length]
+
+    m1.buffer_sites = initial_sites.tolist()
     mod1.dataframe  = sesh.models
+    mod1.buffer_sites = initial_sites.tolist()
     mod2.dataframe  = sesh.models
     # t1.dataframe = TABLES['overview'].copy()
     new_process_clicks = no_update
@@ -1581,7 +1651,7 @@ layout_output_list = [
         Output('process_layout', 'disabled', allow_duplicate=True),
         Output('invert_layout',  'disabled', allow_duplicate=True),
         Output('review_layout',  'disabled', allow_duplicate=True), #Output
-        Output("current-working-directory", "children"),
+        Output("current-working-directory", "children", allow_duplicate=True),
         Output('url', 'hash', allow_duplicate=True),
 ]
 
