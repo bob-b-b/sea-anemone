@@ -1,7 +1,7 @@
 from dataclasses import field
 from basepanel import *
 #from database_panel import DatabasePanel
-from dash import dash_table, ctx
+from dash import dash_table, ctx, no_update
 import numpy as np
 from nosj import nosj
 
@@ -44,6 +44,17 @@ custom_template = {
 pio.templates["custom"] = custom_template
 pio.templates.default = "custom"
 
+def cdist(lat1,lon1,lat2,lon2):
+    lat1rad = lat1/(180./np.pi)
+    lon1rad = lon1/(180./np.pi)
+    lat2rad = lat2/(180./np.pi)
+    lon2rad = lon2/(180./np.pi)
+    d = 3963. * np.arccos((np.sin(lat1rad)*np.sin(lat2rad))+ \
+            np.cos(lat1rad)*np.cos(lat2rad)*np.cos(lon2rad-lon1rad)) * \
+            1.609344 * 1000.
+    return d
+
+
 @nosj
 class MapSettings(PanelSettings):
     zoom: int = 14
@@ -58,6 +69,8 @@ class Map(Panel):
     dataframe: None
     highlighted: int = None
     buffer_sites: list = None
+    view  = None
+    lines = None
 
     def __init__(self, data, **kwargs):
         settings = MapSettings(id='map', **kwargs)
@@ -70,10 +83,29 @@ class Map(Panel):
         if 'site_id' in df_plot.columns:
             df_plot = df_plot[df_plot['site_id'] != -1]
 
+        zoom = self.view['map.zoom'] if self.view is not None else self.settings.zoom
+        center = self.view['map.center'] if self.view is not None else None
+
         if self.settings.plot_by in self.dataframe.columns:
-            fig = px.scatter_map(df_plot, lat="latitude", lon="longitude", zoom=self.settings.zoom, color=self.settings.plot_by, color_continuous_scale='turbo')
+
+            fig = px.scatter_map(df_plot, lat="latitude", lon="longitude", zoom=zoom, center=center, 
+                                 color=self.settings.plot_by, color_continuous_scale='turbo'
+                                 )
+            fig.update_layout(
+                coloraxis_colorbar=dict(
+                    orientation="h", 
+                    y=-0.01,
+                    x=0.5,          
+                    xanchor="center",
+                    yanchor="top",
+                    len=0.75,
+                    thickness = 10,
+                    title=dict(
+                text='',
+                side="bottom"))
+            )
         else:
-            fig = px.scatter_map(df_plot, lat="latitude", lon="longitude", zoom=self.settings.zoom, color_discrete_sequence=[self.settings.color])
+            fig = px.scatter_map(df_plot, lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.color])
 
         if self.buffer_sites is not None and len(self.buffer_sites) > 0 and self.dataframe is not None and 'site_id' in self.dataframe.columns:
             df_buffer = self.dataframe[self.dataframe["site_id"].isin(self.buffer_sites)]
@@ -83,6 +115,7 @@ class Map(Panel):
                     df_buffer,
                     lat="latitude",
                     lon="longitude",
+                    zoom=zoom, center=center, 
                     # color_discrete_sequence=["#00cc96"],  # soft green
                 )
 
@@ -103,23 +136,60 @@ class Map(Panel):
                     "source": ['https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}']
                 }])
         if self.highlighted is not None:
-            highlight_trace = px.scatter_map(df_plot[df_plot.index == self.highlighted], lat="latitude", lon="longitude", color_discrete_sequence=[self.settings.highlight_color])
+            highlight_trace = px.scatter_map(df_plot[df_plot.index == self.highlighted], lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.highlight_color])
             highlight_trace.update_traces(marker=dict(size=14))
             for trace in highlight_trace.data:
                 fig.add_trace(
                     trace
                 )
+        if self.lines is not None:
+            fig2 = px.line_map(self.lines, lat='latitude', lon='longitude', line_group='line', color='line', zoom=zoom, center=center, hover_name='line')
+            fig = go.Figure(data=fig2.data+fig.data, layout=fig.layout)
+
         fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0},
-                          modebar=dict(add=['drawline', 'drawopenpath', 'eraseshape'], remove=['zoomIn', 'zoomOut']),
-                          newshape=dict(line_color='cyan', line_width=3),
-                          dragmode='select')
-        return fig
+                          modebar=dict(add=['drawline'], remove=['zoomIn', 'zoomOut']),
+                          newshape=dict(line_color='cyan', line_width=3, line_dash='dash'),
+                          dragmode='drawline', showlegend=False)
+        
+        return fig    
+    
+    @property
+    def lat0(self):
+        return min([p[1] for p in self.view['map._derived']['coordinates']])
+    @property
+    def lat1(self):
+        return max([p[1] for p in self.view['map._derived']['coordinates']])
+    @property
+    def lon0(self):
+        return min([p[0] for p in self.view['map._derived']['coordinates']])
+    @property
+    def lon1(self):
+        return max([p[0] for p in self.view['map._derived']['coordinates']])
+        
+    def paper2latlon(self, x, y):
+        if self.view is None:
+            raise Warning("no view, please zoom")
+        elif self.view['map.bearing']!=0 or self.view['map.pitch']!=0:
+            raise Warning("no view, please zoom")
+        else:
+            lat = self.lat0 + (self.lat1-self.lat0)*y
+            lon = self.lon0 + (self.lon1-self.lon0)*x
+            return lat,lon
 
     def initialize(self):
-        return html.Div([dcc.Graph(figure=self.render(), id=self.id, mathjax=True, 
-                                   style={'height': '100%'}),
-                         gear_maker(self.id)],
-                        style={'height': '100%', 'overflow': 'hidden'} )
+        return  html.Div([
+                    html.Div([
+                        dcc.Graph(figure=self.render(), id=self.id, mathjax=True, 
+                                   style={'height': '95%'}),
+                        dbc.Select(
+                            options=['misfit', 'doi', 'date'],
+                            id=self.id+'_plot_by',
+                            value='misfit',
+                            style={'margin-left':'45%', 'justify': 'center','width':'10%'}),
+                    ]),
+                    gear_maker(self.id)],
+                    style={'height': '100%'} 
+                )
 
     def add_callbacks(self, app):
         super().add_callbacks(app)
@@ -132,11 +202,45 @@ class Map(Panel):
         def update_highlight(site_id):
             if site_id is None:
                 raise PreventUpdate
-
             self.highlighted = site_id
             return self.render()
 
-        
+        @app.callback(
+            self.output,
+            Input(self.id+'_plot_by', 'value'),
+            prevent_initial_call=True
+        )
+        def update_plotby(value):
+            if value not in self.dataframe.columns:
+                raise PreventUpdate
+            self.settings.plot_by = value
+            return self.render()  
+
+        @app.callback(
+            Output('map', 'relayoutData'),
+            self.output,
+            Input('map', 'relayoutData'),
+            prevent_initial_call=True
+        )
+        def update_view(relayout_data):
+            fig=no_update
+            if 'map.center' in relayout_data:
+                self.view = relayout_data
+            elif 'shapes' in relayout_data:
+                lat0,lon0 = self.paper2latlon(relayout_data['shapes'][-1]['x0'], relayout_data['shapes'][-1]['y0'])
+                lat1,lon1 = self.paper2latlon(relayout_data['shapes'][-1]['x1'], relayout_data['shapes'][-1]['y1'])
+                line_id = 1
+                if self.lines is None:
+                    self.lines = pd.DataFrame({'latitude':[lat0], 'longitude':[lon0], 'line':[line_id]})
+                else:
+                    lat,lon,line_id = self.lines.loc[len(self.lines)-1].tolist()
+                    if cdist(lat,lon, lat0, lon0) > 10:
+                        line_id +=1 
+                        self.lines.loc[len(self.lines)] = [lat0, lon0, line_id]
+                self.lines.loc[len(self.lines)] = [lat1, lon1, line_id]
+                del relayout_data['shapes']
+                fig=self.render()
+            return relayout_data, fig
 
 
 
