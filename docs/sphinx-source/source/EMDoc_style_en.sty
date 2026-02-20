@@ -1,0 +1,91 @@
+% =============================================================
+% Anemone Documentation Style File
+% =============================================================
+
+% -- Document Metadata Definitions --
+\newcommand{\GMTDOCTITLE}{Anemone \textbf{Documentation}}
+\newcommand{\GMTDOCAUTHOR}{HydroGeophysics Group Team}
+\newcommand{\GMTDOCCOPYRIGHT}{HydroGeophysics Group, Aarhus University}
+\newcommand{\GMTDOCVERSION}{0.1}
+\newcommand{\GMTCONTACT}{mailto:hgg@geo.au.dk} 
+
+% -- Hyperref Setup --
+% Sphinx loads hyperref by default, we configure it here
+\hypersetup{
+    pdftitle={\GMTDOCTITLE v\GMTDOCVERSION},
+    pdfauthor={\GMTDOCAUTHOR},
+    pdfsubject={\GMTDOCCOPYRIGHT},
+    bookmarksopen=true,
+    colorlinks=true,
+    linkcolor=blue,
+    citecolor=blue,
+    urlcolor=blue
+}
+
+% -- Section Formatting --
+% Using titlesec to format section titles since we removed ctex
+\titleformat{\section}{\Large\bfseries}{\thesection}{0.5em}{}{}
+\titleformat{\subsection}{\large\bfseries}{\thesubsection}{0.5em}{}{}
+\titleformat{\subsubsection}{\bfseries}{\thesubsubsection}{0.5em}{}{}
+
+% -- List Customization --
+% Requires enumitem package
+\usepackage{enumitem}
+\setlist[description]{
+    font=\normalfont\bfseries, % Labels are bold
+    style=nextline,            % Definition starts on the next line
+    itemsep=-5pt               % Reduce space between items
+}
+
+% -- Two-column Table of Contents --
+\usepackage{multicol}
+\makeatletter
+\renewcommand{\tableofcontents}{%
+    \setlength{\columnsep}{2.5em}
+    \begin{multicols}{2}[\chapter*{\contentsname}]%
+        \@starttoc{toc}%
+    \end{multicols}
+}
+\makeatother
+
+% -- Custom Cover Page --
+\renewcommand{\maketitle}{%
+    \pdfbookmark[0]{Cover}{cover} % Bookmark name changed to English
+    \begin{titlepage}
+        \centering
+        \vspace*{6cm}
+        {\Huge \GMTDOCTITLE}\\[0.25cm]
+        {\huge v\GMTDOCVERSION}\\[0.5cm]
+        {\Large \GMTDOCAUTHOR} \\
+        \vspace{1cm}
+        {\huge \Large \GMTDOCCOPYRIGHT} \\
+        \vspace{2cm}
+        {\Large \today} \\
+    \end{titlepage}
+}
+
+% -- Clear Double Page with Message --
+% Inserts a blank page with a message if the next page is even (for two-sided printing)
+\makeatletter
+\def\cleardoublepage{
+    \clearpage
+    \if@twoside
+        \ifodd
+            \c@page
+        \else
+            \hbox{}
+            \vspace*{\fill}
+            \begin{center}
+                \textit{Protect the environment, start by reading electronic documents!}
+            \end{center}
+            \vspace{\fill}
+            \thispagestyle{empty}
+            \newpage
+            \if@twocolumn
+                \hbox{}
+                \newpage
+            \fi
+        \fi
+    \fi
+}
+\makeatother

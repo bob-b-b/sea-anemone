@@ -26,6 +26,8 @@ class Session:
     forwards: List[Forward] = None
     settings: SessionSettings = None
     save_dir: str = None
+    dem_path: str = None
+    dem_name: str = None
 
     def save(self, folder=None, binary_threshold=100):
         other = self.copy()

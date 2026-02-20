@@ -63,10 +63,14 @@ class Map(Panel):
 
     def render(self):
         if self.dataframe is None: return self.empty_render()
+        df_plot = self.dataframe
+        if 'site_id' in df_plot.columns:
+            df_plot = df_plot[df_plot['site_id'] != -1]
+
         if self.settings.plot_by in self.dataframe.columns:
-            fig = px.scatter_map(self.dataframe, lat="latitude", lon="longitude", zoom=self.settings.zoom, color=self.settings.plot_by, color_continuous_scale='turbo')
+            fig = px.scatter_map(df_plot, lat="latitude", lon="longitude", zoom=self.settings.zoom, color=self.settings.plot_by, color_continuous_scale='turbo')
         else:
-            fig = px.scatter_map(self.dataframe, lat="latitude", lon="longitude", zoom=self.settings.zoom, color_discrete_sequence=[self.settings.color])
+            fig = px.scatter_map(df_plot, lat="latitude", lon="longitude", zoom=self.settings.zoom, color_discrete_sequence=[self.settings.color])
         fig.update_layout(map_style="white-bg",
             map_layers=[
                 {
@@ -76,7 +80,7 @@ class Map(Panel):
                     "source": ['https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}']
                 }])
         if self.highlighted is not None:
-            highlight_trace = px.scatter_map(self.dataframe[self.dataframe.index == self.highlighted], lat="latitude", lon="longitude", color_discrete_sequence=[self.settings.highlight_color])
+            highlight_trace = px.scatter_map(df_plot[df_plot.index == self.highlighted], lat="latitude", lon="longitude", color_discrete_sequence=[self.settings.highlight_color])
             highlight_trace.update_traces(marker=dict(size=14))
             for trace in highlight_trace.data:
                 fig.add_trace(
@@ -721,6 +725,189 @@ class Upload(Panel):
                     multiple=True,
                 ),
                 html.Div(id='output-data-upload'),
+                html.Div(id='output-data-summary', style={'marginTop': '8px'}),
+                dbc.Toast(
+                    id='upload-toast',
+                    header='Upload',
+                    is_open=False,
+                    dismissable=True,
+                    duration=4000,
+                    icon='primary',
+                    style={'position': 'fixed', 'top': '70px', 'right': '20px', 'zIndex': 2000, 'minWidth': '280px'}
+                ),
+                html.Br(),
+                html.Div(
+                    [
+                        dbc.Checkbox(
+                            id='use-dem',
+                            value=False,
+                            label='Use DEM (optional)',
+                            style={'marginLeft': '5px'}
+                        ),
+                        html.Div(
+                            [
+                                dcc.Upload(
+                                    id='upload-dem',
+                                    children=html.Div([
+                                        'DEM: Drag and Drop \n or \n',
+                                        html.A('Select DEM File')
+                                    ], style={'height': '90px', 'lineHeight': '80px', 'textAlign': 'center'}),
+                                    style={
+                                        'borderWidth': '2px',
+                                        'borderStyle': 'dashed',
+                                        'borderRadius': '5px',
+                                        'textAlign': 'center',
+                                    },
+                                    multiple=False,
+                                    accept='.tif,.tiff,.asc,.bil,.dem,.xyz',
+                                ),
+                                html.Div(id='output-dem-upload'),
+                                html.Hr(style={'marginTop': '12px', 'marginBottom': '8px'}),
+                                html.Div(
+                                    [
+                                        html.Div('DEM download (WGS84 lon/lat bbox):', style={'fontWeight': '600', 'marginBottom': '6px'}),
+                                        html.Div([
+                                            html.Div([
+                                                html.Label('Source', style={'fontSize': '12px'}),
+                                                dcc.Dropdown(
+                                                    id='dem-source',
+                                                    options=[
+                                                        {'label': 'OpenTopography (global)', 'value': 'opentopo'},
+                                                        {'label': 'NCEI ETOPO 2022 (global GeoTIFF)', 'value': 'etopo'},
+                                                    ],
+                                                    value='opentopo',
+                                                    clearable=False,
+                                                )
+                                            ], style={'width': '60%'}),
+                                        ], style={'display': 'flex', 'gap': '10px', 'marginBottom': '8px'}),
+                                        html.Div(
+                                            [
+                                                html.Label('OpenTopography API key', style={'fontSize': '12px'}),
+                                                dcc.Input(
+                                                    id='dem-api-key',
+                                                    type='text',
+                                                    value='',
+                                                    placeholder='Paste API key (required for OpenTopography)',
+                                                    list='dem-api-key-list',
+                                                    className='form-control',
+                                                    style={'width': '100%', 'borderRadius': '6px'}
+                                                ),
+                                                html.Datalist(id='dem-api-key-list'),
+                                                dbc.Button(
+                                                    'History ▼',
+                                                    id='dem-api-key-history-toggle',
+                                                    color='link',
+                                                    size='sm',
+                                                    style={'padding': '0', 'marginTop': '6px'}
+                                                ),
+                                                dbc.Collapse(
+                                                    html.Div(
+                                                        id='dem-api-key-history',
+                                                        style={'marginTop': '6px'}
+                                                    ),
+                                                    id='dem-api-key-history-collapse',
+                                                    is_open=False
+                                                ),
+                                            ],
+                                            id='dem-api-key-container',
+                                            style={'marginBottom': '8px'}
+                                        ),
+                                        html.Div([
+                                            html.Div([
+                                                html.Label('Min lon', style={'fontSize': '12px'}),
+                                                dcc.Input(id='dem-bbox-minlon', type='number', placeholder='-180', debounce=True, style={'width': '100%'})
+                                            ], style={'width': '24%'}),
+                                            html.Div([
+                                                html.Label('Min lat', style={'fontSize': '12px'}),
+                                                dcc.Input(id='dem-bbox-minlat', type='number', placeholder='-90', debounce=True, style={'width': '100%'})
+                                            ], style={'width': '24%'}),
+                                            html.Div([
+                                                html.Label('Max lon', style={'fontSize': '12px'}),
+                                                dcc.Input(id='dem-bbox-maxlon', type='number', placeholder='180', debounce=True, style={'width': '100%'})
+                                            ], style={'width': '24%'}),
+                                            html.Div([
+                                                html.Label('Max lat', style={'fontSize': '12px'}),
+                                                dcc.Input(id='dem-bbox-maxlat', type='number', placeholder='90', debounce=True, style={'width': '100%'})
+                                            ], style={'width': '24%'}),
+                                        ], style={'display': 'flex', 'gap': '6px', 'marginBottom': '8px'}),
+                                        html.Div(
+                                            [
+                                                dbc.Button('Use data extent', id='dem-bbox-from-data', color='secondary', outline=True, size='sm'),
+                                            ],
+                                            style={'marginBottom': '8px'}
+                                        ),
+                                        html.Div([
+                                            html.Div([
+                                                html.Label('Resolution', style={'fontSize': '12px'}),
+                                                dcc.Dropdown(
+                                                    id='dem-resolution',
+                                                    options=[
+                                                        {'label': 'Global Copernicus GLO-30 (~30 m)', 'value': 'opentopo_cop30'},
+                                                        {'label': 'Global SRTMGL1 (~30 m)', 'value': 'opentopo_srtmgl1'},
+                                                        {'label': 'Global SRTMGL3 (~90 m)', 'value': 'opentopo_srtmgl3'},
+                                                        {'label': 'Global ALOS (~30 m)', 'value': 'opentopo_alos'},
+                                                        {'label': 'ETOPO2022 30 arc-second (surface, global)', 'value': 'etopo_30s'},
+                                                        {'label': 'ETOPO2022 60 arc-second (surface, global)', 'value': 'etopo_60s'},
+                                                    ],
+                                                    value='opentopo_cop30',
+                                                    clearable=False,
+                                                )
+                                            ], style={'width': '60%'}),
+                                            html.Div([
+                                                dbc.Button(
+                                                    'Download DEM',
+                                                    id='download-dem',
+                                                    color='primary',
+                                                    style={'flex': '1', 'height': '42px'}
+                                                ),
+                                                dbc.Button(
+                                                    'Save DEM + KML',
+                                                    id='save-dem',
+                                                    color='secondary',
+                                                    outline=True,
+                                                    disabled=True,
+                                                    style={'flex': '1', 'height': '42px'}
+                                                ),
+                                            ], style={'width': '40%', 'display': 'flex', 'gap': '6px', 'marginTop': '18px', 'alignItems': 'flex-start'}),
+                                        ], id='dem-resolution-container', style={'display': 'flex', 'gap': '10px', 'alignItems': 'flex-start'}),
+                                        html.Div(
+                                            [
+                                                dbc.Button(
+                                                    'Load DEM vs GPS',
+                                                    id='load-dem-vs-gps',
+                                                    color='secondary',
+                                                    outline=False,
+                                                    style={'width': '100%', 'backgroundColor': '#7B2CBF', 'borderColor': '#7B2CBF'}
+                                                ),
+                                            ],
+                                            style={'marginTop': '8px'}
+                                        ),
+                                        html.Div(
+                                            [
+                                                dbc.Button(
+                                                    'Restore GPS elevation',
+                                                    id='restore-gps-elevation',
+                                                    color='secondary',
+                                                    outline=True,
+                                                    style={'width': '100%'},
+                                                    disabled=True
+                                                ),
+                                            ],
+                                            style={'marginTop': '6px'}
+                                        ),
+                                        html.Div(id='output-dem-download', style={'marginTop': '6px'}),
+                                        html.Div(id='output-dem-save', style={'marginTop': '6px'}),
+                                        html.Div(id='output-dem-load', style={'marginTop': '6px'})
+                                    ]
+                                ),
+                            ],
+                            id='dem-upload-container',
+                            style={'display': 'none', 'marginTop': '10px'}
+                        ),
+                    ],
+                    id='dem-options-container',
+                    style={'display': 'none'}
+                ),
         ],
         )
     

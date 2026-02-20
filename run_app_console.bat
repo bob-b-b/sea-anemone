@@ -2,7 +2,7 @@
 setlocal enabledelayedexpansion
 
 rem Set the path to the embedded Python interpreter
-set PYTHON_PATH=python\python.exe
+set PYTHON_PATH=python.exe
 
 rem Launch the Dash application in the background using the PID wrapper
 start "" "%PYTHON_PATH%" -i app\app.py

@@ -283,16 +283,22 @@ class PanelSettings:
             if n_clicks:
                 root = tk.Tk()
                 root.withdraw()  # Hide the root window
-                root.attributes('-topmost',True)
+                root.attributes('-topmost', True)
+                root.lift()
+                root.focus_force()
+                root.update()
                 
                 fname = filedialog.asksaveasfilename(
                     title="Save Settings",
                     defaultextension=".json",
                     filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
-                    initialfile=f"{self.id}_settings.json"
+                    initialfile=f"{self.id}_settings.json",
+                    parent=root
                 )
 
-                self.save_settings(fname)
+                if fname:
+                    self.save_settings(fname)
+                root.destroy()
             return n_clicks
         
         @app.callback(
@@ -304,13 +310,18 @@ class PanelSettings:
             if n_clicks:
                 root = tk.Tk()
                 root.withdraw()
-                root.attributes('-topmost',True)
+                root.attributes('-topmost', True)
+                root.lift()
+                root.focus_force()
+                root.update()
                 fname = filedialog.askopenfilename(
                     title="Load Settings",
-                    filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
+                    filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+                    parent=root
                 )
                 if fname:
                     self.load_settings(fname)
+                root.destroy()
             return self.render()
         
         @app.callback(
