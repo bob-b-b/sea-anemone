@@ -662,17 +662,17 @@ class Single_site(Panel):
             curves = None
             return self.render()
 
-        @app.callback(
-            Output("selected-site-id", "data"),
-            Input("map", "clickData"),
-            prevent_initial_call=True
-        )
-        def select_site_from_map(click_data):
-            if not click_data or "points" not in click_data:
-                raise PreventUpdate
+        # @app.callback(
+        #     Output("selected-site-id", "data"),
+        #     Input("map", "clickData"),
+        #     prevent_initial_call=True
+        # )
+        # def select_site_from_map(click_data):
+        #     if not click_data or "points" not in click_data:
+        #         raise PreventUpdate
 
-            site_id = int(click_data["points"][0]["pointNumber"])
-            return site_id
+        #     site_id = int(click_data["points"][0]["pointNumber"])
+        #     return site_id
         
         @app.callback(
             Output("vc-single-levels", "data"),
@@ -719,7 +719,6 @@ class Single_site(Panel):
             Output("inv-single", "figure", allow_duplicate=True),
             # Output("map", "figure", allow_duplicate=True),
             Input("map", "clickData"),
-            Input("selected-site-id", "data"),
             State("vc-single-levels", "data"),
             State("starting-model", "data"),
             State("invert_layout", "color"),
@@ -730,7 +729,7 @@ class Single_site(Panel):
             (Output("single-inv-status", "children"), "Inversion running", "Select constraints and interact with map       ")],
             prevent_initial_call=True
         )
-        def invert_single_site(click_data, selected_site_id, vc_levels, starting_model, layout):
+        def invert_single_site(click_data, vc_levels, starting_model, layout):
             if not click_data or 'points' not in click_data or not layout=='primary':
                 raise PreventUpdate
             from __main__ import sesh
@@ -739,9 +738,7 @@ class Single_site(Panel):
                 raise PreventUpdate
             trigger = ctx.triggered_id
             if trigger == "map" and click_data and "points" in click_data:
-                site_id = int(click_data['points'][0]['pointNumber'])
-            elif trigger == "selected-site-id":
-                site_id = selected_site_id
+                site_id = sesh.data['site_id'].iloc[click_data['points'][0]['pointNumber']]
             else:
                 raise PreventUpdate
             if site_id is None:

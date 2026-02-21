@@ -106,7 +106,6 @@ class Map(Panel):
             )
         else:
             fig = px.scatter_map(df_plot, lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.color])
-
         if self.buffer_sites is not None and len(self.buffer_sites) > 0 and self.dataframe is not None and 'site_id' in self.dataframe.columns:
             df_buffer = self.dataframe[self.dataframe["site_id"].isin(self.buffer_sites)]
 
@@ -126,7 +125,8 @@ class Map(Panel):
 
                 for trace in buffer_trace.data:
                     fig.add_trace(trace)
-
+                fig.data = (fig.data[1], fig.data[0])
+        
         fig.update_layout(map_style="white-bg",
             map_layers=[
                 {
@@ -136,7 +136,9 @@ class Map(Panel):
                     "source": ['https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}']
                 }])
         if self.highlighted is not None:
-            highlight_trace = px.scatter_map(df_plot[df_plot.index == self.highlighted], lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.highlight_color])
+            print('in panels', self.highlighted)
+            # highlight_trace = px.scatter_map(df_plot[df_plot.index == self.highlighted], lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.highlight_color])
+            highlight_trace = px.scatter_map(df_plot[df_plot['site_id'] == self.highlighted], lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.highlight_color])
             highlight_trace.update_traces(marker=dict(size=14))
             for trace in highlight_trace.data:
                 fig.add_trace(
@@ -147,9 +149,9 @@ class Map(Panel):
             fig = go.Figure(data=fig2.data+fig.data, layout=fig.layout)
 
         fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0},
-                          modebar=dict(add=['drawline'], remove=['zoomIn', 'zoomOut']),
-                          newshape=dict(line_color='cyan', line_width=3, line_dash='dash'),
-                          dragmode='drawline', showlegend=False)
+                        modebar=dict(add=['drawline'], remove=['zoomIn', 'zoomOut']),
+                        newshape=dict(line_color='cyan', line_width=3, line_dash='dash'),
+                        dragmode='select', showlegend=False)
         
         return fig    
     
@@ -176,34 +178,76 @@ class Map(Panel):
             lon = self.lon0 + (self.lon1-self.lon0)*x
             return lat,lon
 
+    # def initialize(self):
+    #     return  html.Div([
+    #                 html.Div([
+    #                     dcc.Graph(figure=self.render(), id=self.id, mathjax=True,
+    #                                 style={'height': '75vh', 'width': '100%','margin':'1%'}),
+    #                     dbc.Select(
+    #                         options=['misfit', 'doi', 'date'],
+    #                         id=self.id+'_plot_by',
+    #                         value='misfit',
+    #                         style={'margin-left':'45%', 'justify': 'center','width':'10%'}),
+    #                 ]),
+    #                 gear_maker(self.id)],
+    #                 style={'height': '100%'} 
+                # )
     def initialize(self):
-        return  html.Div([
-                    html.Div([
-                        dcc.Graph(figure=self.render(), id=self.id, mathjax=True, 
-                                   style={'height': '95%'}),
+        return html.Div(
+            [
+                html.Div(
+                    [
+                        html.Div(   # 👈 padding wrapper
+                            dcc.Graph(
+                                figure=self.render(),
+                                id=self.id,
+                                mathjax=True,
+                                style={
+                                    'height': '100%',
+                                    'width': '100%'
+                                }
+                            ),
+                            style={
+                                'flex': '1',
+                                'minHeight': 0,
+                                'padding': '15px',     # ✅ safe margin
+                                'boxSizing': 'border-box'
+                            }
+                        ),
+
                         dbc.Select(
                             options=['misfit', 'doi', 'date'],
                             id=self.id+'_plot_by',
                             value='misfit',
-                            style={'margin-left':'45%', 'justify': 'center','width':'10%'}),
-                    ]),
-                    gear_maker(self.id)],
-                    style={'height': '100%'} 
-                )
+                            style={
+                                'position': 'absolute',
+                                'top': '15px',
+                                'left': '50%',
+                                'transform': 'translateX(-50%)',
+                                'width': '150px'
+                            }
+                        ),
+                    ],
+                    style={
+                        'flex': '1',
+                        'minHeight': 0,
+                        'position': 'relative',
+                        'display': 'flex'
+                    }
+                ),
+                gear_maker(self.id)
+            ],
+            style={
+                'display': 'flex',
+                'flexDirection': 'column',
+                'height': '100%',
+                'minHeight': 0
+            }
+        )
 
     def add_callbacks(self, app):
         super().add_callbacks(app)
 
-        @app.callback(
-            Output(self.id, "figure", allow_duplicate=True),
-            Input("selected-site-id", "data"),
-            prevent_initial_call=True
-        )
-        def update_highlight(site_id):
-            if site_id is None:
-                raise PreventUpdate
-            self.highlighted = site_id
-            return self.render()
 
         @app.callback(
             self.output,

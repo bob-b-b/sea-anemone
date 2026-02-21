@@ -406,7 +406,7 @@ flex_layout = dfl.FlexLayout(
 app.layout = html.Div([
     dcc.Location(id='url', refresh='callback-nav'),
     dcc.Interval(id= "inv-log-poll", interval=1000, n_intervals=0, disabled=True),  # Poll every 2 seconds
-    dcc.Store(id="selected-site-id", data=None),
+    # dcc.Store(id="selected-site-id", data=None),
     dcc.Store(id="starting-model", data={"rho": 10.0,"depth": np.cumsum(np.logspace(0, 1.3, 31)).tolist()}),
     dcc.Store(id='starting-model-selected',data=[]),
     dcc.Store(id='data-buffer',data={"length": 50, "start_site":0}),
@@ -662,6 +662,7 @@ def update_model_section_from_buffer(buffer_data):
 
     dbdt1.dataframe = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
     m1.buffer_sites = buffer_sites
+    # dbdt1.buffer_sites = buffer_sites
 
     return mod2.render(), dbdt2.render(), dbdt1.render(), m1.render(), mod1.render()
 
@@ -774,13 +775,13 @@ def save_session(n1):
 
 @app.callback(
     Output("output-click", "children", allow_duplicate=True),
-    Output("selected-site-id", "data", allow_duplicate=True),
-    m1.output, mod1.output, dbdt1.output, Multi_inv.output, mod2.output, dbdt2.output,
+    # Output("selected-site-id", "data", allow_duplicate=True),
+    m1.output, mod1.output, dbdt1.output, Multi_inv.output, mod2.output, dbdt2.output, rhoa.output,
     Input('highlight_prev', 'n_clicks'),
     Input('highlight_next', 'n_clicks'),
     State('invert_layout',  'color'),
     State('flex-layout', 'model'),
-    prevent_initial_call=True
+    prevent_initial_call=True,
 )
 def highlight_change(n1, n2, invert_layout_color,model):
     # ctx = callback_context
@@ -804,6 +805,7 @@ def highlight_change(n1, n2, invert_layout_color,model):
     mod2.highlighted = highlighted
     dbdt2.highlighted = highlighted
     dbdt1.dataframe = df_data[df_data['site_id'] == highlighted]
+    rhoa.dataframe = df_data[df_data['site_id'] == highlighted]
     print('invert layout color:', invert_layout_color)
     def get_active_tab_id(model):
         if model is None:
@@ -831,19 +833,20 @@ def highlight_change(n1, n2, invert_layout_color,model):
     
     
 
-    return ctx.triggered_id, highlighted, m1.render(), mod1.render(), dbdt1.render(), Multi_inv.render(), mod2.render(), dbdt2.render()
+    return ctx.triggered_id, m1.render(), mod1.render(), dbdt1.render(), Multi_inv.render(), mod2.render(), dbdt2.render(), rhoa.render()
 
 
 
 @app.callback(
-    m1.output, mod1.output, dbdt1.output, mod2.output, dbdt2.output,
+    m1.output, mod1.output, dbdt1.output, mod2.output, dbdt2.output, rhoa.output,
     Input('model_section', 'clickData'),
     Input('tTEM', 'clickData'),
     Input('map', 'clickData'),
     State('invert_layout',  'color'),
+    State('data-buffer', 'data'),
     prevent_initial_call=True
 )
-def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color):
+def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color,buffer_data):
     # ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
@@ -858,7 +861,7 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color):
         x_value = click_data['points'][0]['x']
         site_id = mod2.dataframe.query(f'{mod2.settings.x_axis} == @x_value')['site_id'].iloc[0]
     elif trigger_id == 'map':
-        site_id = int(click_data['points'][0]['pointNumber'])
+        site_id = sesh.data['site_id'].iloc[click_data['points'][0]['pointNumber']]
     else:
         site_id = None
     df_data = sesh.data
@@ -868,13 +871,14 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color):
     mod2.highlighted = site_id
     dbdt2.highlighted = site_id
     dbdt1.dataframe = df_data[df_data['site_id'] == site_id]
+    rhoa.dataframe  = df_data[df_data['site_id'] == site_id]
     # if invert_layout_color == 'primary':
     #     # df_layers, df_site, _ = df_data.invert_site(site_id)
     #     # if mod1.dataframe is not None:
     #     #     df_layers = pd.concat([mod1.dataframe[df_data['site_id'] != site_id], df_layers], ignore_index=True)
     #     mod1.dataframe = df_layers
     #     dbdt1.dataframe = df_site
-    return m1.render(), mod1.render(), dbdt1.render(), mod2.render(), dbdt2.render()
+    return m1.render(), mod1.render(), dbdt1.render(), mod2.render(), dbdt2.render(), rhoa.render()
 
 @app.callback(
     Output("starting-model", "data", allow_duplicate=True),
