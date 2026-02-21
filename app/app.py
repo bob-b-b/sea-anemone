@@ -1671,6 +1671,32 @@ def handle_url_hash(url_hash, model):
     res[-1] = ''
     layout=model
     print(f'url hash: {url_hash}')
+    if url_hash.startswith('#open_session'):
+        root = Tk()
+        root.withdraw()  # Hide the root window
+        root.attributes('-topmost', True)
+        root.lift()
+        root.focus_force()
+        root.update()
+        folder_path = filedialog.askdirectory(title="Select Working Directory", parent=root)
+        url_hash = '#load='+folder_path+'/'
+    
+    if url_hash.startswith('#change_working'):
+        _configure_tk_dpi_awareness()
+        root = Tk()
+        root.withdraw()  # Hide the root window
+        root.attributes('-topmost', True)
+        root.lift()
+        root.focus_force()
+        root.update()
+        folder_path = filedialog.askdirectory(title="Select Working Directory", parent=root)
+        print(folder_path)
+        root.destroy()  # Destroy the root window after selection
+        if folder_path:
+            sesh.save_dir = folder_path + '/' if not folder_path.endswith('/') else folder_path
+            print(f'Working directory changed to: {sesh.save_dir}')
+            res[-2] = sesh.save_dir
+
     if url_hash.startswith('#load'):
         folder = url_hash.split('=')[1].replace('%20', ' ').replace('%22', '')
         print(f'loading session from folder: {folder}')
@@ -1712,21 +1738,7 @@ def handle_url_hash(url_hash, model):
             res[11]  = False
             res[12]  = False
             res[13]  = True
-    elif url_hash.startswith('#change_working'):
-        _configure_tk_dpi_awareness()
-        root = Tk()
-        root.withdraw()  # Hide the root window
-        root.attributes('-topmost', True)
-        root.lift()
-        root.focus_force()
-        root.update()
-        folder_path = filedialog.askdirectory(title="Select Working Directory", parent=root)
-        print(folder_path)
-        root.destroy()  # Destroy the root window after selection
-        if folder_path:
-            sesh.save_dir = folder_path + '/' if not folder_path.endswith('/') else folder_path
-            print(f'Working directory changed to: {sesh.save_dir}')
-            res[-2] = sesh.save_dir
+
     return res
 
 

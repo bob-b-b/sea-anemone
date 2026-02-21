@@ -57,7 +57,7 @@ def cdist(lat1,lon1,lat2,lon2):
 
 @nosj
 class MapSettings(PanelSettings):
-    zoom: int = 14
+    zoom: int = 10
     color: str = '#ff0000'
     highlight_color: str= '#ffff00'  # Default highlight color
     plot_by: str = 'misfit'
@@ -1326,11 +1326,11 @@ class ModelSection(Panel):
     def render(self):
         if self.dataframe is None: return self.empty_render()
         df_layers_long = self.dataframe.melt(
-            id_vars=['site_id', 'daytime', 'longitude', 'latitude', 'date', 'elevation', 'layer', 'resistivity', 'misfit','doi'],
+            id_vars=['site_id', self.settings.x_axis, 'resistivity', 'misfit','doi'],
             value_vars=['top_depth', 'bottom_depth'],
             var_name='depth_type',
             value_name='depth'
-        ).sort_values(['daytime', 'layer', 'depth'])
+        ).sort_values([self.settings.x_axis, 'layer', 'depth'])
 
         df_layers_long = df_layers_long.drop(columns=['depth_type'])
         df_layers_long['log_resistivity'] = np.log10(df_layers_long['resistivity'])
