@@ -14,13 +14,12 @@ sesh = session.Session()
 session_tracker = fpath+'/recent_projects.txt'
 
 from panels import *
-from inversion_panels import *
 
 from dash import dcc
 from dash import Dash, callback_context, ALL
 from dash.exceptions import PreventUpdate
 from dash import Input, Output, State, html, dcc, ctx
-from dash_bootstrap_components import Button, ButtonGroup, themes
+from dash_bootstrap_components import themes
 import dash_bootstrap_components as dbc
 from dash.dash import no_update
 from flask import send_from_directory
@@ -312,84 +311,21 @@ if os.path.exists(session_tracker):
 else:
     session_files = []
 
-
-pyInt = PyInterpretter()
 m1    = Map(data=sesh.overview)
 dbdt1 = dbdtSounding(dataframe=sesh.data)
 dbdt2 = dbdtSection(dataframe=sesh.data)
 rhoa  = rhoaSounding(dataframe=sesh.data)
 
 u1    = Upload(session_files=session_files)
-# t1    = Table(df_overview, id='table_overview', settings=TableSettings('table_overview', visible_columns=[True]*len(df_overview.columns)))
 mod1 = ModelGraph(   dataframe=sesh.models )
 mod2 = ModelSection( dataframe=sesh.models )
 Multi_inv = MultiInversion( dataframe=sesh.data )
-
-
-# x = html.Div([
-#       dcc.Markdown(children='### buttons and hot keys'),
-#       html.Div(
-#           [
-#             dbc.ButtonGroup([
-#               dbc.Button("disable [ctrl+d]", id='disableButton'),
-#               dbc.Button("enable  [ctrl+e]", id='enableButton'),
-#             ]),
-#             dbc.ButtonGroup([
-#                 dbc.Button("Previous buffer [<<-]", id='prev-buffer', style={"marginRight": "6px"}),
-#                 dbc.Button("Previous [<-]", id='highlight_prev', style={"marginRight": "6px"}),
-#                 dbc.Button("Next [->]", id='highlight_next', style={"marginRight": "6px"}),
-#                 dbc.Button("Next buffer [->>]", id='next-buffer', style={"marginRight": "12px"}),
-#                 html.Div(
-#                     [
-#                         html.Small(
-#                             "Buffer length:",
-#                             style={
-#                                 "marginLeft": "12px",
-#                                 "marginRight": "6px",
-#                                 "color": "#555",
-#                                 "fontSize": "12px",
-#                             }
-#                         ),
-#                         dcc.Input(
-#                             id='buffer-length-input',
-#                             type='number',
-#                             min=1,
-#                             step=1,
-#                             value=50,
-#                             style={
-#                                 "width": "70px",
-#                                 "height": "32px",
-#                                 "fontSize": "13px"
-#                             }
-#                         ),
-#                     ],
-#                     style={
-#                         "display": "flex",
-#                         "alignItems": "center",
-#                     }
-#                 )
-#             ]),
-#             dbc.ButtonGroup([
-#                 dbc.Button("save [ctrl+s]", id='saveButton'),
-#             ])
-#           ], style={'padding': '10px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between'}
-#         ),
-#         dcc.Location(id='url_button'),
-#       ]
-# , id='processing_buttons')
-
-
-
-#stmod = StartingModel.standard(rho=10.)
-
-# Inv_it = Inversion_iterations.standard(misfit=None,rho=10.)
-
 Sing_inv = Single_site( dataframe=sesh.data, rho=10 )
 
 hkr = HotKeyReminder()
 
-panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, Multi_inv, Sing_inv, pyInt, rhoa, hkr]
-nodes = [node for panel in panels for node in panel.to_nodes()]#+[dfl.Tab(id=f'tab-processing_buttons', children=[x])]
+panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, Multi_inv, Sing_inv, rhoa, hkr]
+nodes = [node for panel in panels for node in panel.to_nodes()]
 
 
 html_header = html.H1('Sea Anemone', style={'width': '100%'})
@@ -479,32 +415,8 @@ def handle_map_interactions(relayout_data, selected_data):
     
     selected_sites = []
     
-    # Handle drawing interactions
-    if trigger_prop == 'relayoutData' and relayout_data:
-        # Check if shapes were drawn
-        if 'shapes' in relayout_data:
-            m1.drawn_shapes = relayout_data['shapes']
-            selected_sites = m1.get_selected_sites()
-        # Handle shape deletion
-        elif any(key.startswith('shapes[') and key.endswith('].x0') for key in relayout_data.keys()):
-            # Update shapes if they were modified
-            shapes = []
-            i = 0
-            while f'shapes[{i}].x0' in relayout_data:
-                shape = {
-                    'type': relayout_data.get(f'shapes[{i}].type', 'rect'),
-                    'x0': relayout_data.get(f'shapes[{i}].x0'),
-                    'x1': relayout_data.get(f'shapes[{i}].x1'),
-                    'y0': relayout_data.get(f'shapes[{i}].y0'),
-                    'y1': relayout_data.get(f'shapes[{i}].y1'),
-                }
-                shapes.append(shape)
-                i += 1
-            m1.drawn_shapes = shapes
-            selected_sites = m1.get_selected_sites()
-    
     # Handle point selection
-    elif trigger_prop == 'selectedData' and selected_data and 'points' in selected_data:
+    if trigger_prop == 'selectedData' and selected_data and 'points' in selected_data:
         selected_sites = [point['pointIndex'] for point in selected_data['points']]+[-1]
     
     # If no sites selected, don't update
@@ -1703,6 +1615,9 @@ def handle_url_hash(url_hash, model):
         sesh = session.Session.from_folder(folder)
         res[-2] = sesh.save_dir
 
+        if sesh.lines is not None:
+            m1.lines = sesh.lines.copy()
+            
         if sesh.data is not None:
             dbdt1.dataframe = sesh.data.copy()    
             dbdt2.dataframe = sesh.data.copy()    

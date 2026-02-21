@@ -1,11 +1,20 @@
-001	Data misfit:	20.83	Vertical misfit:	0.00	Horizontal misfit:	0.00	Total misfit:	9.19	Step size:	1.10	Last iteration time:	8.60
+001	Data misfit:	8.20	Vertical misfit:	0.01	Horizontal misfit:	0.00	Total misfit:	3.69	Step size:	1.10	Last iteration time:	3.94
 
-002	Data misfit:	11.94	Vertical misfit:	0.03	Horizontal misfit:	0.01	Total misfit:	5.27	Step size:	1.10	Last iteration time:	7.97
+002	Data misfit:	3.62	Vertical misfit:	0.02	Horizontal misfit:	0.01	Total misfit:	1.63	Step size:	1.10	Last iteration time:	3.84
 
-003	Data misfit:	6.00	Vertical misfit:	0.07	Horizontal misfit:	0.04	Total misfit:	2.65	Step size:	1.28	Last iteration time:	7.00
+003	Data misfit:	1.99	Vertical misfit:	0.03	Horizontal misfit:	0.02	Total misfit:	0.91	Step size:	1.28	Last iteration time:	3.89
 
-004	Data misfit:	2.75	Vertical misfit:	0.18	Horizontal misfit:	0.09	Total misfit:	1.25	Step size:	1.28	Last iteration time:	7.35
+004	Data misfit:	0.88	Vertical misfit:	0.07	Horizontal misfit:	0.03	Total misfit:	0.44	Step size:	1.28	Last iteration time:	4.09
 
-005	Data misfit:	1.98	Vertical misfit:	0.23	Horizontal misfit:	0.10	Total misfit:	0.93	Step size:	1.28	Last iteration time:	7.46
+005	Data misfit:	0.65	Vertical misfit:	0.09	Horizontal misfit:	0.04	Total misfit:	0.35	Step size:	1.28	Last iteration time:	3.84
 
-misfit is below 0.95, stopping inversion
+006	Data misfit:	0.58	Vertical misfit:	0.10	Horizontal misfit:	0.04	Total misfit:	0.33	Step size:	1.46	Last iteration time:	4.20
+
+007	Data misfit:	0.56	Vertical misfit:	0.10	Horizontal misfit:	0.04	Total misfit:	0.33	Step size:	1.46	Last iteration time:	4.02
+
+008	Data misfit:	0.55	Vertical misfit:	0.10	Horizontal misfit:	0.04	Total misfit:	0.32	Step size:	0.77	Last iteration time:	4.15
+
+009	Data misfit:	0.55	Vertical misfit:	0.10	Horizontal misfit:	0.04	Total misfit:	0.32	Step size:	0.10	Last iteration time:	4.07
+
+010	Data misfit:	0.55	Vertical misfit:	0.09	Horizontal misfit:	0.04	Total misfit:	0.32	Step size:	0.10	Last iteration time:	4.11
+
