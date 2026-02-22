@@ -198,6 +198,7 @@ app.layout = html.Div([
     }),
     
     html.Div([flex_layout], style={'marginTop': '60px'}),
+    html.Div([flex_layout], style={'marginTop': '60px'}),
     html.Div(id='output-click')
 ])
 
