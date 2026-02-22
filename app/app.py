@@ -402,11 +402,10 @@ flex_layout = dfl.FlexLayout(
             children=nodes,
             useStateForModel=False,        
         )
-
 app.layout = html.Div([
     dcc.Location(id='url', refresh='callback-nav'),
     dcc.Interval(id= "inv-log-poll", interval=1000, n_intervals=0, disabled=True),  # Poll every 2 seconds
-    # dcc.Store(id="selected-site-id", data=None),
+    # dcc.Store(id="selected-site-id", data=None), 
     dcc.Store(id="starting-model", data={"rho": 10.0,"depth": np.cumsum(np.logspace(0, 1.3, 31)).tolist()}),
     dcc.Store(id='starting-model-selected',data=[]),
     dcc.Store(id='data-buffer',data={"length": 50, "start_site":0}),
@@ -505,7 +504,7 @@ def handle_map_interactions(relayout_data, selected_data):
     
     # Handle point selection
     elif trigger_prop == 'selectedData' and selected_data and 'points' in selected_data:
-        selected_sites = [point['pointIndex'] for point in selected_data['points']]+[-1]
+        selected_sites = [point['customdata'][0] for point in selected_data['points']] + [-1]
     
     # If no sites selected, don't update
     if not selected_sites:
@@ -627,7 +626,7 @@ def update_buffer(next_clicks, prev_clicks, buffer_data):
     return buffer_data
 
 @app.callback(
-    mod2.output, dbdt2.output, dbdt1.output, m1.output, mod1.output,
+    mod2.output, dbdt2.output, dbdt1.output, m1.output, mod1.output, rhoa.output,
     Input('data-buffer', 'data'),
     prevent_initial_call=True
 )
@@ -662,9 +661,10 @@ def update_model_section_from_buffer(buffer_data):
 
     dbdt1.dataframe = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
     m1.buffer_sites = buffer_sites
+    rhoa.dataframe = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
     # dbdt1.buffer_sites = buffer_sites
 
-    return mod2.render(), dbdt2.render(), dbdt1.render(), m1.render(), mod1.render()
+    return mod2.render(), dbdt2.render(), dbdt1.render(), m1.render(), mod1.render(), rhoa.render()
 
 @app.callback(
     Output('data-buffer', 'data'),

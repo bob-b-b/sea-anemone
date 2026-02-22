@@ -80,17 +80,27 @@ class Map(Panel):
     def render(self):
         if self.dataframe is None: return self.empty_render()
         df_plot = self.dataframe
-        if 'site_id' in df_plot.columns:
-            df_plot = df_plot[df_plot['site_id'] != -1]
+        # if 'site_id' in df_plot.columns:
+            # df_plot = df_plot[df_plot['site_id'] != -1]
 
         zoom = self.view['map.zoom'] if self.view is not None else self.settings.zoom
         center = self.view['map.center'] if self.view is not None else None
-
-        if self.settings.plot_by in self.dataframe.columns:
-
-            fig = px.scatter_map(df_plot, lat="latitude", lon="longitude", zoom=zoom, center=center, 
-                                 color=self.settings.plot_by, color_continuous_scale='turbo'
-                                 )
+        from __main__ import sesh
+        # if sesh.models is not None:
+        if sesh.models is not None and self.settings.plot_by in sesh.models.columns:
+            # fig = px.scatter_map(sesh.models, lat="latitude", lon="longitude", zoom=zoom, center=center, 
+            #                      color=self.settings.plot_by, color_continuous_scale='turbo'
+            #                      )
+            fig = px.scatter_map(
+                sesh.models,
+                lat="latitude",
+                lon="longitude",
+                zoom=zoom,
+                center=center,
+                color=self.settings.plot_by,
+                color_continuous_scale='turbo',
+                custom_data=["site_id"]   # <-- ADD THIS
+            )
             fig.update_layout(
                 coloraxis_colorbar=dict(
                     orientation="h", 
@@ -105,7 +115,17 @@ class Map(Panel):
                 side="bottom"))
             )
         else:
-            fig = px.scatter_map(df_plot, lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.color])
+            # fig = px.scatter_map(df_plot, lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.color])
+            fig = px.scatter_map(
+                df_plot,
+                lat="latitude",
+                lon="longitude",
+                zoom=zoom,
+                center=center,
+                color_discrete_sequence=[self.settings.color],
+                custom_data=["site_id"]   # <-- ADD THIS
+            )
+            
         if self.buffer_sites is not None and len(self.buffer_sites) > 0 and self.dataframe is not None and 'site_id' in self.dataframe.columns:
             df_buffer = self.dataframe[self.dataframe["site_id"].isin(self.buffer_sites)]
 
@@ -138,7 +158,16 @@ class Map(Panel):
         if self.highlighted is not None:
             print('in panels', self.highlighted)
             # highlight_trace = px.scatter_map(df_plot[df_plot.index == self.highlighted], lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.highlight_color])
-            highlight_trace = px.scatter_map(df_plot[df_plot['site_id'] == self.highlighted], lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.highlight_color])
+            
+            highlight_trace = px.scatter_map(
+                df_plot[df_plot['site_id'] == self.highlighted],
+                lat="latitude",
+                lon="longitude",
+                zoom=zoom,
+                center=center,
+                color_discrete_sequence=[self.settings.highlight_color],
+                custom_data=["site_id"]   # <-- ADD THIS
+            )
             highlight_trace.update_traces(marker=dict(size=14))
             for trace in highlight_trace.data:
                 fig.add_trace(
@@ -255,7 +284,10 @@ class Map(Panel):
             prevent_initial_call=True
         )
         def update_plotby(value):
-            if value not in self.dataframe.columns:
+            from __main__ import sesh
+            if sesh.models is None:
+                raise PreventUpdate
+            if value not in sesh.models.columns:
                 raise PreventUpdate
             self.settings.plot_by = value
             return self.render()  
@@ -324,6 +356,7 @@ class dbdtSounding(Panel):
         df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt_syn']  *= self.settings.hm_factor
         df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
         df_tmp.loc[df_tmp['site_id'] == -1, 'include']  = False
+        df_tmp.loc[df_tmp['dbdt']<=0, 'dbdt'] = np.nan
 
         df_tmp['system_id']                                = df_tmp['system_id'].map({1: 'hm', 0: 'lm'})
 
@@ -491,7 +524,6 @@ class rhoaSounding(dbdtSounding):
             t = time[np.newaxis, :]
         else:
             t = time
-
         rho_a = ((current*area)**(2/3) * (mu0**(5/3))) / ((20 * dbdt)**(2/3) * (pi**(1/3)) * time**(5/3))
         return rho_a
 
@@ -684,7 +716,7 @@ class dbdtSection(Panel):
         df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt_syn']  *= self.settings.hm_factor
         df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
         df_tmp.loc[df_tmp['site_id'] ==  -1, 'include']  = False
-        df_tmp['system_id']                                = df_tmp['system_id'].map({0: 'hm', 1: 'lm'})
+        df_tmp['system_id']                                = df_tmp['system_id'].map({1: 'hm', 0: 'lm'})
 
         # x_axis = df_tmp[self.settings.x_axis].unique()#.values
         # if self.settings.x_axis == 'site_id':
@@ -752,7 +784,7 @@ class dbdtSection(Panel):
             x=self.settings.x_axis,
             y='dbdt_syn',
             color="system_id",
-            color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
+            color_discrete_sequence=[self.settings.lm_color, self.settings.hm_color],
             title="field data versus simulated data",
             custom_data=["system_id", "data_id", "site_id"],
         )
@@ -774,7 +806,7 @@ class dbdtSection(Panel):
         df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
         df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
         df_tmp.loc[df_tmp['site_id'] ==  -1, 'include']  = False
-        df_tmp['system_id']                                = df_tmp['system_id'].map({0: 'hm', 1: 'lm'})
+        df_tmp['system_id']                                = df_tmp['system_id'].map({1: 'hm', 0: 'lm'})
 
         # x_axis = df_tmp[self.settings.x_axis].unique()#.values
         # if self.settings.x_axis == 'site_id':
@@ -1531,8 +1563,8 @@ class ModelSection(Panel):
                     type="rect",
                     x0=x_value - dx,
                     x1=x_value + dx,
-                    y0=df_layers_long["depth"].min(),
-                    y1=df_layers_long["depth"].max()+20,
+                    y1=df_layers_long["depth"].min(),
+                    y0=df_layers_long["depth"].max()+20,
                     line=dict(color="black", width=1.5),
                     fillcolor="rgba(0,0,0,0.0)",
                 )

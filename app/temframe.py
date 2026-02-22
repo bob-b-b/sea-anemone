@@ -91,7 +91,7 @@ class TEMframe(DataFrame):
             for i, fname in enumerate(usf_files):
                 with z.open(fname, 'r') as f:
                     new_sweeps = usf.Sweep.from_buffer(f, combine=False)
-                    if set([x.points for x in new_sweeps]) == {6,22}:
+                    if set([x.points for x in new_sweeps]) == {6,22} or set([x.points for x in new_sweeps]) == {20,27}:
                         sweeps += new_sweeps
                     else:
                         print(f'Ignoring {fname} because it does not contain both low and high moment data.')                    
@@ -103,8 +103,9 @@ class TEMframe(DataFrame):
         usf_files = [folder_path+f for f in os.listdir(folder_path) if f.endswith('.usf')]
         for usf_file in usf_files:        
             with open(usf_file, 'rb') as f:
+                print(f'Processing {usf_file}...')
                 new_sweeps = usf.Sweep.from_buffer(f, combine=False)
-                if set([x.points for x in new_sweeps]) == {6,22}:
+                if set([x.points for x in new_sweeps]) == {6,22} or set([x.points for x in new_sweeps]) == {20,27}:
                     sweeps += new_sweeps
                 else:
                     print(f'Ignoring {usf_file} because it does not contain both low and high moment data.')
@@ -112,10 +113,12 @@ class TEMframe(DataFrame):
 
     @classmethod
     def from_sweeps(cls, sweeps, track_history=True, folder_path=None):
-        points = set([x.points for x in sweeps])
+        points = sorted(set([x.points for x in sweeps]))
         mega_sweeps = []
         for pnts in points:
             mega_sweeps.append(usf.Sweep.combine_sweeps([swp for swp in sweeps if swp.points==pnts]))
+        
+        mega_sweeps = sorted(mega_sweeps, key=lambda swp: np.nanmin(swp.time))
         try:
             lm,hm = mega_sweeps
         except:
@@ -124,6 +127,7 @@ class TEMframe(DataFrame):
             print(folder_path)
 
         n_sites,n_gates = lm.data.shape
+        print(f'Found {n_sites} sites and {n_gates} gates in low moment data.')
         n_gates += 1
         day_sort = np.argsort(lm.daytime)
         site_id = np.zeros(n_sites, dtype=int)
@@ -182,7 +186,6 @@ class TEMframe(DataFrame):
         data_avg['daytime']      = np.append(data_avg['daytime'],   np.concatenate([np.ones(n_gates, dtype=float)*x for x in lm.daytime]))
 
         forward_operators = usf.sweep2fwr(sweeps)
-
         history = [f'place_holder = TEMframe.from_usf_folder(\"{folder_path}\")']
 
         df_data = cls(data_avg, forward_operators=forward_operators, history=history, track_history=track_history)
@@ -220,7 +223,7 @@ class TEMframe(DataFrame):
         
         df_data.forward_operators[0].source     = df_data.forward_operators[1].source
         df_data.forward_operators[0].receiver   = df_data.forward_operators[1].receiver
-        df_data.forward_operators[0].filterfunc = df_data.forward_operators[1].filterfunc        
+        df_data.forward_operators[0].filterfunc = df_data.forward_operators[1].filterfunc     
         df_data.dmfwr = df_data.forward_operators[0]+df_data.forward_operators[1]
 
         return df_data

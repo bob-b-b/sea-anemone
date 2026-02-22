@@ -299,7 +299,10 @@ class MultiInversion(Panel):
                 from torch import from_numpy, tensor
                 print('starting model:', starting_model["rho"])
                 rho = tensor(starting_model["rho"]).repeat(len(starting_model["depth"]))
-                z   = tensor(starting_model["depth"][:-1])
+                # z   = tensor(starting_model["depth"][:-1])
+                depth = self.build_depth_from_loop(gates=len(sesh.data.time.unique()))
+                # rho = tensor(starting_model["rho"]).repeat(len(depth))
+                z   = tensor(depth[:-1])
 
                 if vc_level == "loose":
                     Vert = 1.0
@@ -430,6 +433,15 @@ class MultiInversion(Panel):
     @classmethod
     def standard(cls, misfit=None, rho=10.):
         return cls(data=misfit, rho=rho)
+    def build_depth_from_loop(self, gates, n_layers=31):
+        import numpy as np
+
+        if gates <35:
+            depth = np.cumsum(np.logspace(0, 1.3, 31)).tolist()
+        elif gates > 35:
+            depth = np.cumsum(np.logspace(0, 1.8, 31)).tolist()
+
+        return depth
 
 @nosj
 class SinglesiteSettings(PanelSettings):
@@ -746,7 +758,8 @@ class Single_site(Panel):
             curves = []
             print('starting model:', starting_model["rho"])
             rho = tensor(starting_model["rho"]).repeat(len(starting_model["depth"]))
-            z   = tensor(starting_model["depth"][:-1])
+            depth = self.build_depth_from_loop(gates=len(sesh.data.time.unique()))
+            z   = tensor(depth[:-1])
 
             for vc in vc_levels:
                 
@@ -772,3 +785,19 @@ class Single_site(Panel):
     @classmethod
     def standard(cls, misfit=None, rho=10.):
         return cls(data=misfit, rho=rho)#cls(data=df)
+
+    def build_depth_from_loop(self, gates=None, n_layers=31):
+        import numpy as np
+
+        # scale maximum depth with sqrt(area)
+        # zmax = 0.5 * np.sqrt(loop_area)  # empirical factor
+
+        # log spacing
+        # thickness = np.logspace(-1, np.log10(zmax), n_layers)
+        print('gates:', gates)
+        if gates <35:
+            depth = np.cumsum(np.logspace(0, 1.3, 31)).tolist()
+        elif gates > 35:
+            depth = np.cumsum(np.logspace(0, 1.8, 31)).tolist()
+
+        return depth
