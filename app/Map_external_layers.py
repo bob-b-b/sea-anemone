@@ -478,31 +478,17 @@ class GIS_helpers(Panel):
             lon=self.dataframe["longitude"].mean()
         )
   
-
-    def save_profile_data(fig, line_data, profile_index,save_directory):
-
+    def save_profile_data(fig, line_data, profile_index, save_directory):
         if not save_directory:
             save_directory = os.getcwd()
         
         timestamp = datetime.now().strftime("%M%S")
         base_name = f"profile_{profile_index+1}_{timestamp}"
         
-        # 1. Save PNG using Plotly
         kmz_path = os.path.join(save_directory, f"{base_name}.kmz")
         png_path = os.path.join(save_directory, f"{base_name}.png")
         
-        # 2. Save KMZ using simplekml
-        # Note: KMZ is just a zipped KML. simplekml handles this easily.
-        kml = simplekml.Kml()
-        ls = kml.newlinestring(name=f"Profile {profile_index+1}")
-        ls.coords = [tuple(coord) for coord in line_data]
-        ls.style.linestyle.width = 5
-        ls.style.linestyle.color = simplekml.Color.red
-        
-        # pio.write_image(fig, png_path)
-        # 2. Save PNG at 120 DPI
-        # Calculation: Target Inches * 120
-        # Example for a large 12-inch wide image: 12 * 120 = 1440 pixels
+        # 1. Save the PNG first (required so we can add it to the KMZ)
         pio.write_image(
             fig, 
             png_path, 
@@ -510,10 +496,25 @@ class GIS_helpers(Panel):
             height=900,   # 7.5 inches @ 120 DPI
             engine="kaleido"
         )
+
+        # 2. Create KML and Link the Image
+        kml = simplekml.Kml()
+        ls = kml.newlinestring(name=f"Profile {profile_index+1}")
+        ls.coords = [tuple(coord) for coord in line_data]
+        ls.style.linestyle.width = 5
+        ls.style.linestyle.color = simplekml.Color.red
+        
+        # --- EMBEDDING LOGIC ---
+        # This adds the file to the KMZ's internal structure
+        kml.addfile(png_path)
+        
+        # Optional: Attach the image to the description so it pops up when clicked
+        # We use os.path.basename because inside the KMZ, the folder structure is flattened
+        ls.description = f'<![CDATA[<img src="{os.path.basename(png_path)}" width="400" />]]>'
+        # -----------------------
+
         kml.savekmz(kmz_path)
 
-        print("png save",png_path)
+        print(f"KMZ saved with embedded PNG: {kmz_path}")
         
         return png_path, kmz_path
-
-    

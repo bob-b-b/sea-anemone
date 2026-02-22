@@ -158,10 +158,23 @@ class TEMframe(DataFrame):
 
     @classmethod
     def from_sweeps(cls, sweeps, track_history=True, folder_path=None):
-        points = set([x.points for x in sweeps])
+        # points = set([x.points for x in sweeps])
+        # mega_sweeps = []
+        # for pnts in points:
+        #     mega_sweeps.append(usf.Sweep.combine_sweeps([swp for swp in sweeps if swp.points==pnts]))
+        # try:
+        #     lm,hm = mega_sweeps
+        # except:
+        #     print(len(mega_sweeps))
+        #     print(points)
+        #     print(folder_path)
+        points = sorted(set([x.points for x in sweeps]))
         mega_sweeps = []
+        print(f'Found sweeps with points: {points}')
         for pnts in points:
             mega_sweeps.append(usf.Sweep.combine_sweeps([swp for swp in sweeps if swp.points==pnts]))
+       
+        mega_sweeps = sorted(mega_sweeps, key=lambda swp: np.nanmin(swp.time))
         try:
             lm,hm = mega_sweeps
         except:

@@ -198,7 +198,6 @@ app.layout = html.Div([
     }),
     
     html.Div([flex_layout], style={'marginTop': '60px'}),
-    html.Div([flex_layout], style={'marginTop': '60px'}),
     html.Div(id='output-click')
 ])
 
@@ -1426,14 +1425,6 @@ def auto_close_layers(layer_values, opacity_values, menu_clicks, style):
     # print(">> Layers panel auto-closed")
 
     return new
-
-
-
-
-    # Input("line-final-store", "data"),
-    # Input("section-mode-store", "data"),
-    # Input("selected-line-index", "data"),
-    # State("map-view-store", "data"),
 
 # --------------------- live profile MULTI LINE plot callback ---------------------
 @app.callback(

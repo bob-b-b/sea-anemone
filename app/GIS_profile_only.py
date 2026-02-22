@@ -298,7 +298,7 @@ class Profile(Panel):
                             children=[
                         dcc.Graph(
                             id="profile_plot_main", 
-                            figure=self.empty_figure("Draw a line to start"),
+                            figure=self.empty_figure("Draw a line to generate a profile."),
                         style={ "height": "100%", "width": "100%", "background": "white", "borderRadius": "8px", "boxShadow": "0 -2px 10px rgba(0,0,0,0.1)" 
                                 }
                             ),
