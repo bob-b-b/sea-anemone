@@ -26,6 +26,8 @@ class Session:
     forwards: List[Forward] = None
     settings: SessionSettings = None
     save_dir: str = None
+    dem_path: str = None
+    dem_name: str = None
 
     def save(self, folder=None, binary_threshold=100):
         other = self.copy()
@@ -33,6 +35,7 @@ class Session:
             from os import makedirs
             makedirs('anemone_backup', exist_ok=True)
             folder = 'anemone_backup/'
+            other.save_dir = 'anemone_backup/'
             Warning('No folder specified for saving session, saving to default "anemone_backup/".')
         elif folder is None and other.save_dir is not None:
             folder = other.save_dir
@@ -44,6 +47,9 @@ class Session:
         if other.models is not None:
             other.models.to_csv(folder+'models.csv', index=False)
             other.models = 'models.csv'
+        if other.site is not None:
+            other.site.to_csv(folder+'site.csv', index=False)
+            other.site = 'site.csv'                        
 
         if other.forwards is not None:
             for i in range(len(other.forwards)):
@@ -58,20 +64,24 @@ class Session:
             f.write(res)        
 
     def load_dataframes(self):
-        #print
-        if self.data is not None and isinstance(self.data, str):
-            self.data = TEMframe.from_pandas(pd.read_csv(self.save_dir+self.data))
-        if self.models is not None and isinstance(self.models, str):
-            self.models = pd.read_csv(self.save_dir+self.models)
+        fwd_list = []
         if self.forwards is not None and isinstance(self.forwards, list):
-            fwd_list = []
             for fwd_path in self.forwards:
                 fwd = Forward.load(self.save_dir+fwd_path).logify()
                 fwd_list.append(fwd)
+
+        if self.data is not None and isinstance(self.data, str):
+            self.data = TEMframe.from_pandas(pd.read_csv(self.save_dir+self.data), forward_operators=fwd_list)
             self.forwards = fwd_list
             self.data.forward_operators = fwd_list
             self.data.dmfwr = self.forwards[0]+self.forwards[1]
             self.data.dmfwr = self.data.dmfwr.logify()
+        if self.models is not None and isinstance(self.models, str):
+            self.models = pd.read_csv(self.save_dir+self.models)
+        if self.site is not None and isinstance(self.site, str):
+            self.site = pd.read_csv(self.save_dir+self.site)
+        else:
+            self.site = self.data.overview()
 
     @classmethod
     def from_folder(cls, folder):

@@ -146,7 +146,7 @@ import numpy as np
 
 
 def sweep2fwr(sweeps, fwr=Forward):
-    points = set(swp.points for swp in sweeps)
+    points = sorted(set(swp.points for swp in sweeps))
     forwards = []
     for pnts in points:
         swp = next(swp for swp in sweeps if swp.points == pnts)

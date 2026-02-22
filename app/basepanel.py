@@ -7,10 +7,8 @@ import dash_flexlayout as dfl
 from dataclasses import dataclass
 from dataclasses_jsonschema import JsonSchemaMixin
 
-import tkinter as tk
-from tkinter import filedialog
+
 import plotly.express as px
-from nosj import nosj
 
 
 
@@ -74,7 +72,31 @@ def update_tabset(json_data, target_tab_id, settings_tab_id, change_order=False)
     exec(f'json_data{accessor_string}[\'selected\'] = {tabset.index(settings_tab_id)}')
     return json_data
 
-def add_tabset(json_data, new_tab,settings_tab_id,target_tab_id,change_order=False):
+def close_settings(json_data, target_tab_id, settings_tab_id):
+    accessor_chain = find_tab_by_id(json_data, settings_tab_id)
+    accessor_string = ''
+    for key in accessor_chain[:-1]:
+        if isinstance(key, int):
+            accessor_string += f'[{key}]'
+        else:
+            accessor_string += f'["{key}\"]'
+    tablist = eval('json_data' + accessor_string)
+    tabset = [x['id'] for x in eval('json_data' + accessor_string)]
+    idx = tabset.index(settings_tab_id)
+    tablist.pop(idx)
+    tabset.pop(idx)
+
+    accessor_string = ''
+    for key in accessor_chain[:-2]:
+        if isinstance(key, int):
+            accessor_string += f'[{key}]'
+        else:
+            accessor_string += f'["{key}\"]'
+    
+    exec(f'json_data{accessor_string}[\'selected\'] = {tabset.index(target_tab_id)}')
+    return json_data
+
+def add_tabset(json_data, new_tab, change_order=False):
     accessor_chain = find_tab_by_id(json_data, new_tab)
     accessor_string = ''
     for key in accessor_chain[:-1]:
@@ -109,8 +131,8 @@ def add_tabset(json_data, new_tab,settings_tab_id,target_tab_id,change_order=Fal
 
 
 
-@nosj
-class PanelSettings():
+@dataclass
+class PanelSettings:
     id: str
     _settings_schema: dict = None
     title: str = None
@@ -149,18 +171,9 @@ class PanelSettings():
                 value=eval(f'self.{key}'),
                 style={'margin': '5px'}
             )
-        cbar_check = lambda key,prop: 'cbar' in key.lower()
-        def cbar_render(key,prop):
-            return dbc.Select(
-                options=[{"label": 'horizontal', "value": True}, {'label':'vertical', 'value':True}],
-                id={'type': f'settings-{self.id}', 'key': key},
-                value=eval(f'self.{key}'),
-                style={'margin': '5px'}
-            )            
         return [
             (color_check, color_render),
-            (enum_check,  enum_render),
-            (cbar_check, cbar_render)
+            (enum_check,  enum_render)
         ]
 
     def render(self):
@@ -215,7 +228,7 @@ class PanelSettings():
         ))
 
         return html.Div([dbc.Form(form_items, style={'margin': '10px'}), 
-                         gear_maker(self.id+'_settings')])
+                         gear_maker(self.id+'_settings')], style={'width':'95%'})
 
     def node(self):
         return dfl.Tab(id=f'tab-{self.id}_settings', children=[self.render()])
@@ -291,16 +304,22 @@ class PanelSettings():
             if n_clicks:
                 root = tk.Tk()
                 root.withdraw()  # Hide the root window
-                root.attributes('-topmost',True)
+                root.attributes('-topmost', True)
+                root.lift()
+                root.focus_force()
+                root.update()
                 
                 fname = filedialog.asksaveasfilename(
                     title="Save Settings",
                     defaultextension=".json",
                     filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
-                    initialfile=f"{self.id}_settings.json"
+                    initialfile=f"{self.id}_settings.json",
+                    parent=root
                 )
 
-                self.save_settings(fname)
+                if fname:
+                    self.save_settings(fname)
+                root.destroy()
             return n_clicks
         
         @app.callback(
@@ -312,13 +331,18 @@ class PanelSettings():
             if n_clicks:
                 root = tk.Tk()
                 root.withdraw()
-                root.attributes('-topmost',True)
+                root.attributes('-topmost', True)
+                root.lift()
+                root.focus_force()
+                root.update()
                 fname = filedialog.askopenfilename(
                     title="Load Settings",
-                    filetypes=[("JSON files", "*.json"), ("All files", "*.*")]
+                    filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
+                    parent=root
                 )
                 if fname:
                     self.load_settings(fname)
+                root.destroy()
             return self.render()
         
         @app.callback(
@@ -341,7 +365,7 @@ class PanelSettings():
         )
         def hide_settings(n_clicks, model):
             if n_clicks:
-                return update_tabset(model, f'tab-{self.id}_settings', f'tab-{self.id}', change_order=False)
+                return close_settings(model, f'tab-{self.id}', f'tab-{self.id}_settings')
             else:
                 raise PreventUpdate
             
@@ -415,11 +439,12 @@ class PanelSettings():
         all_keys = all_keys + key_elements
         return all_keys
 
-@nosj
+@dataclass
 class Panel:
     id: str
     settings: PanelSettings = None
     childname: str = 'figure'
+    change_count: int = 0
 
     def add_callbacks(self, app):
         if self.settings is not None:
@@ -489,21 +514,8 @@ class Panel:
             'name': f'{self.id.lower()}',
         }
      
-# from dataclasses import asdict
-# import json
-
-# @nosj
-# class ColorBar(JsonSchemaMixin):
-#     vmin: float
-#     vmax: float
-#     cmap: str = 'viridis'
-#     log:  bool = False
-
-#     def to_dict(self, *args, **kwargs):
-#         # return {'vmin': self.vmin, 'vmax': self.vmax, 'cmap': self.cmap, 'log': self.log}
-#         return asdict(self)
-
-
-
-#     # def __dict__(self):
-#     #     return {'vmin': self.vmin, 'vmax': self.vmax, 'cmap': self.cmap, 'log': self.log}
+    @property
+    def output(self):
+        return Output(self.id, self.childname, allow_duplicate=True)
+        
+        

@@ -91,56 +91,11 @@ class TEMframe(DataFrame):
             for i, fname in enumerate(usf_files):
                 with z.open(fname, 'r') as f:
                     new_sweeps = usf.Sweep.from_buffer(f, combine=False)
-                    if set([x.points for x in new_sweeps]) == {6,22}:
+                    if set([x.points for x in new_sweeps]) == {6,22} or set([x.points for x in new_sweeps]) == {20,27}:
                         sweeps += new_sweeps
                     else:
                         print(f'Ignoring {fname} because it does not contain both low and high moment data.')                    
             return cls.from_sweeps(sweeps, track_history=track_history, folder_path=z.namelist()[0]+'.zip')
-
-    # @classmethod
-    # def from_session(cls, session_zip):
-    #     import zipfile
-    #     import io
-    #     import base64
-
-    #     df_data = None
-    #     df_overview = None
-    #     df_models = None
-
-    #     if isinstance(session_zip, str) and session_zip.endswith('.zip'):
-    #         with open(session_zip, 'rb') as f:
-    #             zip_bytes = f.read()
-    #     elif isinstance(session_zip, str):
-    #         zip_bytes = base64.b64decode(session_zip)
-    #     else:
-    #         zip_bytes = session_zip
-
-    #     with zipfile.ZipFile(io.BytesIO(zip_bytes)) as z:
-            
-    #         with z.open('tem_data.csv', 'r') as f:
-    #             df = pd.read_csv(f)
-    #         with z.open('history.py', 'r') as f:
-    #             history = f.readlines()
-    #         history = [line.strip().decode('utf-8') for line in history]
-            
-    #         saved_forwards = [x for x in z.namelist() if x.endswith('.em1')]
-    #         forward_operators = None
-    #         if len(saved_forwards) > 0:
-    #             from anemone.forwards import Forward, logify_forward
-    #             lg_FWR = logify_forward(Forward)
-    #             forward_operators = []
-    #             for i in range(len(saved_forwards)):
-    #                 with z.open(saved_forwards[i], 'r') as f:
-    #                     fwr = lg_FWR.load(f)
-    #                     fwr.tolerance=1e-6
-    #                     forward_operators.append(fwr)
-    #         df_data = cls.from_pandas(df, history=history, forward_operators=forward_operators)
-    #         df_overview = df_data.overview()
-    #         if 'models.csv' in z.namelist():
-    #             with z.open('models.csv', 'r') as f:
-    #                 df_models = pd.read_csv(f)
-    #                 df_models = cls.from_pandas(df_models, history=history, forward_operators=forward_operators)
-    #     return {'data': df_data, 'models': df_models, 'overview':df_overview}
 
     @classmethod
     def from_usf_folder(cls, folder_path, track_history=True):
@@ -148,8 +103,8 @@ class TEMframe(DataFrame):
         usf_files = [folder_path+f for f in os.listdir(folder_path) if f.endswith('.usf')]
         for usf_file in usf_files:        
             with open(usf_file, 'rb') as f:
+                print(f'Processing {usf_file}...')
                 new_sweeps = usf.Sweep.from_buffer(f, combine=False)
-                # if set([x.points for x in new_sweeps]) == {6,22}:
                 if set([x.points for x in new_sweeps]) == {6,22} or set([x.points for x in new_sweeps]) == {20,27}:
                     sweeps += new_sweeps
                 else:
@@ -158,22 +113,12 @@ class TEMframe(DataFrame):
 
     @classmethod
     def from_sweeps(cls, sweeps, track_history=True, folder_path=None):
-        # points = set([x.points for x in sweeps])
-        # mega_sweeps = []
-        # for pnts in points:
-        #     mega_sweeps.append(usf.Sweep.combine_sweeps([swp for swp in sweeps if swp.points==pnts]))
-        # try:
-        #     lm,hm = mega_sweeps
-        # except:
-        #     print(len(mega_sweeps))
-        #     print(points)
-        #     print(folder_path)
         points = sorted(set([x.points for x in sweeps]))
         mega_sweeps = []
         print(f'Found sweeps with points: {points}')
         for pnts in points:
             mega_sweeps.append(usf.Sweep.combine_sweeps([swp for swp in sweeps if swp.points==pnts]))
-       
+        
         mega_sweeps = sorted(mega_sweeps, key=lambda swp: np.nanmin(swp.time))
         try:
             lm,hm = mega_sweeps
@@ -183,6 +128,7 @@ class TEMframe(DataFrame):
             print(folder_path)
 
         n_sites,n_gates = lm.data.shape
+        print(f'Found {n_sites} sites and {n_gates} gates in low moment data.')
         n_gates += 1
         day_sort = np.argsort(lm.daytime)
         site_id = np.zeros(n_sites, dtype=int)
@@ -241,7 +187,6 @@ class TEMframe(DataFrame):
         data_avg['daytime']      = np.append(data_avg['daytime'],   np.concatenate([np.ones(n_gates, dtype=float)*x for x in lm.daytime]))
 
         forward_operators = usf.sweep2fwr(sweeps)
-
         history = [f'place_holder = TEMframe.from_usf_folder(\"{folder_path}\")']
 
         df_data = cls(data_avg, forward_operators=forward_operators, history=history, track_history=track_history)
@@ -279,7 +224,7 @@ class TEMframe(DataFrame):
         
         df_data.forward_operators[0].source     = df_data.forward_operators[1].source
         df_data.forward_operators[0].receiver   = df_data.forward_operators[1].receiver
-        df_data.forward_operators[0].filterfunc = df_data.forward_operators[1].filterfunc        
+        df_data.forward_operators[0].filterfunc = df_data.forward_operators[1].filterfunc     
         df_data.dmfwr = df_data.forward_operators[0]+df_data.forward_operators[1]
 
         return df_data
@@ -297,7 +242,18 @@ class TEMframe(DataFrame):
 
     @classmethod
     def from_pandas(cls, dataframe, **kwargs):
-        return cls(dataframe, **kwargs)
+        res = cls(dataframe, **kwargs)
+        if not hasattr(res, 'dmfwr') and hasattr(res, 'forward_operators') and len(res.forward_operators)==2:
+            res.dmfwr = res.forward_operators[0]+res.forward_operators[1]
+        return res
+    
+    # def copy(self):
+    #     res = super().copy()
+    #     res.history = self.history.copy()
+    #     res.track_history = self.track_history
+    #     res.forward_operators = self.forward_operators.copy()
+    #     res.dmfwr = self.dmfwr
+    #     return res
 
     @classmethod
     def load(cls, file_path):
@@ -373,7 +329,7 @@ class TEMframe(DataFrame):
             include_mask = include_values.astype(bool)
             d_err[~include_mask] = torch.inf  # Set error to zero for included measurements
 
-            inv = fastJac(d_obs, d_err, res_start, self.dmfwr)
+            inv = fastJac(d_obs, d_err, res_start, self.dmfwr, logger=print)
             inv.data_misfit_acceptance_threshold = 0.95
             res_mod = inv.invert(iter_cap=10)
 
@@ -423,7 +379,6 @@ class TEMframe(DataFrame):
         df_data     = self[self['site_id']==site_id].copy()
         df_data     = df_data[df_data['gate_id']>-1]
         df_data['include'] = df_data['inuse_manual'].astype(bool, copy=False).fillna(df_data['inuse_auto'].astype(bool))
-        
         df_data.sort_values('data_id', inplace=True)
         dbdt=df_data['dbdt'].values
         d_obs = torch.from_numpy(np.abs(dbdt)).log()
@@ -435,13 +390,13 @@ class TEMframe(DataFrame):
         return d_obs, d_err, self.__class__.from_pandas(df_data, history=self.history.copy(), forward_operators=self.forward_operators)
     
 
-    def invert(self, res_start, vc=0.4, hc=0.4, max_iterations=20):
+    def invert(self, res_start, vc=0.5, hc=0.8, max_iterations=50):
 #        res_start = LogResistivity.smooth(torch.ones(31)*40., torch.logspace(0, 2.1, 30))
         # self._record_op()
         make_log()
         current_history = self.history.copy()
         dmfwr = self.dmfwr
-
+        
         df_data = self.copy()
         df_overview = df_data.overview()
 
@@ -481,16 +436,16 @@ class TEMframe(DataFrame):
             include_mask = include_values.astype(bool)
             d_err[~include_mask] = torch.inf  # Set error to zero for included measurements
 
-            inv = fastJac(d_obs, d_err, res_start.copy(), dmfwr.copy())
+            inv = fastJac(d_obs, d_err, res_start.copy(), dmfwr.copy(), logger=silence)
             inv.setup_matrices()
             inv_list.append(inv)
             x_list.append(row_meta['utm_x'])
             y_list.append(row_meta['utm_y'])
         
         inv = SCI(inv_list, x=np.array(x_list), y=np.array(y_list), log=write_log)
-        inv.data_misfit_acceptance_threshold = 0.95
+        # inv.data_misfit_acceptance_threshold = 0.95
         res_mods = inv.invert(iter_cap=max_iterations)
-        doi = inv.doi
+        doi = [x.item() for x in inv.doi]#.item()
         for i,((id_row, row), (id_meta, row_meta)) in enumerate(zip(pivot_multi.iterrows(), df_overview.iterrows())):
             assert id_meta == id_row, "Site ID mismatch between row and metadata"
 
@@ -512,8 +467,8 @@ class TEMframe(DataFrame):
         df_data['misfit'] = (((df_data['dbdt'] - df_data['dbdt_syn'])**2/(np.log1p(df_data['dbdt'].values*df_data['error'].values/100.)**2))**0.5)
         df_data.dmfwr = self.dmfwr
 
-        print(np.log1p(df_data['error'].values/100.), flush=True)
         df_overview = df_data.overview()
+        df_overview['doi'] = doi
         df_resmod = pd.DataFrame(results)
 
         rows = []
@@ -531,7 +486,7 @@ class TEMframe(DataFrame):
                     'latitude': row['latitude'],
                     'longitude': row['longitude'],
                     'elevation': row['elevation'],
-                    'doi': doi[_], 
+                    'doi': doi[_],
                     'layer': i,
                     'resistivity': rho,
                     'misfit': df_overview[df_overview.index==site_id]['misfit'].values[0],
@@ -539,10 +494,11 @@ class TEMframe(DataFrame):
                     'bottom_depth': bottom,
                     'center_depth': (top + bottom) / 2
                 })
+        
 
         df_layers = TEMframe(rows, history=current_history.copy())
         # self.history = current_history[:-1]
-        return df_layers, df_data
+        return df_layers, df_data, df_overview
 
 
     def invert_site(self, site_id, vc=0.4, res_start=100., max_iterations=20):
@@ -561,18 +517,19 @@ class TEMframe(DataFrame):
             res_start=LogResistivity.smooth(torch.ones(n_layers)*res_start, z)
         d_obs, d_err, df_site = self.get_site_data(site_id)
 
-        inv1 = fastJac(d_obs, d_err, res_start, self.dmfwr)
+        inv1 = fastJac(d_obs, d_err, res_start,self.dmfwr)
         inv1.vertical_smoothness=vc
+
         res_mod=inv1.invert(iter_cap=max_iterations)
+        doi_value = inv1.doi
         i,row = df_site.overview().iterrows().__next__()
         d_syn = inv1.data_predicted.exp()
         df_site.loc[:, 'dbdt_syn'] = d_syn.numpy()
-
+        df_site['misfit'] = torch.sqrt(((d_obs - d_syn.log())**2/((d_err)**2)).mean())
         rho,thick = res_mod.mod
         rows = []
         tops = np.concatenate([[0], np.cumsum(thick)[:-1]])
         bottoms = np.cumsum(thick)
-
         for i, (rho, top, bottom) in enumerate(zip(rho, tops, bottoms)):
             rows.append({
                 'site_id': df_site['site_id'].values[0],
@@ -581,6 +538,8 @@ class TEMframe(DataFrame):
                 'latitude': row['latitude'],
                 'longitude': row['longitude'],
                 'elevation': row['elevation'],
+                'misfit': df_site['misfit'].values[0],
+                'doi': doi_value,
                 'layer': i,
                 'resistivity': rho,
                 'top_depth': top,
