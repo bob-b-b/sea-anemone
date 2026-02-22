@@ -149,7 +149,8 @@ class TEMframe(DataFrame):
         for usf_file in usf_files:        
             with open(usf_file, 'rb') as f:
                 new_sweeps = usf.Sweep.from_buffer(f, combine=False)
-                if set([x.points for x in new_sweeps]) == {6,22}:
+                # if set([x.points for x in new_sweeps]) == {6,22}:
+                if set([x.points for x in new_sweeps]) == {6,22} or set([x.points for x in new_sweeps]) == {20,27}:
                     sweeps += new_sweeps
                 else:
                     print(f'Ignoring {usf_file} because it does not contain both low and high moment data.')
@@ -421,7 +422,7 @@ class TEMframe(DataFrame):
         return d_obs, d_err, self.__class__.from_pandas(df_data, history=self.history.copy(), forward_operators=self.forward_operators)
     
 
-    def invert(self, res_start, vc=0.4, hc=0.4, max_iterations=10):
+    def invert(self, res_start, vc=0.4, hc=0.4, max_iterations=20):
 #        res_start = LogResistivity.smooth(torch.ones(31)*40., torch.logspace(0, 2.1, 30))
         # self._record_op()
         make_log()
@@ -476,7 +477,7 @@ class TEMframe(DataFrame):
         inv = SCI(inv_list, x=np.array(x_list), y=np.array(y_list), log=write_log)
         inv.data_misfit_acceptance_threshold = 0.95
         res_mods = inv.invert(iter_cap=max_iterations)
-
+        doi = inv.doi
         for i,((id_row, row), (id_meta, row_meta)) in enumerate(zip(pivot_multi.iterrows(), df_overview.iterrows())):
             assert id_meta == id_row, "Site ID mismatch between row and metadata"
 
@@ -517,6 +518,7 @@ class TEMframe(DataFrame):
                     'latitude': row['latitude'],
                     'longitude': row['longitude'],
                     'elevation': row['elevation'],
+                    'doi': doi[_], 
                     'layer': i,
                     'resistivity': rho,
                     'misfit': df_overview[df_overview.index==site_id]['misfit'].values[0],
@@ -530,7 +532,7 @@ class TEMframe(DataFrame):
         return df_layers, df_data
 
 
-    def invert_site(self, site_id, vc=0.4, res_start=100., max_iterations=10):
+    def invert_site(self, site_id, vc=0.4, res_start=100., max_iterations=20):
         t_max = max([fwr.times.max().item() for fwr in self.forward_operators])
         d_max = (t_max*4e6)**0.5
         n_layers = 30

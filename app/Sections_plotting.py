@@ -15,6 +15,11 @@ import re
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
 import matplotlib.pyplot as plt
+import plotly.colors as pc
+
+from dataclasses_jsonschema import JsonSchemaMixin
+
+import nosj
 
 from dash import Dash, html, dcc, Input, Output, State, no_update, callback_context
 from dash.dependencies import Input, Output, State, ALL, MATCH
@@ -28,8 +33,8 @@ from panels import *
 
 import io
 
-num_layers = 28         # number of interpreted layers for TESTING
-depth = 120       # number of depth samples per layer for TESTING
+# num_layers = 28         # number of interpreted layers for TESTING
+# depth = 120       # number of depth samples per layer for TESTING
 
 # # Sample dataframe for TESTING
 # df = pd.DataFrame({
@@ -44,263 +49,37 @@ depth = 120       # number of depth samples per layer for TESTING
 
 
 # --------------------- Settings ---------------------
+@nosj
 class Settings(PanelSettings):
-    color = "red"
-    highlight_color = "yellow"
-    zoom = 10
-    png_crs = "EPSG:32637"
-    bh_color = 'orange'
-    geod = Geod(ellps="WGS84")
-    res_min = 1
-    res_max = 300
-    norm = mcolors.LogNorm(vmin=res_min, vmax=res_max)
-    cmap = cm.jet
-    line_color="yellow"
-    radius = 50 
-    column_width = 60
-    num_labels_colorbar = 4
-    raster_cache_dir = r"C:\Users\au679476\Downloads\test_for_map_pngs_tiffs\raster_cache"
+    png_crs : str = "EPSG:32637"
+    vmin: float = 1.0
+    vmax: float = 300.0
+    log: bool = True
+    cmap: str = 'turbo'
+    Show_misfit : bool =True
+
+    radius: int = 50 
+    column_width: int = 6
+    num_labels_colorbar: int = 4
 
 settings = Settings('tmp_scattermap')
 
 
 
-# ------------------------ COLORS ------------------------
-def resist_to_rgba(res):
-    """Convert resistivity value into Plotly rgba string using global cmap."""
-    rgba = settings.cmap(settings.norm(res))  # returns (r,g,b,a) floats 0–1
-    return f"rgba({rgba[0]*255:.0f},{rgba[1]*255:.0f},{rgba[2]*255:.0f},{rgba[3]:.2f})"
+# ------------------------ COLORS -----------------------
+def value_to_color(val, vmin, vmax, log=False, cmap="turbo"):
+    if log:
+        val = np.log10(val)
+        vmin = np.log10(vmin)
+        vmax = np.log10(vmax)
 
-# ------------------------ COLORBAR HELPER ------------------------
-def get_nice_log_labels(res_min, res_max, num_labels_colorbar):
-# Get the raw log values
-    raw_vals = np.logspace(np.log10(res_min), np.log10(res_max), num_labels_colorbar)
+    # normalize 0–1
+    t = (val - vmin) / (vmax - vmin)
+    t = np.clip(t, 0, 1)
 
-    nice_vals = []
-    for v in raw_vals:
-        if v == 0: 
-            nice_vals.append(0)
-            continue
-        # Find the magnitude (power of 10)
-        exponent = np.floor(np.log10(v))
-        fraction = v / (10**exponent)
-        
-        # Round the fraction to a "nice" number: 1, 2, 3, 5, or 8
-        if fraction < 1.5: nice_fraction = 1
-        elif fraction < 2.5: nice_fraction = 2
-        elif fraction < 4.0: nice_fraction = 3
-        elif fraction < 6.5: nice_fraction = 5
-        else: nice_fraction = 8
-        
-        nice_vals.append(nice_fraction * (10**exponent))
-
-    return nice_vals
-
-# ------------------------ COLORBAR  ------------------------
-def create_geologic_colorbar(res_min, res_max, plot_height = 300):
-    num_slices = 100
-    # Logarithmic spacing for the colors to match your data distribution
-    res_values = np.logspace(np.log10(res_min), np.log10(res_max), num_slices)
-    label_values = get_nice_log_labels(res_min, res_max, Settings.num_labels_colorbar)
-    slices = []
-    
-    for res in reversed(res_values): # Top to bottom
-        color = resist_to_rgba(res)
-        slices.append(html.Div(style={
-            "backgroundColor": color,
-            "flex": "1",
-            "width": "40px"
-        }))
-
-    labels = []
-    positions = np.linspace(0,1, Settings.num_labels_colorbar)
-        
-    for val, pos in zip(label_values, positions):
-        percent = pos * 100
-        labels.append(html.Div([
-                # The tiny tick line
-                html.Div(style={
-                    "width": "8px", 
-                    "height": "1px", 
-                    "backgroundColor": "#333", 
-                    "marginRight": "5px"
-                }),
-                # The text
-                html.Span(f"{val:.1f}" ) #if val < 1 else f"{int(val)}
-            ], style={
-                "position": "absolute",
-                "bottom": f"calc({percent}% - 7px)",
-                "left": "-5px", # Shift left to make room for the tick
-                "display": "flex",
-                "alignItems": "center"
-            }))
-
-    return html.Div([
-        # The Slanted Bar
-        html.Div(slices, style={
-            "display": "flex",
-            "flexDirection": "column",
-            "height": f"{plot_height}px",
-            "border": "1px solid #333",
-            "overflow": "hidden",
-            "boxShadow": "2px 2px 5px rgba(0,0,0,0.2)"
-                                }),
-        # The Labels
-        html.Div(labels, style={
-            "position": "relative",
-            "height": f"{plot_height}px",
-            "width": "40px",
-            "marginLeft": "12px",
-            "fontSize": "12px",
-            "fontWeight": "bold",
-            "fontFamily": "sans-serif"
-                                })
-                ], 
-                style={
-                    "display": "flex", 
-                    "alignItems": "center", 
-                    "padding": "20px 10px",
-                    "marginRight": "15px"
-                    })
-
-def create_geologic_colorbar_horizontal(res_min, res_max, bar_height=18):
-    num_slices = 100
-
-    # Log-spaced resistivity values
-    res_values = np.logspace(np.log10(res_min), np.log10(res_max), num_slices)
-    label_values = get_nice_log_labels(res_min, res_max, Settings.num_labels_colorbar)
-
-    # --- Color slices (LEFT → RIGHT) ---
-    slices = []
-    for res in res_values:
-        color = resist_to_rgba(res)
-        slices.append(
-            html.Div(
-                style={
-                    "backgroundColor": color,
-                    "flex": "1",
-                    "height": f"{bar_height}px",
-                }
-            )
-        )
-
-    # --- Labels + ticks ---
-    labels = []
-    positions = np.linspace(0, 1, len(label_values))
-
-    # for val, pos in zip(label_values, positions):
-    #     percent = pos * 100
-    #     labels.append(
-    #         html.Div(
-    #             children=[
-    #                 # Tick
-    #                 html.Div(
-    #                     style={
-    #                         "width": "1px",
-    #                         "height": "8px",
-    #                         "backgroundColor": "#333",
-    #                         "margin": "0 auto",
-    #                     }
-    #                 ),
-    #                 # Text
-    #                 html.Div(f"{val:.1f}",style={"marginBottom": "2px"}),
-    #             ],
-    #             style={
-    #                 "position": "absolute",
-    #                 "left": f"calc({percent}% - 100px)",
-    #                 "transform": "translateX(-50%)",
-    #                 # "top": "0px",
-    #                 "textAlign": "center",
-    #                 "fontSize": "11px",
-    #                 "fontWeight": "bold",
-    #                 "fontFamily": "sans-serif",
-    #                 "whiteSpace": "nowrap",
-    #             }
-    #         )
-    #     )
-
-    for i, (val, pos) in enumerate(zip(label_values, positions)):
-        # default: centered on its tick
-        left = f"{pos * 100:.4f}%"
-        transform = "translateX(-50%)"
-
-        # edge cases: keep text inside the 80% bar
-        if i == 0:
-            left = "0%"
-            transform = "translateX(0%)"
-        elif i == len(label_values) - 1:
-            left = "100%"
-            transform = "translateX(-100%)"
-
-        labels.append(
-            html.Div(
-                children=[
-                    html.Div(style={
-                        "width": "1px",
-                        "height": "6px",
-                        "background": "#333",
-                        "margin": "0 auto",
-                    }),
-                    html.Div(f"{val:.1f}", style={"marginTop": "2px"})
-                ],
-                style={
-                    "position": "absolute",
-                    "left": left,
-                    "transform": transform,
-                    "textAlign": "center",
-                    "fontSize": "11px",
-                    "fontWeight": "bold",
-                    "whiteSpace": "nowrap",
-                }
-            )
-        )
-
-
-    return html.Div(
-        children=[
-            # ---- BAR ----
-            html.Div(
-                children=slices,
-                style={
-                    "display": "flex",
-                    # "flexDirection": "row",
-                    "width": "100%",
-                    "height": f"{bar_height}px",
-                    "border": "1px solid #333",
-                    "overflow": "hidden",
-                    "boxShadow": "2px 2px 5px rgba(0,0,0,0.2)",
-                },
-            ),
-
-            # ---- LABELS ----
-            html.Div(
-                children=labels,
-                style={
-                    "position": "relative",
-                    "width": "100%",
-                    "height": "30px",
-                    "marginTop": "4px",
-                    "padding": "0",          # important
-                    "boxSizing": "border-box"
-                },
-            ),
-        ],
-        style={
-            "width": "100%",
-            # "padding": "6px 12px",
-            # "boxSizing": "border-box",
-        },
-    )
-
-# ------------------------ # DEPTH MODEL GENERATOR for TESTING # ------------------------
-def generate_depths():
-    depths = list(np.logspace(0, np.log10(depth), num_layers))  # example: 0 → 50 meters
-    depths.append(math.inf)  # last depth → infinite
-    return depths  # length = 20
-
-# ------------------------# RESISTIVITY MODEL for TESTING # ------------------------
-def generate_res_model():
-    return np.random.uniform(settings.res_min, settings.res_max, size=num_layers)
+    # sample colorscale
+    color = pc.sample_colorscale(cmap, [t])[0]
+    return color
 
 # ----------- BOREHOLES ----------------
 def load_borehole_file(file_path):
@@ -617,9 +396,9 @@ def build_combined_borehole_figure(bh_ids, bh_projections, rock_color_map):
 
 # ----------- BOREHOLES ----------------
 # bh_data, rock_color_map = load_borehole_file("C:/Users/au679476/Downloads/boreholes_Gende_Rige_test.bor")
-bh_data, rock_color_map = load_borehole_file("C:/Users/au679476/Downloads/Boreholes_Dollow.bor")
-# bh_data = None 
-# rock_color_map = None
+# bh_data, rock_color_map = load_borehole_file("C:/Users/au679476/Downloads/Boreholes_Dollow.bor")
+bh_data = None 
+rock_color_map = None
 
 
 # model_frame = TEMframe.from_pandas(pd.read_csv("models.csv"))
@@ -627,15 +406,12 @@ bh_data, rock_color_map = load_borehole_file("C:/Users/au679476/Downloads/Boreho
 
 
 def preprocess_new_df(new_df):
-    # 1. Identify which columns are attributes vs which are layer data
-    # Add any attribute here that you want to filter by in the UI
-
-    # If the input is None or not a DataFrame, return empty defaults
     if new_df is None or not hasattr(new_df, 'columns'):
-        return pd.DataFrame(), {}, []
+        # return pd.DataFrame(), {}, []
+        empty_df = pd.DataFrame(columns=['site_id', 'latitude', 'longitude', 'Depths', 'resistivity'])
+        return empty_df, {}, []
 
-
-    attributes = ['date', 'daytime', 'elevation','Data Residual', 'DOI', 'Number of Gates']
+    attributes = ['date', 'daytime', 'elevation','misfit', 'doi', 'Number of Gates']
     color_master_map = {}
 
     # 2. Build the aggregation dictionary
@@ -659,41 +435,36 @@ def preprocess_new_df(new_df):
 
     # 4. Create the 'Depths' column
     def extract_depth_interfaces(row):
+        # print("DEPTH PROCESS NEW DF TOP", row['top_depth'] )
+        # print("DEPTH PROCESS NEW DF BOTTOM", [row['bottom_depth']])
         return row['top_depth'] + [row['bottom_depth'][-1]]
     
     df_wide['Depths'] = df_wide.apply(extract_depth_interfaces, axis=1)
 
-    
-    # 5. Make a global color for attr to be used even when the user changes attribute
     for attr in existing_attrs:
-            if attr in new_df.columns:
-                # CLEAN the unique values: string -> no .0 -> stripped
-                unique_vals = (new_df[attr].astype(str)
-                            .str.replace(r'\.0$', '', regex=True)
-                            .str.strip()
-                            .unique())
-                unique_vals = sorted(unique_vals.tolist())            
-                palette = px.colors.qualitative.Light24 # 26 distinct colors
-                
-                # Create the map for this attribute
+            if not pd.api.types.is_numeric_dtype(new_df[attr]) or attr == 'date':
+                unique_vals = sorted(new_df[attr].astype(str).str.replace(r'\.0$', '', regex=True).unique().tolist())
+                palette = px.colors.qualitative.Light24
                 color_master_map[attr] = {val: palette[i % len(palette)] for i, val in enumerate(unique_vals)}
 
     return df_wide, color_master_map, existing_attrs
 
-def get_numeric_colors(values, cmap_name='jet'): # to cheat plotly with hex string colors to prevent it from crashing
-    """Maps a list of numbers to a list of Hex strings."""
+   
+def get_numeric_colors(values, vmin, vmax, log=False, cmap_name='jet'): 
+    """Maps numbers to Hex strings using GLOBAL min/max."""
     try:
-        # Convert to numpy for easy math
         vals = np.array(values, dtype=float)
-        vmin, vmax = np.nanmin(vals), np.nanmax(vals)
         
-        # Handle case where all values are the same
-        if vmin == vmax:
-            return ['#440154'] * len(vals) # Default Viridis purple
+        # 1. Use global limits instead of local np.nanmin/max
+        # 2. Handle log scale if enabled in settings
+        if log:
+            # Shift values to avoid log(0)
+            vals = np.maximum(vals, 1e-6) 
+            norm = mcolors.LogNorm(vmin=max(vmin, 1e-6), vmax=vmax)
+        else:
+            norm = mcolors.Normalize(vmin=vmin, vmax=vmax)
             
-        norm = mcolors.Normalize(vmin=vmin, vmax=vmax)
         cmap = plt.get_cmap(cmap_name)
-        
         return [mcolors.to_hex(cmap(norm(v))) for v in vals]
     except:
         return ['grey'] * len(values)
@@ -819,10 +590,14 @@ def get_station_projections(polyline_coords, df, search_radius_m=settings.radius
                 'dist_x': dist_x,
                 'elev': row['elevation'],
                 'res': row['resistivity'],
+                'misfit': row['misfit'],
+                'doi': row['doi'],
                 'id': row.get('site_id', i)
             })
+            # print ("DOI ROW",row['doi'])
             
     # Sort by distance along path so the plot is ordered left-to-right
+    # print ("stations on line for doi", stations_on_line)
     return sorted(stations_on_line, key=lambda x: x['dist_x'])
 
 #-------------------------------------------
@@ -839,17 +614,20 @@ def interpolate_nearest(df, samples, radius=settings.radius):
 
     res_models = []
     elevations = []
+    dois = []
 
     for dist, idx in zip(dists, idxs):
         # radius is in degrees; roughly 0.001 deg ~ 111m
         if radius is not None and dist > radius:
             res_models.append(None) 
             elevations.append(np.nan)
+            dois.append(0)
         else:
             res_models.append(df.iloc[idx]["resistivity"])
             elevations.append(df.iloc[idx]["elevation"]) 
+            dois.append(df.iloc[idx].get("doi", 0))
 
-    return res_models, elevations, dists, idxs
+    return res_models, elevations, dists, idxs, dois
 
 def get_polyline_profile(coords, section_data, resolution_m=10.0):
     """
@@ -883,86 +661,207 @@ def get_polyline_profile(coords, section_data, resolution_m=10.0):
         
     return np.array(all_x_coords), np.array(all_lons), np.array(all_lats)
 
-def create_blocky_polygons(stations_on_line, depths, bar_width=settings.column_width):
-    """
-    Creates the discrete vertical columns at specific station locations.
-    """
+def extract_doi_value(val):
+    """Safely extracts a number from float, tensor, or the string 'tensor(xxx)'."""
+    if val is None:
+        return 0.0
+    # Handle actual torch tensor objects
+    if hasattr(val, "item"):
+        return float(val.item())
+    # Handle the string representation: "tensor(174.1709, ...)"
+    if isinstance(val, str) and "tensor(" in val:
+        match = re.search(r"tensor\(([-+]?\d*\.\d+|\d+)", val)
+        if match:
+            return float(match.group(1))
+    try:
+        return float(val)
+    except (ValueError, TypeError):
+        return 0.0
+
+def create_blocky_polygons(stations_on_line, depths, vmin, vmax, log,show_misfit=settings.Show_misfit, bar_width=settings.column_width, show_borders=False):    
+    width_factor = float(bar_width) / 10.0
+    x_coords = [s['dist_x'] for s in stations_on_line]
+
+    if len(stations_on_line) > 1:
+        avg_spacing = (max(x_coords) - min(x_coords)) / (len(stations_on_line) - 1)
+        # Use the converted float here
+        bar_width = avg_spacing * width_factor
+    else:
+        bar_width = 50.0
+
     traces = []
     if not stations_on_line: return go.Figure()
 
-    # 1. Collect all x positions to calculate buffers
-    x_coords = [s['dist_x'] for s in stations_on_line]
-    min_x, max_x = min(x_coords), max(x_coords)
-    
+    doi_line_x = []
+    doi_line_y = []
 
+    misfit_line_x = []
+    misfit_line_y = []
+    
     for s in stations_on_line:
         x_center = s['dist_x']
-        surface = s['elev']
+        surface = float(s.get('elev', 0))
         res_values = s['res']
         
+        # Extract DOI for this station
+        doi_depth = extract_doi_value(s.get("doi", 0))
+        doi_elevation = surface - doi_depth
+        doi_line_x.append(x_center)
+        doi_line_y.append(doi_elevation)
+        
+        if show_misfit:
+            misfit = extract_doi_value(s.get('misfit',0))
+            misfit_line_x.append(x_center)
+            misfit_line_y.append(misfit)
+
+        # 1. Create the resistivity blocks
         for j in range(len(depths) - 1):
             val = res_values[j]
-            if val <= 0 or np.isnan(val): continue
-            
             top, bottom = surface - depths[j], surface - depths[j+1]
-            
-            x_box = [x_center - bar_width/2, x_center + bar_width/2, 
-                     x_center + bar_width/2, x_center - bar_width/2, x_center - bar_width/2]
-            y_box = [top, top, bottom, bottom, top]
-            
-            sounding_idx = s.get('df_index')
-                    
-            traces.append(go.Scatter(
-                x=x_box, y=y_box, 
-                fill="toself",                
-                fillcolor=resist_to_rgba(val),
-                marker=dict(color=resist_to_rgba(val)), 
-                mode='lines', line=dict(width=0.1,color="black"),                                
-                customdata=[sounding_idx, x_center] * len(x_box),
-                name=f"Station {sounding_idx}",
-                hoveron='fills', hoverinfo="all", text=f"Res: {val:.1f} Ωm",
-                showlegend=False))
+            color_str = value_to_color(val, vmin, vmax, log, cmap=settings.cmap)
+
+            def add_block(y_top, y_bot, opacity):
+                final_color = color_str
+                if opacity < 1.0:
+                    # Convert rgb to rgba or modify existing rgba
+                    final_color = color_str.replace('rgb(', 'rgba(').replace(')', f', {opacity})')
+
+                x_box = [x_center - bar_width/2, x_center + bar_width/2, 
+                        x_center + bar_width/2, x_center - bar_width/2, x_center - bar_width/2]
+                y_box = [y_top, y_top, y_bot, y_bot, y_top]
+                
+                sounding_idx = s.get('df_index')
+                
+                traces.append(go.Scatter(
+                    x=x_box, y=y_box, 
+                    fill="toself", 
+                    fillcolor=final_color,
+                    mode='lines', 
+                    # line=dict(width=line_width, color="black"),
+                    line=dict(width=0),
+                    showlegend=False,                
+                    customdata=[sounding_idx, x_center] * len(x_box),
+                    hoveron='fills', hoverinfo="all", text=f"Res: {val:.1f} Ωm",
+                ))
+
+            # LOGIC: Splitting the block based on DOI
+            if top > doi_elevation > bottom:
+                # Layer is split by DOI
+                add_block(top, doi_elevation, 1.0,)      # Solid top
+                add_block(doi_elevation, bottom, 0.3, )   # Transparent bottom
+            elif top <= doi_elevation:
+                # Entire layer is below DOI
+                add_block(top, bottom, 0.3, )
+            else:
+                # Entire layer is above DOI
+                add_block(top, bottom, 1.0, )
+
+            if show_borders:
+                # Find the bottom of the last layer
+                total_bottom = surface - depths[-1]
+                top, bottom = surface - depths[j], surface - depths[j+1]
+                
+                x_outline = [x_center - bar_width/2, x_center + bar_width/2, 
+                            x_center + bar_width/2, x_center - bar_width/2, x_center - bar_width/2]
+                # y_outline = [surface, surface, total_bottom, total_bottom, surface]
+                y_box = [top, top, bottom, bottom, top]
+                
+                traces.append(go.Scatter(
+                    x=x_outline, y=y_box,
+                    mode='lines',
+                    line=dict(color="black", width=0.3), # Your clean boundary
+                    showlegend=False,
+                    hoverinfo='skip' # Don't interfere with block tooltips
+                ))
+
+        # Add the misfit Line on top for visual clarity
+    if show_misfit and misfit_line_x:
+        traces.append(go.Scatter(
+            x=misfit_line_x, y=misfit_line_y,
+            yaxis="y2",
+            mode="lines", 
+            line=dict(color="red", width=1.5, ), #dash="dash"),
+            name="Misfit", 
+            showlegend=True,
+            hoverinfo="skip",      # Tells Plotly to ignore this trace for tooltips
+            hoveron="points",     # Ensures it doesn't behave like a "fill" click
+            customdata=[None] * len(misfit_line_x)
+        ))
 
     fig = go.Figure(data=traces)
     fig.update_layout(dragmode='pan', hovermode='closest')   
 
-# 2. Add Layout Styling (White Background + Grid + Buffer)
-    fig.update_layout(
+    # fig.update_layout(
+    layout_dict = dict(
         template="plotly_white", # Sets initial white theme
         plot_bgcolor="white",
         paper_bgcolor="white",
         xaxis_title="Distance along path (m)",
         yaxis_title="Elevation (m)",
         hovermode="x",
-        # Set the buffer space here
+        height=500,
+        showlegend=False,
         xaxis=dict(showgrid=True,gridcolor="lightgray",gridwidth=0.5,zeroline=False,
             showline=True,linecolor="black",mirror=True),
         yaxis=dict(showgrid=True,gridcolor="lightgray",gridwidth=0.5,
             zeroline=False,showline=True,linecolor="black",
-            mirror=True, autorange=True # Ensures topography is fully visible
-        ),
-        margin=dict(l=60, r=40, t=50, b=60),height=500)
+            mirror=True, autorange=True ),
+            )
 
+        # yaxis2=dict(
+    if show_misfit:
+
+        # Enable the legend
+        layout_dict["showlegend"] = True
+        
+        # Configure the legend appearance
+        layout_dict["legend"] = dict(
+            x=0.01, y=0.01,
+            xanchor="left", yanchor="bottom",
+            bgcolor="rgba(255, 255, 255, 0.5)",
+            bordercolor="lightgray", borderwidth=1
+        )
+
+        layout_dict["yaxis2"] = dict(
+                title="Misfit",
+                tickfont=dict(color="red"),
+                anchor="x",
+                overlaying="y",
+                side="right",
+                range=[0, max(misfit_line_y) * 1.2 if misfit_line_y else 1], 
+                showgrid=False, 
+            )
+
+        layout_dict["margin"] = dict(l=60, r=80, t=50, b=60)
+    else:
+        layout_dict["showlegend"] = False
+        # Reset right margin if no second axis
+        layout_dict["margin"] = dict(l=60, r=40, t=50, b=60)
+    
+    fig.update_layout(**layout_dict)
     return fig
 
-def combine_sections_final(all_x, y_depth, res_models, elevations, stations_on_line, bar_width=40):
-    """
-    Combines the heatmap background with discrete block overlays.
-    """
-    # 1. Create Heatmap
-    # fig = plot_section(all_x, y_depth, res_models, elev=elevations, title="Combined Section")
-    fig = plot_section_topographic(all_x, y_depth, res_models, elev=elevations, title="Combined Section")
-    for trace in fig.data:
-        trace.opacity = 0.5
-        fig.add_trace(trace)
+def combine_sections_final(all_x, y_depth, vmin, vmax, log, res_models, elevations, stations_on_line, dois, show_misfit, bar_width=settings.column_width):
+    blocky_fig = create_blocky_polygons(stations_on_line, y_depth, vmin, vmax, log, show_misfit, bar_width, show_borders=True)
+    interp_fig = plot_section_topographic(all_x, y_depth, vmin, vmax, log, res_models, elev=elevations, dois=dois, title="Combined Section")
     
-    # 2. Add Blocky traces
-    blocky_fig = create_blocky_polygons(stations_on_line, y_depth, bar_width)
+    combined_fig = go.Figure(layout=blocky_fig.layout)
+    for trace in interp_fig.data:
+        if trace.mode == 'lines' and trace.line.color == 'black':
+            topo_trace = trace
+            continue
+        trace.opacity = 0.5
+        combined_fig.add_trace(trace)
+
     for trace in blocky_fig.data:
         trace.opacity = 1
-        fig.add_trace(trace)
-        
-    return fig
+        combined_fig.add_trace(trace)
+
+    if 'topo_trace' in locals():
+        topo_trace.opacity = 1.0
+        combined_fig.add_trace(topo_trace)
+
+    return combined_fig
 
 # ---------- for hover Marker -------------
 def get_geo_at_distance(polyline, target_dist):
@@ -984,14 +883,11 @@ def get_geo_at_distance(polyline, target_dist):
         cum_dist += seg_len
     return polyline[-1] # Fallback to end
 
-def plot_section_topographic(x, y_depth, res_models, elev, title="Resistivity Section"):
-
+def plot_section_topographic(x, y_depth, vmin, vmax, log, res_models, elev, dois, title="Resistivity Section"):
     fig = go.Figure()
-
-    # We assume 'x' and 'elev' are arrays of the same length (e.g., every 10m)
-    # resolution determines the width of each vertical "slice"
     res_m = x[1] - x[0] if len(x) > 1 else 10
-
+    doi_line_x = []
+    doi_line_y = []
     # 1. Plot the "Background" Data as vertical columns
     for i in range(len(x)):
         x_center = x[i]
@@ -1002,35 +898,72 @@ def plot_section_topographic(x, y_depth, res_models, elev, title="Resistivity Se
             return no_update
             
         res_values = res_models[i]
+
+        doi_depth = extract_doi_value(dois[i])
+        doi_elevation = surface - doi_depth
+        doi_line_x.append(x_center)
+        doi_line_y.append(doi_elevation)
         
         if res_values is None: continue
 
         for j in range(len(y_depth) - 1):
             val = res_values[j]
-            if val <= 0 or np.isnan(val): continue
             
-            # SHIFT HAPPENS HERE: Elevation - Depth
+            color_str = value_to_color(val,vmin,vmax,log,cmap=settings.cmap)
+             
+            if val <= 0 or np.isnan(val): continue
             top = surface - y_depth[j]
             bottom = surface - y_depth[j+1]
 
-            x_box = [x_center - res_m/2, x_center + res_m/2, x_center + res_m/2, x_center - res_m/2]
-            y_box = [top, top, bottom, bottom]
+            def add_block(y_top, y_bot, opacity):
+                final_color = color_str
+                if opacity < 1.0:
+                    final_color = color_str.replace('rgb(', 'rgba(').replace(')', f', {opacity})')
 
-            # Create a "pixel" rectangle for this part of the interpolation
-            fig.add_trace(go.Scatter(
-                x=x_box,y=y_box,
-                fill="toself", 
-                fillcolor=resist_to_rgba(val), 
-                mode='lines', line=dict(width=0),                                             
-                customdata=[x_center] * len(x_box),
-                hoverinfo="text", text=f"Res: {val:.1f} Ωm",
-                showlegend=False))
+                x_box = [x_center - res_m/2, x_center + res_m/2, 
+                        x_center + res_m/2, x_center - res_m/2, x_center - res_m/2]
+                y_box = [y_top, y_top, y_bot, y_bot, y_top]
+                
+                fig.add_trace(go.Scatter(
+                    x=x_box, y=y_box, 
+                    fill="toself", 
+                    fillcolor=final_color,
+                    mode='lines', 
+                    line=dict(width=0),
+                    showlegend=False,                
+                    customdata=[x_center] * len(x_box),
+                    hoveron='fills', hoverinfo="all", text=f"Res: {val:.1f} Ωm",
+                ))
 
+            if top > doi_elevation > bottom:
+                add_block(top, doi_elevation, 1.0)      
+                add_block(doi_elevation, bottom, 0.3)   
+            elif top <= doi_elevation:
+                add_block(top, bottom, 0.3)
+            else:                
+                add_block(top, bottom, 1.0)
+
+    if doi_line_x:
+        x_start_extended = doi_line_x[0] - res_m/2
+        x_end_extended = doi_line_x[-1] + res_m/2
+
+        extended_doi_x = [x_start_extended] + doi_line_x + [x_end_extended]
+        extended_doi_y = [doi_line_y[0]] + doi_line_y + [doi_line_y[-1]]
+
+        extended_elev = [elev[0]] + list(elev) + [elev[-1]]
+
+        # add the topography
+        fig.add_trace(go.Scatter(
+                    x=extended_doi_x, y=extended_elev  ,
+                    mode='lines',showlegend=False,
+                    line=dict(color='black', width=2, shape='hv'), ))
+
+    else:
     # 2. Add the Topography Line (The "Staircase")
-    fig.add_trace(go.Scatter(
-        x=x, y=elev,
-        mode='lines',showlegend=False,
-        line=dict(color='black', width=2, shape='hv'), ))
+        fig.add_trace(go.Scatter(
+            x=x, y=elev,
+            mode='lines',showlegend=False,
+            line=dict(color='black', width=2, shape='hv'), ))
 
     fig.update_layout(
         template="plotly_white", 
@@ -1040,7 +973,7 @@ def plot_section_topographic(x, y_depth, res_models, elev, title="Resistivity Se
         yaxis_title="Elevation (m)",
         xaxis=dict(showgrid=True,gridcolor="lightgray",gridwidth=0.5,zeroline=False,showline=True,linecolor="black",mirror=True),
         yaxis=dict(showgrid=True,gridcolor="lightgray",gridwidth=0.5,zeroline=False,showline=True,linecolor="black",mirror=True,
-                autorange=True), # Ensures topography is fully visible
+                autorange=True), 
         margin=dict(l=60, r=40, t=50, b=60),
         height=500)
     
@@ -1048,16 +981,11 @@ def plot_section_topographic(x, y_depth, res_models, elev, title="Resistivity Se
 
 # ---------- STEP PLOT -------------
 def generate_res_step_graph(row, row_index, label=None, step_color='red'):
-    # --- 1. Data Extraction from the Pandas Row ---
-    # Using .get() to avoid errors if a column is missing
     res = np.array(row.get('resistivity', [])).astype(float)
     top = np.array(row.get('top_depth', [])).astype(float)
     bottom = np.array(row.get('bottom_depth', [])).astype(float)
     
-    # DOI handling (adjusting to your attribute structure)
-    doi_val = row.get('DOI', np.nan)
-    # If DOI is a list [val1, val2], take index 1; otherwise take the value
-    doi = doi_val[1] if isinstance(doi_val, (list, np.ndarray)) else doi_val
+    doi = extract_doi_value(row.get("doi", 0))
     
     # --- 2. Validation ---
     valid = np.isfinite(res) & np.isfinite(top) & np.isfinite(bottom)
@@ -1087,8 +1015,8 @@ def generate_res_step_graph(row, row_index, label=None, step_color='red'):
             y=doi, 
             line_dash="dash", 
             line_color="gray", 
-            annotation_text=f"DOI ({doi:.1f}m)", 
-            annotation_position="bottom right"
+            # annotation_text=f"DOI ({doi:.1f}m)", 
+            # annotation_position="bottom right"
         )
 
     # --- 4. Layout ---
@@ -1116,9 +1044,10 @@ def generate_res_step_graph_elev(row, row_index, label=None, elevation=None,step
     res = np.array(row.get('resistivity', [])).astype(float)
     top = np.array(row.get('top_depth', [])).astype(float)
     bottom = np.array(row.get('bottom_depth', [])).astype(float)
-    
+
+    doi = extract_doi_value(row.get("doi", 0))
     valid = np.isfinite(res) & np.isfinite(top) & np.isfinite(bottom)
-    res, top, bottom = res[valid], top[valid], bottom[valid]
+    res, top, bottom, = res[valid], top[valid], bottom[valid], 
 
     if len(res) == 0:
         return go.Figure().add_annotation(text="No valid layers", showarrow=False)
@@ -1129,10 +1058,12 @@ def generate_res_step_graph_elev(row, row_index, label=None, elevation=None,step
         z_coords = np.append(elevation - top, elevation - bottom[-1])
         y_range = [np.min(z_coords) - 5, np.max(z_coords) + 5 ]
         y_title = "Elevation"
+        doi = elevation - doi
     else:
         z_coords = np.append(top, bottom[-1])
         y_range = [np.min(z_coords) - 5, np.max(z_coords) + 5]
         y_title = "Depth (m)"
+        doi = doi
 
     res_coords = np.append(res, res[-1])
 
@@ -1144,7 +1075,14 @@ def generate_res_step_graph_elev(row, row_index, label=None, elevation=None,step
         line=dict(shape='hv', width=3, color=step_color),
         name=label or f"Sounding {row_index}"
     ))
-    
+    # DOI
+    fig.add_hline(
+        y=doi, 
+        line_dash="dash", 
+        line_color=step_color,
+        line_width=2,
+        )
+
     fig.update_layout(
         yaxis=dict(title=y_title, range=y_range, autorange=False),
         xaxis=dict(type="log", title="Resistivity (Ohm-m)", minor=dict(showgrid=False, ticks="")),
@@ -1186,12 +1124,16 @@ def build_combined_step_figure(df, indices,use_elevation=True):
         else:
             one = generate_res_step_graph(row, idx, step_color=chosen_color)
 
-        # Copy traces from the single figure into combined fig
         for tr in one.data:
-            # Give each sounding a legend label
-            tr.name = f"{idx}"
-            tr.showlegend = True
+            if tr.name == "DOI":
+                tr.showlegend = False
+            else:
+                tr.name = f"{idx}"
+                tr.showlegend = True
             fig.add_trace(tr)
+        if one.layout.shapes:
+            for shape in one.layout.shapes:
+                fig.add_shape(shape)
 
     fig.update_layout(
         # title="Combined step plots",
@@ -1225,13 +1167,162 @@ def build_combined_step_figure(df, indices,use_elevation=True):
     )
     return fig
 
+# ---------- inversion vs real data plot -------------
+
+def generate_dbdt_graph(dbdt_df, site_id):
+    target_site = int(site_id) 
+
+    site_data = dbdt_df[dbdt_df['site_id'] == target_site].dropna(subset=['dbdt', 'time'])
+    
+    if site_data.empty:
+        return go.Figure().add_annotation(text=f"No data for Site {target_site}", showarrow=False)
+
+    d_obs = site_data.dbdt.values
+    d_err = site_data.error.values
+    time = site_data.time.values
+    
+    d_syn = site_data['dbdt_syn'].values 
+    
+    e = d_err / 100
+    err_plus  = d_obs * e
+    err_minus = d_obs * e / (1 + e)
+
+    fig = go.Figure()
+
+    # Trace 1: Model/Forward
+    fig.add_trace(go.Scatter(
+        x=time, y=d_syn,
+        mode="lines",
+        line=dict(color="#EF553B"), 
+        name="Model Response"
+    ))
+
+    # Trace 2: Observed Markers
+    fig.add_trace(go.Scatter(
+        x=time, y=d_obs,
+        # mode="markers",
+        mode="lines+markers",
+        name="Observed dB/dt",
+        marker=dict(color="black", size=6),
+        line=dict(color="black", width=1, dash='dash'),
+        error_y=dict(type="data", array=err_plus, arrayminus=err_minus, visible=True, thickness=1, width=0)
+    ))
+
+
+    fig.update_layout(
+        xaxis=dict(title="Time (s)", type="log", gridcolor='lightgray',
+            linecolor='black',      # Color of the axis line
+            linewidth=1,            # Thickness of the border
+            mirror=True,            # Adds the line to the top as well, creating a box
+            dtick=1,                # Ensures minor gridlines/labels are hidden
+            minor=dict(showgrid=True, ticks=""),
+            range=[-5.1, -2.3]            # LOG LIMITS: 10^0 to 10^4 (i.e., 1 to 10,000 Ohm-m) change this to [0, 3] for 1 to 1,000 Ohm-m
+        ),
+        yaxis=dict(title="dB/dt [V / m²]",  type="log", gridcolor='lightgray',
+            linecolor='black',
+            linewidth=1,
+            mirror=True,
+            dtick=1,
+            minor=dict(showgrid=True, ticks=""),),
+        legend=dict(
+            yanchor="top",
+            y=0.98,        # Slightly offset from the very top border
+            xanchor="right",
+            x=0.98,        # Slightly offset from the very right border
+            bgcolor="rgba(255, 255, 255, 0.5)", # Semi-transparent background
+            bordercolor="Black",
+            borderwidth=1
+        ),
+        template="plotly_white",
+        margin=dict(l=50, r=40, t=50, b=50), # Slightly more margin for labels
+        plot_bgcolor='white'
+    )
+    
+    return fig
+
+def build_combined_dbdt_figure(dbdt_df, indices):
+    fig = go.Figure()
+    
+    # 1. Define custom color list (Red first, then standard palette)
+    standard_colors = [c for c in px.colors.qualitative.Plotly if c.lower() != '#ef553b']
+    colors = ['red'] + standard_colors
+    
+    for count, idx in enumerate(indices):
+        # Filter for the specific site
+        target_site = int(idx)
+        site_data = dbdt_df[dbdt_df['site_id'] == target_site].dropna(subset=['dbdt', 'time'])
+        
+        if site_data.empty:
+            continue
+
+        chosen_color = colors[count % len(colors)]
+        
+        time = site_data['time'].values
+        d_obs = site_data['dbdt'].values
+        d_syn = site_data['dbdt_syn'].values if 'dbdt_syn' in site_data.columns else None
+        
+        # Error calculation
+        e = site_data['error'].values / 100
+        err_plus = d_obs * e
+        err_minus = d_obs * e / (1 + e)
+
+        # Trace 1: Model Response (Line)
+        if d_syn is not None:
+            fig.add_trace(go.Scatter(
+                x=time, y=d_syn,
+                mode="lines",
+                line=dict(color=chosen_color, width=2),
+                name=f"Model {idx}",
+                legendgroup=f"group{idx}",
+                showlegend=True
+            ))
+
+        # Trace 2: Observed Data (Markers)
+        fig.add_trace(go.Scatter(
+            x=time, y=d_obs,
+            # mode="markers",
+            mode="lines+markers",
+            marker=dict(color=chosen_color, size=5, symbol='circle-open'),
+            line=dict(color=chosen_color, width=1, dash='dash'),
+            name=f"Observed {idx}",
+            legendgroup=f"group{idx}",
+            showlegend=False, # Hide from legend to prevent clutter
+            error_y=dict(type="data", array=err_plus, arrayminus=err_minus, 
+                         visible=True, thickness=0.8, width=0)
+        ))
+
+    # 2. Layout Logic (Log-Log)
+    fig.update_layout(
+        xaxis=dict(
+            title="Time (s)", type="log", gridcolor='lightgray',
+            linecolor='black', linewidth=1, mirror=True,
+            range=[-5.1, -2.3]
+        ),
+        yaxis=dict(
+            title="dB/dt [V / m²]", type="log", gridcolor='lightgray',
+            linecolor='black', linewidth=1, mirror=True
+        ),
+        legend=dict(
+            yanchor="top", y=0.98,
+            xanchor="right", x=0.98,
+            bgcolor="rgba(255, 255, 255, 0.7)",
+            bordercolor="Black", borderwidth=1,
+            title="Stations"
+        ),
+        template="plotly_white",
+        margin=dict(l=50, r=40, t=50, b=50),
+        plot_bgcolor='white'
+    )
+    
+    return fig
+
 # ------------------- draggable_window -------------------
 def create_draggable_window(win_id, title, content, width="400px",height="700px"):
     if hasattr(content, 'layout'):
         body = dcc.Graph(
             figure=content, 
             style={"height": "100%", "width": "100%"}, 
-            config={'responsive': True, 'displayModeBar': False}
+            config={'responsive': True, 'displayModeBar': True}
         )
     else:
         body = content

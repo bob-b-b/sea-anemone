@@ -63,9 +63,13 @@ pio.templates.default = "custom"
 
 @nosj
 class GISSettings(PanelSettings):
-    color: str = "red"
-    highlight_color: str = "yellow"
-    zoom: int = 10
+    # color: str = "red"
+    # highlight_color: str = "yellow"
+    # zoom: int = 10
+    zoom: int = 14
+    color: str = '#ff0000'
+    highlight_color: str= '#ffff00'  # Default highlight color
+    plot_attribute:  Literal['date', 'daytime', 'misfit','doi', 'Number of Gates'] = 'date'
     png_crs: str = "EPSG:32637"
     bh_color: str = 'orange'
     # geod: str = Geod(ellps="WGS84")
@@ -195,6 +199,7 @@ class GIS(Panel):
         fig = go.Figure()
         if point_attr is None:
                 point_attr = "none"
+        # print("POINT ATTRIBUTE",point_attr)
  
        # --- Decide zoom & center ---
         zoom = view.get("zoom") if view and "zoom" in view else self.settings.zoom
@@ -242,6 +247,7 @@ class GIS(Panel):
                 # Check if it's one of our numeric columns
                 numeric_cols = ['elevation', 'daytime', 'Data Residual', 'DOI']
                 is_numeric = point_attr in numeric_cols
+                # print("IS NUMERIC",is_numeric)
  
                 if is_numeric:
                     raw_values = pd.to_numeric(display_df[point_attr], errors='coerce').tolist()
@@ -255,7 +261,7 @@ class GIS(Panel):
                         mode='markers',
                         marker=dict(size=14, opacity=0.8, color=hex_colors), # PURE HEX
                         # name=point_attr,
-                        showlegend=True,
+                        showlegend=False,
                         uid=f"pts_{point_attr}_dots"))
                    
                     # to remove the trace 1 text
@@ -324,7 +330,8 @@ class GIS(Panel):
                             name=val,
                             # Unique UID helps Plotly manage transitions
                             uid=f"pts_{point_attr}_{val}",
-                            showlegend=True
+                            # showlegend=True
+                            showlegend=False,
                         ))
                     pass
             else:
@@ -472,8 +479,7 @@ class GIS(Panel):
                                         },
                                         children=[
                                             layer_row("Google", "google", checked=True, default_opacity=1),
-                                            # layer_row("TIFF", "tiff", default_opacity=0.6),
-                                            # layer_row("PNG", "png", default_opacity=0.6),
+
                                             html.Div(id="dynamic-raster-layer-rows"),
                                            
                                             html.Div([
@@ -513,51 +519,12 @@ class GIS(Panel):
                                     ),
                                 ],
                             ),
- 
-                            # --- Section Mode Button ---
-                            html.Div(
-                                style={"position": "relative"},
-                                children=[
-                                    html.Button("Section ▼", id="section-toggle", style={"padding": "5px 10px"}),
-                                    html.Div(
-                                        id="section-panel",
-                                        style={"display": "none", "position": "absolute", "background": "white", "padding": "8px", "borderRadius": "6px", "boxShadow": "0 2px 6px rgba(0,0,0,0.25)", "marginTop": "4px", "minWidth": "140px"},
-                                        children=[
-                                            html.Div("Interpolated", id={"type": "section-option", "mode": "interp"}, style={"padding": "6px", "cursor": "pointer"}),
-                                            html.Div("Blocky", id={"type": "section-option", "mode": "blocky"}, style={"padding": "6px", "cursor": "pointer"}),
-                                            html.Div("Combined", id={"type": "section-option", "mode": "combined"}, style={"padding": "6px", "cursor": "pointer"}),
-                                        ],
-                                    ),
-                                ]
-                            ),
- 
-                            # --- Lines Mode Button ---
-                            html.Div(
-                                style={"position": "relative"},
-                                children=[
-                                    html.Button("Lines ▼", id="profiles-toggle", style={"padding": "5px 10px"}),
-                                    html.Div(
-                                        id="profiles-panel",
-                                        style={"display": "none", "position": "absolute", "background": "white", "padding": "12px", "marginTop": "6px", "borderRadius": "6px", "boxShadow": "0 2px 8px rgba(0,0,0,0.3)", "width": "280px"},
-                                        children=[
-                                            html.Div("Active Profiles", style={"fontWeight": "bold", "marginBottom": "8px", "fontSize": "13px"}),
-                                            html.Div(id="profile-list-container", style={"maxHeight": "250px", "overflowY": "auto", "marginBottom": "10px", "border": "1px solid #eee", "borderRadius": "4px"}),
-                                            html.Hr(style={"margin": "10px 0", "border": "0", "borderTop": "1px solid #eee"}),
-                                            html.Div(
-                                                style={"display": "flex", "gap": "8px"},
-                                                children=[
-                                                    html.Button("Clear Selected", id="clear-selected-btn", style={"fontSize": "11px", "flex": 1, "padding": "5px", "backgroundColor": "#fff5f5", "border": "1px solid #ffcccc", "cursor": "pointer"}),
-                                                    html.Button("Clear All", id="clear-all-btn", style={"fontSize": "11px", "flex": 1, "padding": "5px", "color": "red", "backgroundColor": "#fff5f5", "border": "1px solid #ffcccc", "cursor": "pointer"}),
-                                                ]
-                                            )
-                                        ]
-                                    ),
-                                ]
-                            ),
+                      
+                        
                         ],
                     ),                  
                    
-                    # ---- MAIN CONTENT ROW: MAP (left) + PROFILE (right) ----
+                    # ---- MAIN CONTENT ROW: MAP (left) ----
                     html.Div(
                         style={
                             "position": "absolute",
@@ -607,63 +574,7 @@ class GIS(Panel):
                                         },
                                     ),
                                 ],
-                            ),
- 
-                            # ================= RIGHT: PROFILE =================
-                       
-                        #    html.Div(
-                        #             id="profile-plot-container",
-                        #             style={
-                        #                 "flex": "1", "position": "relative", "minHeight": 0,
-                        #                 "background": "white", "borderRadius": "8px",
-                        #                 "boxShadow": "0 0 10px rgba(0,0,0,0.15)", "padding": "5px",
-                        #                 "display": "flex", "flexDirection": "column", "overflow": "hidden",
-                        #             },
-                        #             children=[
-                        #                 # 1. THE OVERLAY (Now outside the content div)
-                        #                 html.Div(
-                        #                     id="profile-busy-overlay",
-                        #                     children= "Preparing profile...",                                            
-                        #                     style={
-                        #                         "display": "none", # Hidden by default
-                        #                         "position": "absolute", "top": "120px", "left": "12px", "right": "auto",
-                        #                         "padding": "6px 15px", "background": "rgba(0,0,0,0.8)",
-                        #                         "color": "white", "zIndex": 9999, "borderRadius": "6px"
-                        #                     }
-                        #                 ),
-                        #                 # 2. THE CONTENT AREA (This is what the callback targets)
-                        #                 html.Div(
-                        #                     id="profile-plot-content_2",
-                        #                     style= {"flex": "1","width": "100%", "height": "100%","justifyContent": "center","alignItems": "center"},
-                        #                     children=[
-                        #                         dcc.Graph(
-                        #                             id="profile-plot_main", 
-                        #                             figure={
-                        #                                 "data": [],
-                        #                                 "layout": {
-                        #                                     "plot_bgcolor": "red",
-                        #                                     "paper_bgcolor": "white",
-                        #                                     "template": "none",
-                        #                                     "xaxis": {"visible": False, "showgrid": False, "zeroline": False},
-                        #                                     "yaxis": {"visible": False, "showgrid": False, "zeroline": False},
-                        #                                     "margin": {"t": 0, "b": 0, "l": 0, "r": 0},
-                        #                                     "annotations": [{
-                        #                                         "text": "Select or draw a line to generate a profile",
-                        #                                         "showarrow": False,
-                        #                                         "font": {"size": 16, "color": "gray"}
-                        #                                     }],
-                        #                                 },
-                        #                             },
-                        #                         style={ "height": "100%", "width": "100%", "background": "white", "borderRadius": "8px", "boxShadow": "0 -2px 10px rgba(0,0,0,0.1)" 
-                        #                                }
-                        #                             )
-                        #                         ],
-                        #                 ),
-                        #             ],
-                        #         ),                       
+                            ),           
                         ],
                     ), 
                     gear_maker(self.id)])
-           
-        # ])
-        # ])

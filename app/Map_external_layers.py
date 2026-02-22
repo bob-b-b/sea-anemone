@@ -10,8 +10,11 @@ import plotly.express as px
 from pyproj import Transformer
 import pandas as pd
 import numpy as np
-import math
-import time
+
+
+import plotly.io as pio
+import simplekml
+from datetime import datetime
 
 import matplotlib.cm as cm
 import matplotlib.colors as mcolors
@@ -95,32 +98,10 @@ def layer_row(label, layer_id, checked=False, default_opacity=1.0):
 
 
 
-    # ------------------------- double click line lat lon save as strings -------------------------
     
 # --------------------- ScatterMapRenderer ---------------------
 class GIS_helpers(Panel):
-    # def __init__(self, dataframe, settings, 
-    #              highlighted=None,tiff_path=None,png_path=None,
-    #              ):
-        
-    #     self.id = 'gis'
-    #     self.dataframe = dataframe
-
-    #     if self.dataframe is None: return self.empty_render()
-    #     self.settings = settings
-    #     self.highlighted = highlighted
-
-    #     self._tiff_cache = {}  # {path: tiff_info}
-    #     self._png_cache = {}   # {path: png_info}
-
-    #     self.tiff_path = tiff_path
-    #     self.png_path = png_path
-
-    #     self.tiff_info = self._load_tiff() if tiff_path else None
-    #     self.png_info = self._load_png() if png_path else None
-
-    #     if self.tiff_info and self.png_info:
-    #         self._check_bounds_match()  
+ 
 
     # -------------------------
     # Helpers for Layers
@@ -497,4 +478,42 @@ class GIS_helpers(Panel):
             lon=self.dataframe["longitude"].mean()
         )
   
+
+    def save_profile_data(fig, line_data, profile_index,save_directory):
+
+        if not save_directory:
+            save_directory = os.getcwd()
+        
+        timestamp = datetime.now().strftime("%M%S")
+        base_name = f"profile_{profile_index+1}_{timestamp}"
+        
+        # 1. Save PNG using Plotly
+        kmz_path = os.path.join(save_directory, f"{base_name}.kmz")
+        png_path = os.path.join(save_directory, f"{base_name}.png")
+        
+        # 2. Save KMZ using simplekml
+        # Note: KMZ is just a zipped KML. simplekml handles this easily.
+        kml = simplekml.Kml()
+        ls = kml.newlinestring(name=f"Profile {profile_index+1}")
+        ls.coords = [tuple(coord) for coord in line_data]
+        ls.style.linestyle.width = 5
+        ls.style.linestyle.color = simplekml.Color.red
+        
+        # pio.write_image(fig, png_path)
+        # 2. Save PNG at 120 DPI
+        # Calculation: Target Inches * 120
+        # Example for a large 12-inch wide image: 12 * 120 = 1440 pixels
+        pio.write_image(
+            fig, 
+            png_path, 
+            width=1440,   # 12 inches @ 120 DPI
+            height=900,   # 7.5 inches @ 120 DPI
+            engine="kaleido"
+        )
+        kml.savekmz(kmz_path)
+
+        print("png save",png_path)
+        
+        return png_path, kmz_path
+
     

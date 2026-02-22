@@ -623,12 +623,13 @@ bh_data, rock_color_map = load_borehole_file(r"C:\Users\au679476\Downloads\boreh
 # rock_color_map = None
 
 
-model_frame = TEMframe.from_pandas(pd.read_csv('test_models_day4.csv'))
+# model_frame = TEMframe.from_pandas(pd.read_csv('test_models_day4.csv'))
 # model_frame = TEMframe.from_pandas(pd.read_csv('test_models_Dollow.csv'))
 
 def preprocess_new_df(new_df):
     # 1. Identify which columns are attributes vs which are layer data
     # Add any attribute here that you want to filter by in the UI
+    print('NEW df', new_df)
     attributes = ['date', 'daytime', 'elevation','Data Residual', 'DOI', 'Number of Gates']
     color_master_map = {}
 
@@ -692,7 +693,7 @@ def get_numeric_colors(values, cmap_name='jet'): # to cheat plotly with hex stri
         return ['grey'] * len(values)
 
 # Apply it
-df, color_master_map, existing_attrs = preprocess_new_df(model_frame)
+# df, color_master_map, existing_attrs = preprocess_new_df(model_frame)
 
 # -------------------------------------------------------------
 def paper_to_geo(px, py, view):
