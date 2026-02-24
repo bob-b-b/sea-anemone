@@ -128,6 +128,17 @@ class TEMframe(DataFrame):
 
         n_sites,n_gates = lm.data.shape
         print(f'Found {n_sites} sites and {n_gates} gates in low moment data.')
+        hm_initial_sign = np.nanmean(hm.data[:, :10], axis=1)
+
+        # 2. Create a mask for sites where the average of first 10 gates is negative
+        flip_mask = hm_initial_sign < 0
+
+        # 3. Apply the flip to both lm and hm 2D arrays
+        # This uses numpy broadcasting to flip all gates for the flagged sites
+        lm.data[flip_mask] *= -1
+        hm.data[flip_mask] *= -1
+
+        print(f"Flipped signs for {np.sum(flip_mask)} sites based on HM polarity.")
         n_gates += 1
         day_sort = np.argsort(lm.daytime)
         site_id = np.zeros(n_sites, dtype=int)
@@ -184,7 +195,9 @@ class TEMframe(DataFrame):
         data_avg['longitude']    = np.append(data_avg['longitude'], np.concatenate([np.ones(n_gates, dtype=float)*x for x in lm.location[:, 0]]))
         data_avg['elevation']    = np.append(data_avg['elevation'], np.concatenate([np.ones(n_gates, dtype=float)*x for x in lm.location[:, 2]]))
         data_avg['daytime']      = np.append(data_avg['daytime'],   np.concatenate([np.ones(n_gates, dtype=float)*x for x in lm.daytime]))
-
+        print(data_avg['date'])
+        print(data_avg['daytime'])
+        data_avg['daytime'] = data_avg['date']*100 + data_avg['daytime']
         forward_operators = usf.sweep2fwr(sweeps)
         history = [f'place_holder = TEMframe.from_usf_folder(\"{folder_path}\")']
 

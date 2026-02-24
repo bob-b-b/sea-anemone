@@ -101,6 +101,7 @@ class Map(Panel):
                 color_continuous_scale='turbo',
                 custom_data=["site_id"]   # <-- ADD THIS
             )
+            fig.update_traces(marker={'size': 12})
             fig.update_layout(
                 coloraxis_colorbar=dict(
                     orientation="h", 
@@ -139,7 +140,7 @@ class Map(Panel):
                 )
 
                 buffer_trace.update_traces(
-                    marker=dict(size=12, color=self.settings.buffer_color),
+                    marker=dict(size=14, color=self.settings.buffer_color),
                     name="Buffer window"
                 )
 
