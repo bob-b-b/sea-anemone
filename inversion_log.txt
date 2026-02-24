@@ -1,3 +1,11 @@
+<<<<<<< HEAD
+001	Data misfit:	31.07	Vertical misfit:	0.00	Horizontal misfit:	0.00	Total misfit:	13.91	Step size:	1.10	Last iteration time:	0.10
+
+002	Data misfit:	31.07	Vertical misfit:	0.00	Horizontal misfit:	0.00	Total misfit:	13.91	Step size:	0.41	Last iteration time:	0.04
+
+003	Data misfit:	31.07	Vertical misfit:	0.00	Horizontal misfit:	0.00	Total misfit:	13.91	Step size:	0.10	Last iteration time:	0.05
+
+=======
 001	Data misfit:	20.83	Vertical misfit:	0.00	Horizontal misfit:	0.00	Total misfit:	9.19	Step size:	1.10	Last iteration time:	8.60
 
 002	Data misfit:	11.94	Vertical misfit:	0.03	Horizontal misfit:	0.01	Total misfit:	5.27	Step size:	1.10	Last iteration time:	7.97
@@ -9,3 +17,4 @@
 005	Data misfit:	1.98	Vertical misfit:	0.23	Horizontal misfit:	0.10	Total misfit:	0.93	Step size:	1.28	Last iteration time:	7.46
 
 misfit is below 0.95, stopping inversion
+>>>>>>> 58e11c2f201761585895f7425e66d02b95d4aa38

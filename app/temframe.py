@@ -115,6 +115,7 @@ class TEMframe(DataFrame):
     def from_sweeps(cls, sweeps, track_history=True, folder_path=None):
         points = sorted(set([x.points for x in sweeps]))
         mega_sweeps = []
+        print(f'Found sweeps with points: {points}')
         for pnts in points:
             mega_sweeps.append(usf.Sweep.combine_sweeps([swp for swp in sweeps if swp.points==pnts]))
         
@@ -513,7 +514,7 @@ class TEMframe(DataFrame):
         return df_layers, df_data, df_overview
 
 
-    def invert_site(self, site_id, vc=0.4, res_start=100., max_iterations=10):
+    def invert_site(self, site_id, vc=0.4, res_start=100., max_iterations=20):
         t_max = max([fwr.times.max().item() for fwr in self.forward_operators])
         d_max = (t_max*4e6)**0.5
         n_layers = 30

@@ -1,7 +1,9 @@
 import sys, os
 import base64
 from tkinter import filedialog, Tk
-
+import threading
+print(f"Callback is running on thread: {threading.current_thread().name}")
+import copy
 
 fpath = os.path.dirname(os.path.abspath(__file__))
 if fpath not in sys.path:
@@ -26,6 +28,7 @@ from dash.dash import no_update
 from flask import send_from_directory
 
 from temframe import TEMframe
+from Map_external_layers import GIS_helpers
 
 external_stylesheets = [themes.BOOTSTRAP]
 app = Dash(__name__, suppress_callback_exceptions=True, assets_folder='assets',  external_stylesheets=external_stylesheets)
@@ -42,11 +45,12 @@ import os
 import requests
 import re
 import shutil
-
-
-
 import pandas as pd
 import numpy as np
+from GIS_profile_only import *
+from gis import GIS
+import json
+
 # df_overview = pd.DataFrame(columns=['date', 'daytime', 'latitude', 'longitude', 'elevation', 'utm_x', 'utm_y', 'distance'])
 
 
@@ -325,62 +329,36 @@ mod1 = ModelGraph(   dataframe=sesh.models )
 mod2 = ModelSection( dataframe=sesh.models )
 Multi_inv = MultiInversion( dataframe=sesh.data )
 
-
-# x = html.Div([
-#       dcc.Markdown(children='### buttons and hot keys'),
-#       html.Div(
-#           [
-#             dbc.ButtonGroup([
-#               dbc.Button("disable [ctrl+d]", id='disableButton'),
-#               dbc.Button("enable  [ctrl+e]", id='enableButton'),
-#             ]),
-#             dbc.ButtonGroup([
-#                 dbc.Button("Previous buffer [<<-]", id='prev-buffer', style={"marginRight": "6px"}),
-#                 dbc.Button("Previous [<-]", id='highlight_prev', style={"marginRight": "6px"}),
-#                 dbc.Button("Next [->]", id='highlight_next', style={"marginRight": "6px"}),
-#                 dbc.Button("Next buffer [->>]", id='next-buffer', style={"marginRight": "12px"}),
-#                 html.Div(
-#                     [
-#                         html.Small(
-#                             "Buffer length:",
-#                             style={
-#                                 "marginLeft": "12px",
-#                                 "marginRight": "6px",
-#                                 "color": "#555",
-#                                 "fontSize": "12px",
-#                             }
-#                         ),
-#                         dcc.Input(
-#                             id='buffer-length-input',
-#                             type='number',
-#                             min=1,
-#                             step=1,
-#                             value=50,
-#                             style={
-#                                 "width": "70px",
-#                                 "height": "32px",
-#                                 "fontSize": "13px"
-#                             }
-#                         ),
-#                     ],
-#                     style={
-#                         "display": "flex",
-#                         "alignItems": "center",
-#                     }
-#                 )
-#             ]),
-#             dbc.ButtonGroup([
-#                 dbc.Button("save [ctrl+s]", id='saveButton'),
-#             ])
-#           ], style={'padding': '10px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between'}
-#         ),
-#         dcc.Location(id='url_button'),
-#       ]
-# , id='processing_buttons')
+gis = GIS(dataframe =sesh.models)
+profile = Profile(sesh.models)
 
 
+profile_controls = html.Div([
+    # dcc.Markdown('### Profile Management'),
+    html.Div(
+        id="profile-buttons-container",
+        children=[
+            dbc.ButtonGroup([
+                dbc.Button("← Previous \nProfile", id="btn-prev-line", color="primary", outline=True, disabled=True),
+                dbc.Button("Next \nProfile →", id="btn-next-line", color="primary", outline=True, disabled=True),
+                            ]),
+                html.Div(id="profile-list-container", style={
+                "maxHeight": "200px", "overflowY": "auto", "width": "100%", "marginTop": "10px"
+                        }),
+            dbc.ButtonGroup([
+                dbc.Button("Clear Selected", id="btn-clear-sel", color="warning", outline=True),
+                dbc.Button("Clear All", id="btn-clear-all", color="danger", outline=True),
+                dbc.Button("Export Selected as PNG/KMZ", id="btn-export-profile", color="success", outline=True),
+                            ]),
+        ], 
+        style={'padding': '10px', 'display': 'flex', 'flexDirection': 'column', 'gap': '10px'}
+    ),
+    html.Div(id="export-message-container"),
+    dcc.Download(id="download-profile-files"),
+], id='profile-buttons')
 
-#stmod = StartingModel.standard(rho=10.)
+
+#stmod = StartingModel.standard(rho=10.)F
 
 # Inv_it = Inversion_iterations.standard(misfit=None,rho=10.)
 
@@ -388,8 +366,8 @@ Sing_inv = Single_site( dataframe=sesh.data, rho=10 )
 
 hkr = HotKeyReminder()
 
-panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, Multi_inv, Sing_inv, pyInt, rhoa, hkr]
-nodes = [node for panel in panels for node in panel.to_nodes()]#+[dfl.Tab(id=f'tab-processing_buttons', children=[x])]
+panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, Multi_inv, Sing_inv, pyInt, rhoa, hkr, gis, profile]
+nodes = [node for panel in panels for node in panel.to_nodes()]+[dfl.Tab(id=f'tab-profile-buttons', children=[profile_controls])] #dfl.Tab(id=f'tab-processing_buttons', children=[x]),
 
 
 html_header = html.H1('Sea Anemone', style={'width': '100%'})
@@ -412,13 +390,24 @@ app.layout = html.Div([
     dcc.Store(id="dem-applied", data=False),
     dcc.Store(id="dem-downloaded", data=False),
     dcc.Store(id="dem-api-keys", data=[], storage_type="local"),
+    
+    dcc.Store(id='global-colorbar-store', data={
+            'resistivity': {'vmin': 1, 'vmax': 300, 'log': True},
+            'DOI': {'vmin': 0, 'vmax': 500, 'log': False},
+            'misfit': {'vmin': 0, 'vmax': 10, 'log': False},
+            'number of gates': {'vmin': 0, 'vmax': 50, 'log': False},
+            'date': {'vmin': 20240101, 'vmax': 20260101, 'log': False},
+            'elevation': {'vmin': -100, 'vmax': 1000, 'log': False},
+            'daytime': {'vmin': 0, 'vmax': 24, 'log': False},
+            }), 
+    
     html.Div([
         dbc.ButtonGroup([
             dbc.Button("1. Load Data",  id="upload_layout",    color="primary"),
             dbc.Button("2. Process",    id="process_layout",   disabled=True, color="secondary"),
             dbc.Button("3. Invert",     id="invert_layout",    disabled=True, color="secondary"),
             dbc.Button("4. QC",         id="review_layout",    disabled=True, color="secondary"),
-            dbc.Button("5. Interpret",  id="interpret_layout", disabled=True, color="secondary"),
+            dbc.Button("5. Interpret",  id="interpret_layout", disabled=False, color="secondary"),
         ], style={'width': '100%'})
     ], style={
         'position': 'fixed',
@@ -459,6 +448,114 @@ for panel in panels:
     panel.add_callbacks(app)
 
 
+# CALLBACK FOR ALT+LEFT CLICK + CTRL
+app.clientside_callback(
+    """
+    function(clickData){ 
+        // 3. Only trigger if Alt is held down
+        if (!window._keyTracker.alt) {
+            return window.dash_clientside.no_update;
+        }
+
+        // 4. Extract Data from Click Point
+        const pt = clickData.points[0];
+        let cd = pt.customdata;
+        
+        let extractedId = null;
+        let extractedType = "tem"; // Default type
+
+        // 5. Robust Extraction Logic
+        // We drill down through arrays because Plotly structures customdata differently 
+        // for points vs. fills (Scatter 'toself')
+        if (cd !== undefined && cd !== null) {
+            let dataArray = cd;
+            
+            // If it's a nested array (e.g., [[id, dist, type]]), grab the inner one
+            if (Array.isArray(dataArray) && Array.isArray(dataArray[0])) {
+                dataArray = dataArray[0];
+            }
+
+            // At this point, dataArray should be [id, dist, type] or [id]
+            if (Array.isArray(dataArray)) {
+                extractedId = dataArray[0];
+                
+                // If the 3rd element is "borehole", update the type
+                if (dataArray.length >= 3 && dataArray[2] === "borehole") {
+                    extractedType = "borehole";
+                }
+            } else {
+                // Fallback for simple single-value customdata
+                extractedId = dataArray;
+            }
+        }
+
+        // 6. Final Debug Log (Check your Browser Console with F12)
+        console.log("🎯 Alt+Click Detected:", {
+            id: extractedId,
+            type: extractedType,
+            multi: window._keyTracker.ctrl
+        });
+
+        // 7. Return to Python Store
+        return {
+            "index": extractedId,
+            "type": extractedType,
+            "multi": window._keyTracker.ctrl,
+            "timestamp": Date.now()
+        };
+    }
+    """,
+    Output("right-click-index-store", "data"),
+    Input("profile_plot_main", "clickData"),
+    prevent_initial_call=True
+)
+
+# CALLBACK A: SHOW message for profile
+app.clientside_callback(
+    """
+    function(line_data, mode, idx) {
+        if (!line_data || line_data.length === 0) return window.dash_clientside.no_update;
+
+        const overlay = document.getElementById('profile-busy-overlay');
+        if (overlay) {
+            overlay.innerText = "Preparing Profile...";
+            overlay.style.display = 'flex';
+            // Explicitly set styles here to ensure visibility
+            overlay.style.position = 'fixed';
+            overlay.style.top = '320px';
+            overlay.style.left = '12px';
+            overlay.style.zIndex = '10000';
+            console.log("JS: Inputs changed - Showing Overlay");
+        }
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("profile-busy-overlay", "className"), # Dummy output to a safe property
+    Input("line-final-store", "data"),
+    Input("section-mode-store", "data"),
+    Input("selected-line-index", "data"),
+)
+
+# CALLBACK A: Hide message for profile
+app.clientside_callback(
+    """
+    function(children) {
+        // Only hide if the children is not null/empty
+        if (!children) return window.dash_clientside.no_update;
+
+        const overlay = document.getElementById('profile-busy-overlay');
+        if (overlay) {
+            overlay.style.display = 'none';
+            console.log("JS: Plot arrived - Hiding Overlay");
+        }
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("profile-busy-overlay", "title"), # Different dummy property
+    Input("profile_plot_main", "figure"), # Replace with your plot container ID
+    prevent_initial_call=True
+)
+
 
 @app.callback(
     [ 
@@ -472,7 +569,7 @@ def handle_map_interactions(relayout_data, selected_data):
     # ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
-    
+       
     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
     trigger_prop = ctx.triggered[0]['prop_id'].split('.')[1]
     
@@ -528,14 +625,39 @@ def handle_map_interactions(relayout_data, selected_data):
     
     return dbdt1.render(), dbdt2.render(), rhoa.render(), mod1.render(), mod2.render()
 
-
-
-
 app.clientside_callback(
     hkr.javascript,
     Output("disableButton", "id"),
     Input("disableButton", "id")
 )
+
+# PROFILE BUTTONS  
+app.clientside_callback(
+    """
+    function(id) {
+        document.addEventListener("keydown", function(event) {
+            const isInput = document.activeElement && 
+                (document.activeElement.tagName === 'INPUT' || 
+                 document.activeElement.tagName === 'TEXTAREA');
+
+            if (!isInput && event.altKey) {
+                if (event.key.toLowerCase() === 'c') {
+                    const btn = document.getElementById('btn-clear-sel');
+                    if (btn) btn.click();
+                }
+                if (event.key.toLowerCase() === 'a') {
+                    const btn = document.getElementById('btn-clear-all');
+                    if (btn) btn.click();
+                }
+            }
+        });
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("profile-buttons", "id"),
+    Input("profile-buttons", "id")
+)
+
 
 app.clientside_callback(
     """
@@ -554,6 +676,7 @@ app.clientside_callback(
     Input("help-fab", "n_clicks"),
     prevent_initial_call=True
 )
+
 @app.callback(
     dbdt1.output, dbdt2.output, rhoa.output,
     Input("disableButton", "n_clicks"),
@@ -940,9 +1063,10 @@ def reset_polling(n):
      Output('output-data-summary', 'children', allow_duplicate=True),
      Output('upload-toast', 'is_open'),
      Output('upload-toast', 'children'),
-
+     Output('gis', 'figure', allow_duplicate=True),
      Output('process_layout', 'disabled', allow_duplicate=True),
      Output('invert_layout', 'disabled', allow_duplicate=True),
+     
      Output('process_layout', 'n_clicks', allow_duplicate=True),
      Output('dem-bbox-minlon', 'value', allow_duplicate=True),
      Output('dem-bbox-minlat', 'value', allow_duplicate=True),
@@ -991,10 +1115,15 @@ def upload_file(contents, current_process_clicks):
     mod1.dataframe  = sesh.models
     mod1.buffer_sites = initial_sites.tolist()
     mod2.dataframe  = sesh.models
+
+    gis.dataframe   = sesh.models
+    profile.dataframe = sesh.models
+    
+    
     # t1.dataframe = TABLES['overview'].copy()
     new_process_clicks = no_update
 
-    #return html.Div("File uploaded successfully."),  False, False, new_process_clicks#, t1.render()
+    #return html.Div("File uploaded successfully."), False, False, new_process_clicks#, t1.render()
     summary = build_data_summary()
     if 'site_id' in sesh.data.columns:
         toast_count = int(sesh.data.loc[sesh.data['site_id'] != -1, 'site_id'].nunique())
@@ -1015,7 +1144,7 @@ def upload_file(contents, current_process_clicks):
     if warning_msg:
         upload_msg = f"{upload_msg} {warning_msg}"
 
-    return html.Div(upload_msg), m1.render(), dbdt1.render(), dbdt2.render(), rhoa.render(), summary, True, toast_msg, False, False, new_process_clicks, *bbox_vals, {'display': 'block'}#, t1.render()
+    return html.Div(upload_msg), m1.render(), dbdt1.render(), dbdt2.render(), rhoa.render(), summary, True, toast_msg, gis.render(), False, False, new_process_clicks, *bbox_vals, {'display': 'block'}#, t1.render()
 
 
 @app.callback(
@@ -1348,6 +1477,35 @@ def sync_api_key_options(api_keys):
     ) if history_rows else html.Div("No history yet.", style={'color': '#6c757d', 'fontSize': '12px'})
     return datalist_options, history_container
 
+# --------------------- Store zoom / center ---------------------
+@app.callback(
+    Output("map-view-store", "data"),   
+    Input('gis', "relayoutData"),
+    State("map-view-store", "data"),
+    prevent_initial_call=True,)
+
+def update_map_view(relayout, view):
+
+    if not relayout:
+        return no_update
+
+    # store bbox
+    if "map._derived" in relayout and "coordinates" in relayout["map._derived"]:
+        coords = relayout["map._derived"]["coordinates"]
+
+        print("✔ Updated BBOX:") #, coords
+
+        # keep previous center, zoom if available
+        center = relayout.get("map.center", (view or {}).get("center"))
+        zoom   = relayout.get("map.zoom",   (view or {}).get("zoom"))
+
+        return {
+            "bbox": coords,
+            "center": center,
+            "zoom": zoom,
+        }
+
+    return no_update
 
 @app.callback(
     Output('dem-api-key-history-collapse', 'is_open'),
@@ -1408,6 +1566,205 @@ def remember_api_key_on_download(dem_downloaded, api_key, api_keys):
     keys.insert(0, api_key)
     return keys[:20]
 
+
+# --------------------- auto-close callback for layers ---------------------
+@app.callback(
+    Output("layers-panel", "style", allow_duplicate=True),
+    Input({"type": "layer-check", "layer": ALL}, "value"),   # checkboxes
+    Input({"type": "layer-opacity", "layer": ALL}, "value"),    # opacity sliders
+    Input({"type": "layer-menu-btn", "layer": ALL}, "n_clicks"),# 3-dot menus
+    State("layers-panel", "style"),
+    prevent_initial_call=True,
+)
+def auto_close_layers(layer_values, opacity_values, menu_clicks, style):
+
+    # Check for ANY triggered change:
+    changed = False
+
+    # Layer checkbox values (lists)
+    if layer_values and any(v is not None for v in layer_values):
+        changed = True
+
+    # Opacity slider values (floats)
+    if opacity_values and any(v is not None for v in opacity_values):
+        changed = True
+
+    # 3-dot menu clicks (ints)
+    if menu_clicks and any((x or 0) > 0 for x in menu_clicks):
+        changed = True
+
+    if not changed:
+        return no_update
+
+    # Close panel
+    new = style.copy()
+    new["display"] = "none"
+    # print(">> Layers panel auto-closed")
+
+    return new
+
+
+
+
+@app.callback(
+    Output("points-attr", "options"),
+    Output("points-attr", "value"),
+    Output("points-filter", "options"),
+    Output("points-filter", "value"),
+    Output("points-color-map-store", "data"),
+    Output("points-filters-by-attr-store", "data"),
+    Input("interpret_layout", 'n_clicks'),
+    Input("map-settings-store", "data"),     # so it can initialize from settings
+    Input("points-attr", "value"),           # user changes attribute
+    Input("points-filter", "value"),         # user changes checklist
+ 
+    State("points-attr", "options"),
+    State("points-filters-by-attr-store", "data"),
+    State("points-available-attrs-store", "data"),
+    prevent_initial_call=False,)
+ 
+def sync_points_ui(trig, settings, attr_value, filter_value,
+                   existing_attr_options, filters_by_attr, 
+                   existing_attrs):
+    gis.dataframe = sesh.models
+    local_df, color_master_map, existing_attrs = preprocess_new_df(gis.dataframe)
+    if gis.dataframe is None:
+        return [], no_update, [], [], {}, (filters_by_attr or {})
+ 
+       
+    filters_by_attr = filters_by_attr or {}
+ 
+    # ---- available attributes come ONLY from existing_attrs ----
+    # existing_attrs = []
+    # existing_attrs = existing_attrs or []
+    available_attrs = [a for a in existing_attrs if a in local_df.columns]
+ 
+    attr_options = [{"label": a, "value": a} for a in available_attrs]
+ 
+    # ---- decide default attribute ----
+    default_attr = None
+    if settings and isinstance(settings, dict):
+        default_attr = settings.get("plot_attribute")
+ 
+    if not default_attr or default_attr not in available_attrs:
+        default_attr = "date" if "date" in available_attrs else (available_attrs[0] if available_attrs else None)
+ 
+    # what triggered?
+    trig = ctx.triggered_id
+ 
+    # ---- choose current attribute ----
+    current_attr = attr_value if attr_value in available_attrs else default_attr
+ 
+    if not current_attr:
+        return attr_options, no_update, [], [], {}, filters_by_attr
+ 
+    # ---- compute unique cleaned values (must match renderer cleaning) ----
+    series_cleaned = (local_df[current_attr].astype(str)
+                      .str.replace(r"\.0$", "", regex=True)
+                      .str.strip())
+    unique_vals = sorted(series_cleaned.unique().tolist())
+ 
+    filter_options = [{"label": str(v), "value": str(v)} for v in unique_vals]
+    all_values = [str(v) for v in unique_vals]
+ 
+    # ---- numeric vs categorical ----
+    is_numeric = pd.api.types.is_numeric_dtype(local_df[current_attr]) and current_attr != "date"
+    if is_numeric:
+        color_map = {}  # numeric uses colorscale in renderer
+    else:
+        palette = px.colors.qualitative.Light24
+        color_map = {val: palette[i % len(palette)] for i, val in enumerate(unique_vals)}
+ 
+    # ---- decide checklist value & persist memory ----
+    if trig == "points-filter":
+        # print("POINT FILTER SYNC FUN", filter_value)
+        selected = filter_value or []
+        filters_by_attr[current_attr] = selected
+        checklist_value = selected
+    else:
+        restored = filters_by_attr.get(current_attr)
+        if restored is None:
+            checklist_value = all_values
+        else:
+            restored = [v for v in restored if v in set(all_values)]
+            checklist_value = restored if restored else all_values
+ 
+        filters_by_attr[current_attr] = checklist_value
+ 
+    return attr_options,current_attr,filter_options,checklist_value,color_map,filters_by_attr
+
+
+
+@app.callback(
+    Output("profile_plot_main", "figure", allow_duplicate=True),
+    Output("flex-layout", "action"),
+    Output("model_section", "figure", allow_duplicate=True),
+    Input("line-final-store", "data"),
+    Input("section-mode-store", "data"),
+    Input("selected-line-index", "data"),
+    Input('global-colorbar-store', 'data'),
+    State("map-view-store", "data"),
+    # State("points-attr", "value"),
+    prevent_initial_call=True
+)
+
+def update_profile_callback(lines, mode, selected_idx, global_cbar_data,view):# , current_attr):
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+    
+    if global_cbar_data and 'resistivity' in global_cbar_data:
+        res_config = global_cbar_data['resistivity']
+        profile.settings.update_attributes(res_config)
+        mod2.settings.update_attributes(res_config)
+
+    # print(f"VMAX SYNCED - Profile Settings: {profile.settings.vmax}, Mod2 Settings: {mod2.settings.vmax}")
+
+    fig = profile.render(lines=lines, mode=mode, selected_idx=selected_idx, view=view)
+    
+    return fig, {"type": "select", "tabId": "tab-profile-plot-content_2"}, mod2.render() 
+
+# --------------------- SAVE PROFILE AS PNG AND KMZ ---------------------
+@app.callback(
+    # Output("download-profile-files", "data"),
+    Output("export-message-container", "children"),
+    Input("btn-export-profile", "n_clicks"),
+    State("profile_plot_main", "figure"), 
+    State("line-final-store", "data"),
+    State("selected-line-index", "data"),
+    prevent_initial_call=True
+)
+
+def trigger_export(n_clicks, fig_data, all_lines, current_idx):
+    if not n_clicks or not all_lines:
+        return no_update
+    
+    # Check if a save directory is set in your session object
+    target_dir = getattr(sesh, 'save_dir', None)
+    
+    if target_dir is None:
+        print("No save directory selected. Saving to current folder.")
+        target_dir = os.getcwd()
+        return dbc.Alert("Error: Please select a Save Directory first!", color="danger")
+
+    try:
+        current_line_coords = all_lines[current_idx]
+        
+        # Save both files to the sesh.save_dir
+        kmz_full_path, png_full_path = GIS_helpers.save_profile_data(fig_data, current_line_coords, current_idx,target_dir)
+        
+        # Get just the filenames for the message
+        kmz_name = os.path.basename(kmz_full_path)
+        png_name = os.path.basename(png_full_path)
+
+        # return dcc.send_file(kmz_full_path)
+        return  dbc.Alert(f"Successfully saved {kmz_name} and {png_name} to {target_dir}",color="success",
+                        duration=2000, # Message disappears after 4 seconds
+                    )
+                    
+    except Exception as e:
+        print(f"Export Error: {e}")
+        return no_update
 
 @app.callback(
     Output('output-dem-load', 'children'),
@@ -1477,6 +1834,111 @@ def load_dem_vs_gps(n_clicks, use_dem):
     return html.Div(message_children), build_data_summary(), dem_applied
 
 
+# --------------------- MULTI LINE select profile dropdown and clear all or selected ---------------------
+@app.callback(
+    Output("line-final-store", "data", allow_duplicate=True),
+    Output("profile-list-container", "children"),
+    Output("selected-line-index", "data"),
+    Output("btn-prev-line", "disabled"), 
+    Output("btn-next-line", "disabled"), 
+    Input("line-final-store", "data"),
+    Input("btn-clear-sel", "n_clicks"),  
+    Input("btn-clear-all", "n_clicks"),  
+    Input("btn-prev-line", "n_clicks"), 
+    Input("btn-next-line", "n_clicks"), 
+
+    Input({"type": "view-line-btn", "index": ALL}, "n_clicks"), 
+    State({"type": "del-check", "index": ALL}, "value"),        
+    State("selected-line-index", "data"),
+    prevent_initial_call=True
+)
+def master_line_controller(lines, clear_sel_n, clear_all_n, prev_n, next_n, view_clicks, check_states, current_idx):
+    ctx = callback_context
+    if not ctx.triggered:
+        return no_update
+
+    trigger_id = ctx.triggered[0]["prop_id"]
+    new_lines = lines if lines else []
+    num_lines = len(new_lines)
+    new_active_idx = current_idx if current_idx is not None else 0
+
+    # --- ACTION: PREVIOUS ---
+    if "btn-prev-line" in trigger_id:
+        new_active_idx = max(0, new_active_idx - 1)
+
+    # --- ACTION: NEXT ---
+    elif "btn-next-line" in trigger_id:
+        new_active_idx = min(num_lines - 1, new_active_idx + 1)
+
+    # --- ACTION: CLEAR ALL ---
+    if "btn-clear-all" in trigger_id:
+        return [], [], 0
+
+    # --- ACTION: CLEAR SELECTED --
+    if "btn-clear-sel" in trigger_id:
+            # check_states is a list of lists because of dcc.Checklist
+            indices_to_remove = [i for i, val in enumerate(check_states) if val and len(val) > 0]
+            new_lines = [line for i, line in enumerate(new_lines) if i not in indices_to_remove]
+            # new_active_idx = max(0, len(new_lines) - 1)
+            num_lines = len(new_lines)
+            new_active_idx = max(0, min(new_active_idx, num_lines - 1))
+
+    # --- ACTION: CHANGE VIEW (👁️) ---
+    if "view-line-btn" in trigger_id:
+        prop_dict = eval(trigger_id.split(".")[0])
+        new_active_idx = prop_dict["index"]
+
+    # --- ACTION: NEW LINE ADDED ---
+    if "line-final-store.data" in trigger_id:
+        # new_active_idx = len(new_lines) - 1
+        new_active_idx = num_lines - 1
+
+    # --- CALCULATE DISABLED STATES ---
+    # Disable "Prev" if at index 0 or no lines exist
+    prev_disabled = (new_active_idx <= 0) or (num_lines == 0)
+    # Disable "Next" if at last index or no lines exist
+    next_disabled = (new_active_idx >= num_lines - 1) or (num_lines == 0)    
+
+    # --- UI GENERATION ---
+    # We rebuild the list so the "Active" row is highlighted
+    rows = []
+    for i in range(len(new_lines)):
+        is_active = (i == new_active_idx)
+        rows.append(html.Div(
+            style={
+                "display": "flex", "alignItems": "center", "padding": "8px",
+                "borderBottom": "1px solid #ddd",
+                "backgroundColor": "#D1ECF1" if is_active else "transparent", # Light blue highlight
+                "borderRadius": "4px", "marginBottom": "2px"
+            },
+            children=[
+                html.Span(f"Profile {i+1}", style={
+                    "flex": 1, "fontSize": "13px", 
+                    "fontWeight": "bold" if is_active else "normal"
+                }),
+                # Eye icon button
+                html.Button(
+                    "👁️", 
+                    id={"type": "view-line-btn", "index": i},
+                    style={
+                        "border": "none", "background": "none", "cursor": "pointer", 
+                        "fontSize": "16px", "marginRight": "10px",
+                        "opacity": "1" if is_active else "0.3"
+                    }
+                ),
+                # Delete checkbox
+                dcc.Checklist(
+                    id={"type": "del-check", "index": i},
+                    options=[{"label": "", "value": 1}],
+                    value=[],
+                )
+            ]
+        ))
+
+    return new_lines, rows, new_active_idx, prev_disabled, next_disabled
+
+
+
 @app.callback(
     Output('output-dem-load', 'children', allow_duplicate=True),
     Output('output-data-summary', 'children', allow_duplicate=True),
@@ -1514,6 +1976,8 @@ def toggle_restore_button(dem_applied, use_dem):
     return not bool(dem_applied and use_dem)
 
 
+
+# --------------------- draw lines and/or multilines ---------------------
 @app.callback(
     Output('dem-upload-container', 'style'),
     Input('use-dem', 'value'),
@@ -1572,29 +2036,28 @@ def toggle_dem_inputs(source, current_value):
     return {'display': 'none'}, {'display': 'flex', 'gap': '10px'}, options, value
 
 
-@app.callback(
-    Output('dem-bbox-minlon', 'value'),
-    Output('dem-bbox-minlat', 'value'),
-    Output('dem-bbox-maxlon', 'value'),
-    Output('dem-bbox-maxlat', 'value'),
-    Input('dem-bbox-from-data', 'n_clicks'),
-    prevent_initial_call=True
-)
-def fill_dem_bbox_from_data(n_clicks):
-    if not n_clicks:
-        raise PreventUpdate
-    if sesh.data is None:
-        return no_update, no_update, no_update, no_update
-    if 'longitude' not in sesh.data.columns or 'latitude' not in sesh.data.columns:
-        return no_update, no_update, no_update, no_update
+# @app.callback(
+#     Output("map-hover-marker-store", "data"),
+#     Input("profile-plot_main", "hoverData"),
+#     State("line-final-store", "data"),
+#     State("selected-line-index", "data"),
+#     prevent_initial_call=True
+# )
+# def fill_dem_bbox_from_data(n_clicks):
+#     if not n_clicks:
+#         raise PreventUpdate
+#     if sesh.data is None:
+#         return no_update, no_update, no_update, no_update
+#     if 'longitude' not in sesh.data.columns or 'latitude' not in sesh.data.columns:
+#         return no_update, no_update, no_update, no_update
 
-    min_lon = float(sesh.data['longitude'].min())
-    max_lon = float(sesh.data['longitude'].max())
-    min_lat = float(sesh.data['latitude'].min())
-    max_lat = float(sesh.data['latitude'].max())
+#     min_lon = float(sesh.data['longitude'].min())
+#     max_lon = float(sesh.data['longitude'].max())
+#     min_lat = float(sesh.data['latitude'].min())
+#     max_lat = float(sesh.data['latitude'].max())
 
-    pad = 0.01
-    return min_lon - pad, min_lat - pad, max_lon + pad, max_lat + pad
+#     pad = 0.01
+#     return min_lon - pad, min_lat - pad, max_lon + pad, max_lat + pad
 
 @app.callback(
     Output('map', 'figure', allow_duplicate=True),
@@ -1603,7 +2066,7 @@ def fill_dem_bbox_from_data(n_clicks):
 
 )
 def print_flex_layout_model(model):
-    print(f"Flex layout model: {model}")
+    # print(f"Flex layout model: {model}")
     return m1.render()
 
 @app.callback(
@@ -1613,6 +2076,7 @@ def print_flex_layout_model(model):
         Output('process_layout', 'color'),
         Output('invert_layout', 'color'),
         Output('review_layout', 'color'),
+        Output('interpret_layout', 'color'),
     ],
     [
         State('flex-layout', 'model'),
@@ -1620,11 +2084,12 @@ def print_flex_layout_model(model):
         Input("process_layout", 'n_clicks'),
         Input("invert_layout", 'n_clicks'),
         Input("review_layout", 'n_clicks'),
+        Input("interpret_layout", 'n_clicks'),
     ],
     prevent_initial_call=True
 )
-def update_layout(model, load_clicks, process_clicks, invert_clicks, review_clicks):
-    # ctx = callback_context
+def update_layout(model, load_clicks, process_clicks, invert_clicks, review_clicks, interpret_clicks):
+    ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
     
@@ -1632,14 +2097,16 @@ def update_layout(model, load_clicks, process_clicks, invert_clicks, review_clic
     button_id = ctx.triggered[0]['prop_id'].split('.')[0]
     
     if button_id == "upload_layout":
-        return layouts.upload, 'primary', 'secondary', 'secondary', 'secondary'
+        return layouts.upload, 'primary', 'secondary', 'secondary', 'secondary', 'secondary'
     elif button_id == "process_layout":
-        return layouts.data, 'secondary', 'primary', 'secondary', 'secondary'
+        return layouts.data, 'secondary', 'primary', 'secondary', 'secondary', 'secondary'
     elif button_id == "invert_layout":
-        return layouts.invert, 'secondary', 'secondary', 'primary', 'secondary'
+        return layouts.invert, 'secondary', 'secondary', 'primary', 'secondary', 'secondary'
     elif button_id == "review_layout":
-        return layouts.review, 'secondary', 'secondary', 'secondary', 'primary'
-    return model, 'secondary', 'secondary', 'secondary', 'secondary'
+        return layouts.review, 'secondary', 'secondary', 'secondary', 'primary', 'secondary'
+    elif button_id == 'interpret_layout':
+        return layouts.interpret, 'secondary', 'secondary', 'secondary', 'secondary', 'primary'
+    # return model, 'secondary', 'secondary', 'secondary', 'secondary', 'secondary'
 
 layout_output_list = [
         m1.output, dbdt1.output, dbdt2.output, rhoa.output, mod2.output,
@@ -1688,6 +2155,7 @@ def handle_url_hash(url_hash, model):
             rhoa.dataframe  = sesh.data.copy()    
             Multi_inv.dataframe = sesh.data.copy()
             Sing_inv.dataframe = sesh.data.copy()
+            profile.dataframe= sesh.models.copy()  if sesh.models is not None else None
             res[0] = m1.render()
             res[1] = dbdt1.render()
             res[2] = dbdt2.render()
@@ -1734,6 +2202,421 @@ def handle_url_hash(url_hash, model):
     return res
 
 
+# # --------------------- #  GOOD CALLBACK FOR ALT+LEFT CLICK + CTRL FOR click on models ---------------------
+@app.callback(
+    Output("window-container", "children"),
+    Output("combined-window-store", "data"),
+    Input("right-click-index-store", "data"),
+    Input({"type": "close-window", "index": ALL}, "n_clicks"),
+    State("window-container", "children"),
+    State("combined-window-store", "data"),
+    State("line-final-store", "data"),        # To get current line geometry
+    State("selected-line-index", "data"),     # To know which line is active
+    prevent_initial_call=True
+)
+
+def manage_windows(click_data, n_closes, current_windows, combined_state,all_lines, selected_idx):
+
+    ctx = callback_context
+    if not ctx.triggered:
+        return no_update, no_update
+    
+    gis.dataframe = sesh.models
+    df_up_map, color_master_map, existing_attrs = preprocess_new_df(gis.dataframe)
+    
+    dbdt_df = sesh.data
+
+    trigger = ctx.triggered[0]["prop_id"]
+    windows = list(current_windows or [])
+    # combined_state stores: {"window_id": str, "items": [[id, type], ...]}
+    combined_state = combined_state or {"window_id": None, "items": []}
+    width_step = "550px"
+    height_step ="900px"
+    bh_projections = []
+    if all_lines and selected_idx is not None:
+        try:
+            current_line = all_lines[selected_idx]
+            # bh_data is your global dataframe/list of all boreholes
+            if bh_data is not None:
+                # view='profile' usually, search_radius from your Settings
+                bh_projections = get_borehole_projections(current_line, bh_data, view='profile', search_radius_m=Settings.radius)
+        except Exception as e:
+            print(f"⚠️ Borehole Projection Error: {e}")    
+    
+    # --- 1. HANDLE NEW CLICKS (ALT or CTRL+ALT) ---
+    if "right-click-index-store" in trigger:
+        if not click_data:
+            return no_update, no_update
+
+        idx = click_data.get("index")
+        item_type = click_data.get("type", "tem") # 'tem' or 'borehole'
+        is_combined = bool(click_data.get("multi"))
+        ts = click_data.get("timestamp")
+
+        # A) ALT-ONLY: Create a new independent window
+        if not is_combined:
+            if idx is None:  # Safety check for empty clicks
+                return no_update, no_update
+            
+            new_id = f"win-{idx}-{ts}"
+            if item_type == "borehole":
+                # Use your existing borehole logic
+                fig = build_combined_borehole_figure([idx], bh_projections, rock_color_map)
+                title = f"Borehole Log: {idx}"
+            else:
+                try:
+                    row_data = None
+                    if idx in df_up_map.index:
+                        row_data = df_up_map.loc[idx] if idx in df_up_map.index else df_up_map.iloc[int(idx)]
+                    else:
+                        int_idx = int(idx)
+                        if 0 <= int_idx < len(df_up_map):
+                            row_data = df_up_map.iloc[int_idx]
+                except (ValueError, TypeError):
+                    row_data = None
+
+                if row_data is not None:
+                    fig_step = generate_res_step_graph(row_data, idx)            
+                    fig_dbdt = generate_dbdt_graph(dbdt_df, idx)
+                    
+                    # 3. Create Tabs
+                    tab_content = dcc.Tabs([
+                        dcc.Tab(label='Res Step Plot', children=[
+                            dcc.Graph(figure=fig_step, style={"height": "750px"})
+                        ]),
+                        dcc.Tab(label='Data (dB/dt)', children=[
+                            dcc.Graph(figure=fig_dbdt, style={"height": "750px"})
+                        ])
+                    ], style={"height": "50px"})
+                    
+                    content = html.Div([tab_content], style={"height": "100%"})
+                    title = f"TEM Sounding: {idx}"
+                else:
+                    return no_update, no_update
+            
+            windows.append(create_draggable_window(new_id, title, content, width=width_step, height=height_step))
+            return windows, combined_state
+        
+        
+        # B) CTRL+ALT: Add to Comparison Window
+        else:
+            if not combined_state.get("window_id"):
+                combined_state["window_id"] = f"win-comparison-{ts}"
+                combined_state["items"] = []
+
+            # Add to list if not already there
+            if [idx, item_type] not in combined_state["items"]:
+                combined_state["items"].append([idx, item_type])
+
+            items = combined_state["items"]
+            tem_ids = [it[0] for it in items if it[1] == "tem"]
+            bh_ids = [it[0] for it in items if it[1] == "borehole"]
+
+            # GENERATE CONTENT BASED ON SELECTION
+            # Scenario: Only TEMs selected -> Overlay Plot
+            # if len(bh_ids) == 0:
+            #     fig = build_combined_step_figure(df_up_map, tem_ids, use_elevation=True)
+            #     content = dcc.Graph(figure=fig, style={"height": "100%"})
+            #     title = f"Combined TEM Models ({len(tem_ids)})"
+            #     # width = "650px"
+
+            if len(bh_ids) == 0:
+                # 1. Build the combined Resistivity plot
+                fig_combined_step = build_combined_step_figure(df_up_map, tem_ids, use_elevation=True)
+                
+                # 2. Build the combined dB/dt plot
+                fig_combined_dbdt = build_combined_dbdt_figure(sesh.data, tem_ids)
+                
+                # 3. Use Tabs for the content
+                content = html.Div([
+                    dcc.Tabs([
+                        dcc.Tab(label=f'Combined Models ({len(tem_ids)})', children=[
+                            dcc.Graph(figure=fig_combined_step, style={"height": "750px"})
+                        ]),
+                        dcc.Tab(label=f'Combined Data Fit', children=[
+                            dcc.Graph(figure=fig_combined_dbdt, style={"height": "750px"})
+                        ])
+                    ])
+                ], style={"height": "100%"})
+                
+                title = f"Comparison: {len(tem_ids)} Sites"
+
+            # Scenario: Only Boreholes selected -> Side-by-Side Logs
+            elif len(tem_ids) == 0:
+                fig = build_combined_borehole_figure(bh_ids, bh_projections, rock_color_map)
+                content = dcc.Graph(figure=fig, style={"height": "100%"})
+                title = f"Borehole Comparison ({len(bh_ids)})"
+
+            else:
+                # 1. Generate all three figures
+                tem_fig = build_combined_step_figure(df_up_map, tem_ids, use_elevation=True)
+                bh_fig = build_combined_borehole_figure(bh_ids, bh_projections, rock_color_map)
+                dbdt_fig = build_combined_dbdt_figure(sesh.data, tem_ids) # The new combined function
+                
+                # 2. Align Y-Axes for TEM and Borehole (Correlation Tab)
+                all_z = []
+                for idx in tem_ids:
+                    row = df_up_map.loc[idx]
+                    all_z.extend(row['elevation'] - row['bottom_depth'])
+                    all_z.append(row['elevation'])
+                for bh in bh_projections:
+                    if bh['id'] in bh_ids:
+                        all_z.append(bh['elev'])
+                        all_z.append(bh['elev'] - max([l['Bottom'] for l in bh['layers']]))
+
+                z_min, z_max = min(all_z) - 5, max(all_z) + 5
+                tem_fig.update_layout(yaxis=dict(range=[z_min, z_max], autorange=False))
+                bh_fig.update_layout(yaxis=dict(range=[z_min, z_max], autorange=False))
+
+                # 3. Define the Correlation Content (Side-by-Side)
+                correlation_content = html.Div([
+                    html.Div(dcc.Graph(figure=tem_fig, responsive=True, style={"width": "100%", "height": "100%"}), 
+                             style={"display": "flex", "width": "100%", "height": "100%"}),
+                    html.Div(dcc.Graph(figure=bh_fig, responsive=True, style={"width": "100%", "height": "100%"}), 
+                             style={"display": "flex", "width": "100%", "height": "100%"})
+                ], style={"display": "flex", "flexDirection": "row", "height": "800px", "width": "100%","gap": "0px"})
+
+                # 4. Wrap everything in Tabs
+                content = html.Div([
+                    dcc.Tabs([
+                        dcc.Tab(label="Model Correlation (TEM vs BH)", children=[
+                            correlation_content
+                        ]),
+                        dcc.Tab(label="Combined Data Fit (dB/dt)", children=[
+                            dcc.Graph(figure=dbdt_fig, style={"height": "800px"})
+                        ])
+                    ])
+                ], style={"height": "100%"})
+
+                title = "TEM vs. Borehole Correlation"
+                width_step = "1100px" # Widened slightly for better side-by-side visibility
+
+            # Update Window list
+            comp_id = combined_state["window_id"]
+            windows = [w for w in windows if w["props"]["id"] != comp_id]
+            windows.append(create_draggable_window(comp_id, title, content, width=width_step,height=height_step))
+            
+            return windows, combined_state
+
+    # --- 2. HANDLE CLOSE BUTTON ---
+    if "close-window" in trigger:
+        try:
+            prop_dict = json.loads(trigger.split(".")[0])
+            closed_id = prop_dict.get("index")
+
+            windows = [w for w in windows if w["props"]["id"] != closed_id]
+
+            # Reset state if the comparison window was the one closed
+            if combined_state.get("window_id") == closed_id:
+                combined_state = {"window_id": None, "items": []}
+        
+            return windows, combined_state
+        
+        except Exception as e:
+            print(f"Error closing window: {e}")
+
+    return no_update, no_update
+
+
+
+# --------------------- draw lines and/or multilines ---------------------
+@app.callback(
+    Output("line-final-store", "data", allow_duplicate=True),
+    Output("zoom-warning-dialog", "displayed"), # To trigger an alert message
+    Input('gis', "relayoutData"),
+    State("map-view-store", "data"),
+    State("line-final-store", "data"),
+    prevent_initial_call=True
+    )
+
+def on_draw_polyline(relayout, view, store): #, current_fig
+    if not relayout or "shapes" not in relayout:
+        return no_update, False
+
+    if not view or "bbox" not in view:
+            print("⛔ on_draw blocked — bbox not ready yet")            
+           
+            return no_update, True 
+
+    # Get the most recently drawn shape
+    shape = relayout["shapes"][-1]
+    
+    # 1. Handle Multi-point Polyline (path)
+    if "path" in shape:
+        path_str = shape["path"]
+        # Use our robust regex parser from earlier
+        new_line_coords = parse_polyline_path(path_str, view=view)
+    
+    # 2. Fallback for simple two-point lines (x0, y0, x1, y1)
+    elif "x0" in shape:
+        p0 = paper_to_geo(shape["x0"], shape["y0"], view)
+        p1 = paper_to_geo(shape["x1"], shape["y1"], view)
+        new_line_coords = [p0, p1]    
+    else:
+        return no_update
+
+    if not new_line_coords or None in new_line_coords:
+        return no_update, "Coordinate parsing failed."
+
+    # Initialize store if empty
+    current_store = store if store is not None else []
+    # Append the new list of coordinates [[lon1, lat1], [lon2, lat2], ...]
+    current_store.append(new_line_coords)
+
+    print(f"✔ Added Polyline with {len(new_line_coords)} points")
+    return current_store, False 
+
+# --------------------- hover on map ---------------------
+@app.callback(
+    Output("map-hover-marker-store", "data"),
+    Input("profile_plot_main", "hoverData"),
+    State("line-final-store", "data"),
+    State("selected-line-index", "data"),
+    prevent_initial_call=True
+)
+
+def sync_hover_to_map(hoverData, lines, selected_idx):
+    if not hoverData or 'points' not in hoverData:
+        return None
+
+    try:
+        pt = hoverData['points'][0]
+        
+        # 1. Try to get 'x'
+        dist_m = pt.get('x')
+        
+        # 2. If 'x' is missing or None, look into 'customdata'
+        if dist_m is None and 'customdata' in pt:
+            val = pt['customdata']
+            # If it's a list (like your debug data shows), take the first item
+            dist_m = val[1] if isinstance(val, list) else val
+
+        if dist_m is None or not lines:
+            return None
+
+        # 3. Standard line lookup logic
+        try:
+            current_line = lines[selected_idx]
+        except (IndexError, TypeError):
+            current_line = lines[-1] 
+
+        # 4. Math: Distance -> Lon/Lat
+        geo_pt = get_geo_at_distance(current_line, float(dist_m))
+        return geo_pt
+
+    except Exception as e:
+        print(f"⚠️ Sync Error: {e}")
+        return None
+
+# # --------------------- Update map ---------------------
+@app.callback(
+    Output('gis', "figure", allow_duplicate=True),
+    # Output("test-display", "children"),
+    # Output("raster-busy-store", "data" , allow_duplicate=True),
+    Input("raster-load-trigger", "data"),
+ 
+    Input("layers-store", "data"),
+    Input("opacity-store", "data"),
+    Input("map-view-store", "data"),
+    Input("line-final-store", "data"),
+    Input("selected-line-index", "data"),
+    Input("map-hover-marker-store", "data"),
+    Input("raster-registry-store", "data"),     
+    Input("points-color-map-store", "data"),
+    Input("points-filter", "value"),
+    State("points-attr", "value"),
+    prevent_initial_call=True)
+ 
+def update_map(_trigger,layers, opacity, view, lines,selected_idx, hover_pt,rasters, 
+               color_map, actual_filters, actual_attr,):
+    layers = layers or []
+    opacity = opacity or {}
+    rasters = rasters or []
+    color_map = color_map or {}
+    actual_attr = actual_attr or "date"
+    actual_filters = actual_filters or []
+ 
+    # color_map = mcolors.LogNorm(vmin=1, vmax=1000)
+    gis.dataframe = sesh.models
+    df_up_map, color_master_map, existing_attrs = preprocess_new_df(gis.dataframe)
+ 
+    if layers is None and lines is None:
+        return no_update
+ 
+    # ----- raster controls (dynamic TIFF/PNG rows) -----
+    # Find which raster IDs are active
+    active_rasters = [r for r in rasters if r.get("id") in layers]
+ 
+    # For your CURRENT gis (single tiff + single png), pick first of each kind
+    active_tiffs = [r for r in active_rasters if r.get("kind") == "tiff"]
+    active_pngs  = [r for r in active_rasters if r.get("kind") == "png"]
+ 
+    show_tiff = len(active_tiffs) > 0
+    show_png  = len(active_pngs) > 0
+ 
+    if show_tiff:
+        gis.tiff_info = gis.get_tiff_info(active_tiffs[0]["path"])
+    else:
+        gis.tiff_info = None
+ 
+    if show_png:
+        gis.png_info = gis.get_png_info(active_pngs[0]["path"])
+    else:
+        gis.png_info = None
+ 
+    # Use per-layer opacity if present; else default fallback
+    tiff_layer_id = active_tiffs[0]["id"] if show_tiff else None
+    png_layer_id  = active_pngs[0]["id"] if show_png else None
+ 
+    tiff_op = opacity.get(tiff_layer_id, 0.6) if show_tiff else 0.6
+    png_op  = opacity.get(png_layer_id, 0.6) if show_png else 0.6
+ 
+    current_line = None
+    if lines and len(lines) > 0:
+        idx = selected_idx if selected_idx is not None else -1
+        current_line = lines[idx]
+    # Check if boreholes and points should be displayed
+    is_points_visible = "points" in layers
+    is_bh_visible = ("boreholes" in layers) and (bh_data is not None)
+    if bh_data is not None:
+        bh_projections = get_borehole_projections(current_line, bh_data, view, search_radius_m=Settings.radius)
+    fig = gis.render(
+                show_google="google" in layers,
+                show_tiff=show_tiff,
+                show_png=show_png,
+                show_points=is_points_visible,
+                google_op=opacity.get("google", 1),
+                tiff_op=tiff_op,
+                png_op=png_op,       
+                view=view,
+                final_line=lines,
+                selected_idx=selected_idx,
+                hover_pt=hover_pt,
+                boreholes=bh_projections if is_bh_visible else None, # This now contains the Lon/Lat!
+                show_boreholes=is_bh_visible,
+                point_filters=actual_filters,
+                point_attr=actual_attr,
+                color_map=color_map,
+                uirevision=f"{str(lines)}_{actual_attr}",
+
+ 
+    )
+    # print(f"DEBUG: Mapping attr{actual_attr} and FILTERS {actual_filters}")#. Color Map Keys: {list(color_map.keys())[:5]}")
+ 
+    if fig is None: return no_update
+ 
+    if fig:
+        # Just keep the camera stable
+        fig.layout.uirevision = f"view_{actual_attr}"
+        # Optional: ensure no leftover coloraxis if switching to Date
+        if actual_attr == 'date':
+            fig.layout.coloraxis = None
+        # 2. FORCE empty shapes to kill the cyan preview
+        fig.layout.shapes =  [] 
+     # Force the uirevision to be unique to this attribute
+    fig.update_layout(showlegend=False)
+    fig.layout.uirevision = f"{str(lines)}"
+    return fig #, debug_text #, False
 
 # import signal
 # @app.server.route("/shutdown", methods=["POST"])

@@ -1296,8 +1296,8 @@ import pandas as pd
 class ModelGraphSettings(PanelSettings):
     z: Literal['depth', 'elevation'] = 'depth'
     color_by: Literal['site_id', 'misfit'] = 'site_id'
-    rho_min: float = 1.0
-    rho_max: float = 1000.0
+    vmin: int = 1
+    vmax: int = 300
 
 class ModelGraph(Panel):
     highlighted=None
@@ -1389,6 +1389,11 @@ class ModelGraph(Panel):
 class ModelSectionSettings(PanelSettings):
     z: Literal['depth', 'elevation'] = 'depth'
     x_axis: Literal['daytime', 'site_id', 'longitude', 'latitude', 'distance'] = 'site_id'
+    vmin: int = 1
+    vmax: int = 300
+    log: bool = True
+    cmap: str = 'turbo'
+    nticks: int = 4
 
 class ModelSection(Panel):
     highlighted: int = None
@@ -1399,8 +1404,17 @@ class ModelSection(Panel):
         super().__init__(id='model_section', settings=settings)
         for key, value in kwargs.items():
             setattr(self, key, value)
+
+    def update_attributes(self, data_dict):
+        """Force update the __dict__ to bypass class-level defaults."""
+        for key, value in data_dict.items():
+            if hasattr(self, key):
+                if isinstance(value, str) and value.replace('.', '', 1).isdigit():
+                    value = float(value)
+                # This writes directly to this specific object's memory
+                self.__dict__[key] = value
     
-    def render(self):
+    def render(self,**kwargs):
         if self.dataframe is None: return self.empty_render()
         df_layers_long = self.dataframe.melt(
             id_vars=['site_id', 'daytime', 'longitude', 'latitude', 'date', 'elevation', 'layer', 'resistivity', 'misfit','doi'],
@@ -1408,6 +1422,7 @@ class ModelSection(Panel):
             var_name='depth_type',
             value_name='depth'
         ).sort_values(['daytime', 'layer', 'depth'])
+
 
         df_layers_long = df_layers_long.drop(columns=['depth_type'])
         df_layers_long['log_resistivity'] = np.log10(df_layers_long['resistivity'])
@@ -1428,38 +1443,96 @@ class ModelSection(Panel):
         x_slice = x_values[plot_start:plot_end]
         df_layers_long = df_layers_long[df_layers_long[self.settings.x_axis].isin(x_slice)]
 
+
+        vmin_ms = self.settings.__dict__.get('vmin', self.settings.vmin)
+        vmax_ms = self.settings.__dict__.get('vmax', self.settings.vmax)
+
+
+        # Check what triggered the current Dash lifecycle
+        trigger = "No active callback"
+        if ctx.triggered_id:
+            trigger = ctx.triggered_id
+            # If it's a pattern-matching ID, it might be a dict, so we convert to string
+            if isinstance(trigger, dict):
+                trigger = f"{trigger.get('type')}[{trigger.get('key')}]"
+
+        # print("--- RENDER DEBUG ---")
+        # print(f"TRIGGERED BY: {trigger}")
+        # print("VMAX RENDER MODEL SECTION", vmax_ms)
+        # print("SETTINGS OBJECT ID:", id(self.settings))
+
+        log_vmin = np.log10(vmin_ms)
+        log_vmax = np.log10(vmax_ms)
+
+        tick_vals = np.linspace(log_vmin, log_vmax, self.settings.nticks)
+        tick_text = [f"{10**v:.0f}" for v in tick_vals]
+        
+        # print(tick_vals)
+
+
+        vmin_ms = self.settings.__dict__.get('vmin', self.settings.vmin)
+        vmax_ms = self.settings.__dict__.get('vmax', self.settings.vmax)
+
+
+        # Check what triggered the current Dash lifecycle
+        trigger = "No active callback"
+        if ctx.triggered_id:
+            trigger = ctx.triggered_id
+            # If it's a pattern-matching ID, it might be a dict, so we convert to string
+            if isinstance(trigger, dict):
+                trigger = f"{trigger.get('type')}[{trigger.get('key')}]"
+
+        # print("--- RENDER DEBUG ---")
+        # print(f"TRIGGERED BY: {trigger}")
+        # print("VMAX RENDER MODEL SECTION", vmax_ms)
+        # print("SETTINGS OBJECT ID:", id(self.settings))
+
+        log_vmin = np.log10(vmin_ms)
+        log_vmax = np.log10(vmax_ms)
+
+        tick_vals = np.linspace(log_vmin, log_vmax, self.settings.nticks)
+        tick_text = [f"{10**v:.0f}" for v in tick_vals]
+        
+        # print(tick_vals)
+
         fig = px.imshow(
             heatmap_df[x_slice],
             aspect='auto',
             origin='lower',
-            color_continuous_scale='turbo',
-            labels={'x': self.settings.x_axis, 'y': 'Depth [m]', 'color': 'Resistivity [Ω·m]'},
-            zmin=0,
-            zmax=2.7,
-        )
-        fig.update_layout(
-            coloraxis_colorbar=dict(
-                tickvals = [0, 1, 2, np.log10(500)],
-                ticktext = ["1", "10", "100", "500"],
-                orientation="h",     # horizontal
-                y=-0.45,              # move below plot
-                x=0.5,               # center horizontally
-                xanchor="center",
-                len=0.5,
-                thickness = 10,
-                title=dict(
-            text="Resistivity [Ωm]",
-            side="bottom"))
-        )
-        fig.update_layout(
-            xaxis=dict(
-                title_standoff=4   # default is ~15–20
-            )
+            # color_continuous_scale=settings.cmap, #'turbo',
+            color_continuous_scale=self.settings.cmap,
+            labels={'x': self.settings.x_axis, 'y': 'Depth [m]'},
+            title='Resistivity Heatmap by Site and Depth',
+            # zmin=heatmap_df.min().min(),
+            # zmax=heatmap_df.max().max(),
+            zmin=log_vmin,
+            zmax=log_vmax,
         )
         fig.update_layout(hovermode="x")
         fig.update_yaxes(autorange="reversed")
         fig.update_layout(yaxis2=dict(title='Misfit',overlaying='y',side='right',showgrid=False))
-
+        
+        fig.update_layout(
+            coloraxis=dict(
+                cmin=log_vmin,
+                cmax=log_vmax,
+                colorscale=self.settings.cmap,
+                colorbar=dict(
+                    orientation='h',
+                    x=0.5,
+                    xanchor='center',
+                    y=-0.2,
+                    yanchor='top',
+                    thickness=20,
+                    len=0.95,
+                    tickmode='array',
+                    tickvals=tick_vals,
+                    ticktext=tick_text,
+                )
+            ),
+            margin=dict(b=120)
+        )
+        
         # ---- Misfit only for buffered sites ----
         misfit_df = (
             df_layers_long
