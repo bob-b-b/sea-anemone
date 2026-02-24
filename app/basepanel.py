@@ -6,7 +6,7 @@ import dash_flexlayout as dfl
 
 from dataclasses import dataclass
 from dataclasses_jsonschema import JsonSchemaMixin
-
+import tkinter as tk
 
 import plotly.express as px
 
@@ -96,7 +96,7 @@ def close_settings(json_data, target_tab_id, settings_tab_id):
     exec(f'json_data{accessor_string}[\'selected\'] = {tabset.index(target_tab_id)}')
     return json_data
 
-def add_tabset(json_data, new_tab, change_order=False):
+def add_tabset(json_data, new_tab, target_tab_id, settings_tab_id, change_order=False):
     accessor_chain = find_tab_by_id(json_data, new_tab)
     accessor_string = ''
     for key in accessor_chain[:-1]:
@@ -453,42 +453,102 @@ class Panel:
             if not self.settings.flat_keys:
                         return
 
-            # def update_render(*args):
+            # # def update_render(*args):
+            # def update_render(global_data, current_attr, *args):
+            #     # 1. Update local settings from Global Store before rendering
+            #     if global_data and current_attr in global_data:
+            #         config = global_data[current_attr]
+            #         # Assuming your settings object has these attributes
+            #         if hasattr(self.settings, 'vmin'): self.settings.vmin = config['vmin']
+            #         if hasattr(self.settings, 'vmax'): self.settings.vmax = config['vmax']
+            #         if hasattr(self.settings, 'log'): self.settings.log = config['log']
+
+
+            #     for key, arg in zip(self.settings.flat_keys, args):
+            #         if isinstance(arg, dict) and 'hex' in arg:
+            #             arg = arg['hex']
+                    
+            #         if hasattr(self.settings, key):
+            #             # print("KEY HERE", key)
+            #             # print('type',self.settings.schema['properties'][key].get('type') )
+            #             if self.settings.schema['properties'][key].get('type')=='integer':
+            #                 arg = int(arg)
+            #             elif self.settings.schema['properties'][key].get('type')=='number':
+            #                 arg = float(arg)
+            #             elif self.settings.schema['properties'][key].get('type')=='boolean':
+            #                 arg = (arg=='true' or arg is True)
+            #             setattr(self.settings, key, arg)
+            #         elif '-' in key:
+            #             basekey,index = key.split('-')
+            #             if hasattr(self.settings, basekey):
+            #                 arg = (arg=='true' or arg is True)
+            #                 exec(f'self.settings.{basekey}[{index}] = arg')
+            #     return self.render()        
+            
+            # update_render = app.callback(Output(self.id, self.childname),#, allow_duplicate=True),
+            #             [Input('global-colorbar-store', 'data'),
+            #                 # Input('points-attr', 'value')
+            #                 ] +    
+            #             [Input({'type': f'settings-{self.id}', 'key': x}, 'value') for x in self.settings.flat_keys])(update_render)
+    
+    
+
+
             def update_render(global_data, current_attr, *args):
-                # 1. Update local settings from Global Store before rendering
+                # 1. Update from Global Store (vmin, vmax, log)
                 if global_data and current_attr in global_data:
                     config = global_data[current_attr]
-                    # Assuming your settings object has these attributes
-                    if hasattr(self.settings, 'vmin'): self.settings.vmin = config['vmin']
-                    if hasattr(self.settings, 'vmax'): self.settings.vmax = config['vmax']
-                    if hasattr(self.settings, 'log'): self.settings.log = config['log']
+                    for attr in ['vmin', 'vmax', 'log']:
+                        if hasattr(self.settings, attr) and attr in config:
+                            setattr(self.settings, attr, config[attr])
 
-
+                # 2. Update all other settings from the UI
+                # IMPORTANT: args must align 1:1 with flat_keys
                 for key, arg in zip(self.settings.flat_keys, args):
+                    # Handle Dash Color Picker dicts
                     if isinstance(arg, dict) and 'hex' in arg:
                         arg = arg['hex']
                     
                     if hasattr(self.settings, key):
-                        if self.settings.schema['properties'][key].get('type')=='integer':
-                            arg = int(arg)
-                        elif self.settings.schema['properties'][key].get('type')=='number':
-                            arg = float(arg)
-                        elif self.settings.schema['properties'][key].get('type')=='boolean':
-                            arg = (arg=='true' or arg is True)
-                        setattr(self.settings, key, arg)
-                    elif '-' in key:
-                        basekey,index = key.split('-')
-                        if hasattr(self.settings, basekey):
-                            arg = (arg=='true' or arg is True)
-                            exec(f'self.settings.{basekey}[{index}] = arg')
-                return self.render()        
+                        # Get expected type from Pydantic/PanelSettings schema
+                        prop_info = self.settings.schema['properties'].get(key, {})
+                        prop_type = prop_info.get('type')
+                        
+                        try:
+                            if prop_type == 'integer' and arg is not None:
+                                # float conversion first handles cases like '20.0'
+                                arg = int(float(arg)) 
+                            elif prop_type == 'number' and arg is not None:
+                                arg = float(arg)
+                            elif prop_type == 'boolean':
+                                # Handles string 'true' or actual boolean True
+                                arg = (str(arg).lower() == 'true' or arg is True)
+                            
+                            # If type is None (common for Literals) or 'string', 
+                            # we leave it as a string (e.g., 'longitude', '#ff0000')
+                            setattr(self.settings, key, arg)
+                            
+                        except (ValueError, TypeError) as e:
+                            print(f"Type Mismatch on {key}: cannot convert {arg} to {prop_type}")
+
+                return self.render()
+
+            # --- The Callback Definition ---
+            # Crucial: The order of Inputs here MUST match the arguments above
+            update_render = app.callback(
+                Output(self.id, self.childname),
+                [
+                    Input('global-colorbar-store', 'data'), # Maps to global_data
+                    Input('points-attr', 'value')            # Maps to current_attr
+                ] + [
+                    # These all map into the *args tuple
+                    Input({'type': f'settings-{self.id}', 'key': x}, 'value') 
+                    for x in self.settings.flat_keys
+                ]
+            )(update_render)
+
+
             
-            update_render = app.callback(Output(self.id, self.childname),#, allow_duplicate=True),
-                        [Input('global-colorbar-store', 'data'),
-                            Input('points-attr', 'value')] +    
-                        [Input({'type': f'settings-{self.id}', 'key': x}, 'value') for x in self.settings.flat_keys])(update_render)
-    
-    
     def initialize(self):
         children = [dcc.Graph(figure=self.render(), id=self.id, mathjax=True, style={'height':'98%', 'width': '98%', 'align': 'center'})]
         if self.settings is not None:

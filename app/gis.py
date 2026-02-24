@@ -79,7 +79,7 @@ class GISSettings(PanelSettings):
     # cmap: str = cm.jet
     # line_color: str="yellow"
     radius: int = 50 
-    column_width: int = 60
+    column_width: int = 6
     num_labels_colorbar: int = 4
     # raster_cache_dir: str = r"C:\Users\au679476\Downloads\test_for_map_pngs_tiffs\raster_cache"
     

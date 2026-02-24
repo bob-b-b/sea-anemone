@@ -1295,8 +1295,8 @@ import pandas as pd
 class ModelGraphSettings(PanelSettings):
     z: Literal['depth', 'elevation'] = 'depth'
     color_by: Literal['site_id', 'misfit'] = 'site_id'
-    rho_min: float = 1.0
-    rho_max: float = 1000.0
+    vmin: int = 1
+    vmax: int = 300
 
 class ModelGraph(Panel):
     highlighted=None
