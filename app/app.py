@@ -856,6 +856,20 @@ def update_model_on_review(_, invert_color):
     return mod2.render(), mod1.render()
 
 @app.callback(
+    Output("model_section", "figure", allow_duplicate=True),
+    Input("interpret_layout", "n_clicks"),
+    State("invert_layout", "color"),
+    prevent_initial_call=True
+)
+def update_model_on_interpret(_, invert_color):
+    # if invert_color != "primary":
+        # raise PreventUpdate
+    profile.dataframe = sesh.models.copy() if sesh.models is not None else None
+    # mod1.dataframe = sesh.models.copy() if sesh.models is not None else None
+    return mod2.render()
+
+
+@app.callback(
     Output('output-click', 'children', allow_duplicate=True),
     Input('saveButton', 'n_clicks'),
     prevent_initial_call=True,

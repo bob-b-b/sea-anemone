@@ -61,7 +61,7 @@ class MapSettings(PanelSettings):
     color: str = '#ff0000'
     highlight_color: str= '#ffff00'  # Default highlight color
     plot_by: str = 'misfit'
-    buffer_color: str= '#0000ff'  # Default buffer color
+    buffer_color: str= '#ffffff'  # Default buffer color
 
 
 
@@ -101,7 +101,7 @@ class Map(Panel):
                 color_continuous_scale='turbo',
                 custom_data=["site_id"]   # <-- ADD THIS
             )
-            fig.update_traces(marker={'size': 12})
+            
             fig.update_layout(
                 coloraxis_colorbar=dict(
                     orientation="h", 
@@ -115,6 +115,10 @@ class Map(Panel):
                 text='',
                 side="bottom"))
             )
+            if self.settings.plot_by == 'misfit':
+                fig.update_coloraxes(cmin=0, cmax=3)
+            elif self.settings.plot_by == 'doi':
+                fig.update_coloraxes(cmin=10, cmax=sesh.models['doi'].max())
         else:
             # fig = px.scatter_map(df_plot, lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.color])
             fig = px.scatter_map(
@@ -126,7 +130,7 @@ class Map(Panel):
                 color_discrete_sequence=[self.settings.color],
                 custom_data=["site_id"]   # <-- ADD THIS
             )
-            
+        fig.update_traces(marker={'size': 12})    
         if self.buffer_sites is not None and len(self.buffer_sites) > 0 and self.dataframe is not None and 'site_id' in self.dataframe.columns:
             df_buffer = self.dataframe[self.dataframe["site_id"].isin(self.buffer_sites)]
 
@@ -140,7 +144,7 @@ class Map(Panel):
                 )
 
                 buffer_trace.update_traces(
-                    marker=dict(size=14, color=self.settings.buffer_color),
+                    marker=dict(size=15, color=self.settings.buffer_color),
                     name="Buffer window"
                 )
 
