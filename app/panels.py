@@ -119,6 +119,18 @@ class Map(Panel):
                 fig.update_coloraxes(cmin=0, cmax=3)
             elif self.settings.plot_by == 'doi':
                 fig.update_coloraxes(cmin=10, cmax=sesh.models['doi'].max())
+            data_trace = px.scatter_map(
+                df_plot,
+                lat="latitude",
+                lon="longitude",
+                zoom=zoom,
+                center=center,
+                color_discrete_sequence=[self.settings.color],
+                custom_data=["site_id"]   # <-- ADD THIS
+            )
+            data_trace.update_traces(marker={'size': 9})
+            for trace in data_trace.data:
+                fig.add_trace(trace)
         else:
             # fig = px.scatter_map(df_plot, lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.color])
             fig = px.scatter_map(
@@ -140,7 +152,7 @@ class Map(Panel):
                     lat="latitude",
                     lon="longitude",
                     zoom=zoom, center=center, 
-                    # color_discrete_sequence=["#00cc96"],  # soft green
+                    custom_data=["site_id"],
                 )
 
                 buffer_trace.update_traces(

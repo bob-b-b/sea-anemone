@@ -601,7 +601,15 @@ def handle_map_interactions(relayout_data, selected_data):
     
     # Handle point selection
     elif trigger_prop == 'selectedData' and selected_data and 'points' in selected_data:
-        selected_sites = [point['customdata'][0] for point in selected_data['points']] + [-1]
+        selected_sites = []
+        for point in selected_data['points']:
+            cd = point.get('customdata', None)
+            if isinstance(cd, (list, tuple)) and len(cd) > 0:
+                selected_sites.append(cd[0])
+
+    # keep your sentinel if you rely on it elsewhere
+    if selected_sites:
+        selected_sites = list(set(selected_sites)) + [-1]
     
     # If no sites selected, don't update
     if not selected_sites:
@@ -851,6 +859,7 @@ def update_buffer_length(new_length, buffer_data):
 def update_model_on_review(_, invert_color):
     # if invert_color != "primary":
         # raise PreventUpdate
+    prune_models_without_data()
     mod2.dataframe = sesh.models.copy() if sesh.models is not None else None
     mod1.dataframe = sesh.models.copy() if sesh.models is not None else None
     return mod2.render(), mod1.render()
@@ -1114,11 +1123,8 @@ def upload_file(contents, current_process_clicks):
     sesh.data['include'] = sesh.data['inuse_manual'].astype(bool, copy=False).fillna(sesh.data['inuse_auto'])
     sesh.models          = None
 
-    dbdt1.dataframe = sesh.data.copy()
-    dbdt2.dataframe = sesh.data.copy()
-    rhoa.dataframe = sesh.data.copy()
-    Multi_inv.dataframe = sesh.data.copy()
-    Sing_inv.dataframe = sesh.data.copy()
+    # dbdt1.dataframe = sesh.data.copy()
+    # buffer_sites = 
     # m1.dataframe    = sesh.overview
     m1.dataframe = sesh.data.copy()
     buffer_length = 50
@@ -1132,7 +1138,15 @@ def upload_file(contents, current_process_clicks):
 
     gis.dataframe   = sesh.models
     profile.dataframe = sesh.models
-    
+    full_df = sesh.data.copy()
+
+    buffered_df = full_df[full_df['site_id'].isin(initial_sites)].copy()
+
+    dbdt1.dataframe = buffered_df
+    dbdt2.dataframe = full_df          # keep full section view
+    rhoa.dataframe  = buffered_df
+    Multi_inv.dataframe = sesh.data.copy()
+    Sing_inv.dataframe = sesh.data.copy()
     
     # t1.dataframe = TABLES['overview'].copy()
     new_process_clicks = no_update
@@ -1617,7 +1631,44 @@ def auto_close_layers(layer_values, opacity_values, menu_clicks, style):
 
     return new
 
+def prune_models_without_data():
+    """
+    Remove models for sites that no longer have any active (in-use) *real* data.
+    False/NaN are treated as inactive. Dummy rows (gate_id == -1) are ignored.
+    """
+    global sesh
 
+    if sesh.data is None or sesh.models is None:
+        return
+    if 'site_id' not in sesh.data.columns or 'site_id' not in sesh.models.columns:
+        return
+
+    df = sesh.data
+
+    # Only consider real gates (avoid the synthetic header rows at gate_id == -1)
+    real_rows = pd.Series(True, index=df.index)
+    if 'gate_id' in df.columns:
+        real_rows &= df['gate_id'].fillna(-1).astype(int) >= 0
+    if 'time' in df.columns:
+        real_rows &= df['time'].notna()
+
+    # Compute active flag (manual overrides auto; False/NaN inactive)
+    if 'inuse_manual' in df.columns and 'inuse_auto' in df.columns:
+        manual = df['inuse_manual']
+        auto = df['inuse_auto']
+        active_flag = manual.where(manual.notna(), auto).fillna(False).astype(bool)
+    elif 'inuse_auto' in df.columns:
+        active_flag = df['inuse_auto'].fillna(False).astype(bool)
+    else:
+        return
+
+    # Final: active means "real row" AND "flagged active"
+    active = real_rows & active_flag
+
+    active_sites = df.loc[active, 'site_id'].dropna().unique()
+    # active_sites = [s for s in active_sites if s != -1]
+
+    sesh.models = sesh.models[sesh.models['site_id'].isin(active_sites)].copy()
 
 
 @app.callback(

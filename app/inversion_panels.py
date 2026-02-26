@@ -305,18 +305,18 @@ class MultiInversion(Panel):
                 z   = tensor(depth[:-1])
 
                 if vc_level == "loose":
-                    Vert = 1.0
+                    Vert = 2.0
                 elif vc_level == "medium":
-                    Vert = 0.5
+                    Vert = 0.8
                 elif vc_level == "tight":
-                    Vert = 0.1
+                    Vert = 0.2
 
                 if hc_level == "loose":
-                    Horz = 1.0
-                elif hc_level == "medium":
                     Horz = 0.6
-                elif hc_level == "tight":
+                elif hc_level == "medium":
                     Horz = 0.3
+                elif hc_level == "tight":
+                    Horz = 0.1
                 res_start                        = LogResistivity.smooth(rho,z) 
                 # print(TABLES['data'])
                 sesh.models, sesh.data, self.site = sesh.data.invert(res_start,vc = Vert, hc = Horz)
@@ -763,7 +763,7 @@ class Single_site(Panel):
 
             for vc in vc_levels:
                 
-                Vert = {"loose": 1.0, "medium": 0.5, "tight": 0.1}[vc]
+                Vert = {"loose": 2.0, "medium": 0.8, "tight": 0.2}[vc]
                 res_start = LogResistivity.smooth(rho, z)
                 df_layers, df_site, _ = sesh.data.invert_site(site_id=site_id,res_start=res_start,vc=Vert)
                 curves.append((vc, df_layers['resistivity'].values, df_layers['bottom_depth'].values,df_layers['misfit'].values[-1],df_layers, df_site['dbdt'].values, df_site['dbdt_syn'].values, df_site['time'].values, df_site['error'].values,df_site['include'].values, df_layers['doi'].values))
