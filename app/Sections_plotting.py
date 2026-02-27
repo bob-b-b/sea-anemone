@@ -395,10 +395,10 @@ def build_combined_borehole_figure(bh_ids, bh_projections, rock_color_map):
     return fig
 
 # ----------- BOREHOLES ----------------
-# bh_data, rock_color_map = load_borehole_file("C:/Users/au679476/Downloads/boreholes_Gende_Rige_test.bor")
+bh_data, rock_color_map = load_borehole_file("C:/Users/au679476/Downloads/boreholes_Gende_Rige_test.bor")
 # bh_data, rock_color_map = load_borehole_file("C:/Users/au679476/Downloads/Boreholes_Dollow.bor")
-bh_data = None 
-rock_color_map = None
+# bh_data = None 
+# rock_color_map = None
 
 
 # model_frame = TEMframe.from_pandas(pd.read_csv("models.csv"))
@@ -520,23 +520,30 @@ def haversine_distance(p1, p2):
     r = 6371000  # Radius of earth in meters
     return c * r
 
-def parse_polyline_path(path_str, view):
-    """Parses SVG path into geographic [lon, lat] pairs."""
-    # Find all numbers in the string
-    nums = re.findall(r"[-+]?\d*\.\d+|\d+", path_str)
-    points = []
+# def parse_polyline_path(path_str, view):
+#     """Parses SVG path into geographic [lon, lat] pairs."""
+#     # Find all numbers in the string
+#     nums = re.findall(r"[-+]?\d*\.\d+|\d+", path_str)
+#     points = []
     
-    # Group numbers into pairs (x, y)
-    for i in range(0, len(nums), 2):
-        x_paper = float(nums[i])
-        y_paper = float(nums[i+1])
+#     # Group numbers into pairs (x, y)
+#     for i in range(0, len(nums), 2):
+#         x_paper = float(nums[i])
+#         y_paper = float(nums[i+1])
         
-        # Convert paper (0-1) to Geo
-        geo_pt = paper_to_geo(x_paper, y_paper, view)
-        if geo_pt:
-            points.append(geo_pt)
+#         # Convert paper (0-1) to Geo
+#         geo_pt = paper_to_geo(x_paper, y_paper, view)
+#         if geo_pt:
+#             points.append(geo_pt)
             
-    return points
+#     return points
+
+def parse_polyline_path(path_str):
+    """Regex to find x,y pairs and convert to float list of lists"""
+    # Matches pairs like "0.5,0.2"
+    matches = re.findall(r"([0-9.]+),([0-9.]+)", path_str)
+    # Return as [[x1, y1], [x2, y2]]
+    return [[float(x), float(y)] for x, y in matches]
 
 def project_station_onto_polyline(station_pt, polyline_coords):
     """
@@ -737,11 +744,12 @@ def create_blocky_polygons(stations_on_line, depths, vmin, vmax, log,show_misfit
                     fill="toself", 
                     fillcolor=final_color,
                     mode='lines', 
-                    # line=dict(width=line_width, color="black"),
                     line=dict(width=0),
                     showlegend=False,                
-                    customdata=[sounding_idx, x_center] * len(x_box),
-                    hoveron='fills', hoverinfo="all", text=f"Res: {val:.1f} Ωm",
+                    customdata=[[sounding_idx, x_center]]* len(x_box),
+                    name="", 
+                    hoveron='fills',
+                    text=f"Res {val:.1f} Ωm \nStation: {sounding_idx}",
                 ))
 
             # LOGIC: Splitting the block based on DOI
@@ -763,7 +771,6 @@ def create_blocky_polygons(stations_on_line, depths, vmin, vmax, log,show_misfit
                 
                 x_outline = [x_center - bar_width/2, x_center + bar_width/2, 
                             x_center + bar_width/2, x_center - bar_width/2, x_center - bar_width/2]
-                # y_outline = [surface, surface, total_bottom, total_bottom, surface]
                 y_box = [top, top, bottom, bottom, top]
                 
                 traces.append(go.Scatter(
@@ -789,6 +796,8 @@ def create_blocky_polygons(stations_on_line, depths, vmin, vmax, log,show_misfit
         ))
 
     fig = go.Figure(data=traces)
+
+
     fig.update_layout(dragmode='pan', hovermode='closest')   
 
     # fig.update_layout(
@@ -828,7 +837,8 @@ def create_blocky_polygons(stations_on_line, depths, vmin, vmax, log,show_misfit
                 anchor="x",
                 overlaying="y",
                 side="right",
-                range=[0, max(misfit_line_y) * 1.2 if misfit_line_y else 1], 
+                # range=[0, max(misfit_line_y) * 1.2 if misfit_line_y else 1], 
+                range=[0, 9],  
                 showgrid=False, 
             )
 
@@ -932,6 +942,7 @@ def plot_section_topographic(x, y_depth, vmin, vmax, log, res_models, elev, dois
                     line=dict(width=0),
                     showlegend=False,                
                     customdata=[x_center] * len(x_box),
+                    # customdata=[[x_center]] * len(x_box),
                     hoveron='fills', hoverinfo="all", text=f"Res: {val:.1f} Ωm",
                 ))
 
