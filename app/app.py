@@ -390,7 +390,18 @@ app.layout = html.Div([
     dcc.Store(id="dem-applied", data=False),
     dcc.Store(id="dem-downloaded", data=False),
     dcc.Store(id="dem-api-keys", data=[], storage_type="local"),
-    
+    html.Div([dbc.Toast(
+                    "⛔ Please Zoom or Pan in the map.",
+                    id="zoom-toast",
+                    header="Map Not Ready",
+                    is_open=False,
+                    dismissable=True,
+                    duration=4000, # Disappears after 4 seconds
+                    icon="danger",
+                    style={"position": "fixed", "top": "50%", "left": "50%", "transform": "translate(-50%, -50%)", "width": 350, "zIndex": 9999,"textAlign": "center"},
+                ),
+            ], id="toast-container"),
+
     dcc.Store(id='global-colorbar-store', data={
             'resistivity': {'vmin': 1, 'vmax': 300, 'log': True},
             'DOI': {'vmin': 0, 'vmax': 500, 'log': False},
@@ -510,50 +521,79 @@ app.clientside_callback(
     prevent_initial_call=True
 )
 
-# CALLBACK A: SHOW message for profile
+# CALLBACK FOR PREPARING PROFILE MESSAGE
 app.clientside_callback(
-    """
-    function(line_data, mode, idx) {
-        if (!line_data || line_data.length === 0) return window.dash_clientside.no_update;
+"""
+function(selectedLineIdx, sectionMode, profileFig) {
+    const triggered = dash_clientside.callback_context.triggered;
+    if (!triggered || triggered.length === 0) return window.dash_clientside.no_update;
 
-        const overlay = document.getElementById('profile-busy-overlay');
-        if (overlay) {
+    const overlay = document.getElementById('profile-busy-overlay');
+    if (!overlay) return window.dash_clientside.no_update;
+
+    // --- Keep track of previous values in window scope ---
+    window._lastSelectedLineIdx = window._lastSelectedLineIdx || null;
+    window._lastSectionMode = window._lastSectionMode || null;
+
+    const triggerId = triggered[0].prop_id;
+
+    // --- SHOW overlay on real profile selection change ---
+    if (triggerId.includes("selected-line-index.data")) {
+        
+        // DEBUG PRINTING
+        console.log("--- Store Update ---");
+        console.log("New Value:", selectedLineIdx);
+        console.log("Last Value:", window._lastSelectedLineIdx);
+
+        // 1. Only show if the value is a number AND different from the last one
+        // This handles transitions like null -> 0 (first draw) and 0 -> 1 (navigation)
+        const hasChanged = selectedLineIdx !== window._lastSelectedLineIdx;
+        const isValid = selectedLineIdx !== null && selectedLineIdx !== undefined;
+
+        if (hasChanged && isValid) {
+            console.log("JS: Value changed. Showing overlay.");
             overlay.innerText = "Preparing Profile...";
             overlay.style.display = 'flex';
-            // Explicitly set styles here to ensure visibility
             overlay.style.position = 'fixed';
             overlay.style.top = '320px';
             overlay.style.left = '12px';
             overlay.style.zIndex = '10000';
-            console.log("JS: Inputs changed - Showing Overlay");
+        } else {
+            console.log("JS: Value is identical. Message stays hidden.");
         }
-        return window.dash_clientside.no_update;
+
+        // Always update the cache so the next zoom/pan comparison is accurate
+        window._lastSelectedLineIdx = selectedLineIdx;
     }
-    """,
-    Output("profile-busy-overlay", "className"), # Dummy output to a safe property
-    Input("line-final-store", "data"),
-    Input("section-mode-store", "data"),
-    Input("selected-line-index", "data"),
-)
 
-# CALLBACK A: Hide message for profile
-app.clientside_callback(
-    """
-    function(children) {
-        // Only hide if the children is not null/empty
-        if (!children) return window.dash_clientside.no_update;
-
-        const overlay = document.getElementById('profile-busy-overlay');
-        if (overlay) {
-            overlay.style.display = 'none';
-            console.log("JS: Plot arrived - Hiding Overlay");
+    // --- SHOW overlay on section mode change ---
+    if (triggerId.includes("section-mode-store.data")) {
+        if (sectionMode !== window._lastSectionMode) {
+            overlay.innerText = "Preparing Profile...";
+            overlay.style.display = 'flex';
+            overlay.style.position = 'fixed';
+            overlay.style.top = '320px';
+            overlay.style.left = '12px';
+            overlay.style.zIndex = '10000';
+            console.log("JS: Section mode changed - showing overlay");
         }
-        return window.dash_clientside.no_update;
+        window._lastSectionMode = sectionMode;
     }
-    """,
-    Output("profile-busy-overlay", "title"), # Different dummy property
-    Input("profile_plot_main", "figure"), # Replace with your plot container ID
-    prevent_initial_call=True
+
+    // --- HIDE overlay after the profile figure updates ---
+    if (triggerId.includes("profile_plot_main.figure")) {
+        overlay.style.display = 'none';
+        console.log("JS: Profile figure updated - hiding overlay");
+    }
+
+    return window.dash_clientside.no_update;
+}
+""",
+Output("profile-busy-overlay", "title"),  #// dummy Output
+Input("selected-line-index", "data"),
+Input("section-mode-store", "data"),
+Input("profile_plot_main", "figure"),
+prevent_initial_call=True
 )
 
 
@@ -578,11 +618,13 @@ def handle_map_interactions(relayout_data, selected_data):
     # Handle drawing interactions
     if trigger_prop == 'relayoutData' and relayout_data:
         # Check if shapes were drawn
-        if 'shapes' in relayout_data:
-            m1.drawn_shapes = relayout_data['shapes']
-            selected_sites = m1.get_selected_sites()
+        # if 'shapes' in relayout_data:
+        #     print("SHAPES IN HANDLE MAP INTERACTION LINE 582")
+        #     m1.drawn_shapes = relayout_data['shapes']
+        #     selected_sites = m1.get_selected_sites()
         # Handle shape deletion
-        elif any(key.startswith('shapes[') and key.endswith('].x0') for key in relayout_data.keys()):
+        # elif any(key.startswith('shapes[') and key.endswith('].x0') for key in relayout_data.keys()):
+        if any(key.startswith('shapes[') and key.endswith('].x0') for key in relayout_data.keys()):
             # Update shapes if they were modified
             shapes = []
             i = 0
@@ -613,6 +655,7 @@ def handle_map_interactions(relayout_data, selected_data):
     
     # If no sites selected, don't update
     if not selected_sites:
+        # print("NO SHAPES IN HANDLE MAP INTERACTION LINE 582")
         raise PreventUpdate
 
     df_data = sesh.data
@@ -666,6 +709,56 @@ app.clientside_callback(
     Input("profile-buttons", "id")
 )
 
+# DRAGGABLE WINDOW FOR CTRL + ALT + LEFT CLICK
+app.clientside_callback(
+    """
+    function(children) {
+        if (!children) return window.dash_clientside.no_update;
+
+        // Wait a tiny bit for the DOM to render the new window
+        setTimeout(() => {
+            const windows = document.getElementsByClassName("draggable-window");
+            
+            Array.from(windows).forEach(win => {
+                const header = win.querySelector('.window-header');
+                if (!header || header.dataset.listener === 'true') return;
+
+                let pos1 = 0, pos2 = 0, pos3 = 0, pos4 = 0;
+                header.dataset.listener = 'true'; // Prevent double-attaching
+                header.onmousedown = dragMouseDown;
+
+                function dragMouseDown(e) {
+                    e.preventDefault();
+                    pos3 = e.clientX;
+                    pos4 = e.clientY;
+                    document.onmouseup = closeDragElement;
+                    document.onmousemove = elementDrag;
+                }
+
+                function elementDrag(e) {
+                    e.preventDefault();
+                    pos1 = pos3 - e.clientX;
+                    pos2 = pos4 - e.clientY;
+                    pos3 = e.clientX;
+                    pos4 = e.clientY;
+                    win.style.top = (win.offsetTop - pos2) + "px";
+                    win.style.left = (win.offsetLeft - pos1) + "px";
+                }
+
+                function closeDragElement() {
+                    document.onmouseup = null;
+                    document.onmousemove = null;
+                }
+            });
+        }, 100);
+
+        return window.dash_clientside.no_update;
+    }
+    """,
+    Output("window-container", "className"), # Dummy output
+    Input("window-container", "children"),   # Triggers whenever a window is added/removed
+    prevent_initial_call=True
+)
 
 app.clientside_callback(
     """
@@ -1086,7 +1179,7 @@ def reset_polling(n):
      Output('output-data-summary', 'children', allow_duplicate=True),
      Output('upload-toast', 'is_open'),
      Output('upload-toast', 'children'),
-     Output('gis', 'figure', allow_duplicate=True),
+    #  Output('gis', 'figure', allow_duplicate=True),
      Output('process_layout', 'disabled', allow_duplicate=True),
      Output('invert_layout', 'disabled', allow_duplicate=True),
      
@@ -1172,7 +1265,7 @@ def upload_file(contents, current_process_clicks):
     if warning_msg:
         upload_msg = f"{upload_msg} {warning_msg}"
 
-    return html.Div(upload_msg), m1.render(), dbdt1.render(), dbdt2.render(), rhoa.render(), summary, True, toast_msg, gis.render(), False, False, new_process_clicks, *bbox_vals, {'display': 'block'}#, t1.render()
+    return html.Div(upload_msg), m1.render(), dbdt1.render(), dbdt2.render(), rhoa.render(), summary, True, toast_msg,  False, False, new_process_clicks, *bbox_vals, {'display': 'block'}#, t1.render() gis.render(),
 
 
 @app.callback(
@@ -1505,35 +1598,6 @@ def sync_api_key_options(api_keys):
     ) if history_rows else html.Div("No history yet.", style={'color': '#6c757d', 'fontSize': '12px'})
     return datalist_options, history_container
 
-# --------------------- Store zoom / center ---------------------
-@app.callback(
-    Output("map-view-store", "data"),   
-    Input('gis', "relayoutData"),
-    State("map-view-store", "data"),
-    prevent_initial_call=True,)
-
-def update_map_view(relayout, view):
-
-    if not relayout:
-        return no_update
-
-    # store bbox
-    if "map._derived" in relayout and "coordinates" in relayout["map._derived"]:
-        coords = relayout["map._derived"]["coordinates"]
-
-        print("✔ Updated BBOX:") #, coords
-
-        # keep previous center, zoom if available
-        center = relayout.get("map.center", (view or {}).get("center"))
-        zoom   = relayout.get("map.zoom",   (view or {}).get("zoom"))
-
-        return {
-            "bbox": coords,
-            "center": center,
-            "zoom": zoom,
-        }
-
-    return no_update
 
 @app.callback(
     Output('dem-api-key-history-collapse', 'is_open'),
@@ -1760,76 +1824,134 @@ def sync_points_ui(trig, settings, attr_value, filter_value,
 
 
 
+# --------------------- SECTION BUTTON ---------------------
+@app.callback(
+    Output("section-panel", "style"),
+    Output("section-mode-store", "data"),
+    Input("section-toggle", "n_clicks"),
+    Input({"type": "section-option", "mode": ALL}, "n_clicks"),
+    State("section-panel", "style"),
+    State("section-mode-store", "data"),
+    prevent_initial_call=True
+)
+def manage_section_mode(toggle_n, option_clicks, current_style, current_mode):
+    ctx = callback_context
+    if not ctx.triggered:
+        return no_update, no_update
+
+    trigger_id = ctx.triggered[0]["prop_id"]
+    
+    # Logic to show/hide the dropdown panel
+    if "section-toggle" in trigger_id:
+        is_visible = current_style.get("display") == "block"
+        current_style["display"] = "none" if is_visible else "block"
+        return current_style, no_update
+
+    # Logic to handle picking a mode
+    if "section-option" in trigger_id:
+        # Extract the mode from the triggered ID dictionary
+        triggered_dict = json.loads(trigger_id.split(".")[0])
+        new_mode = triggered_dict["mode"]
+        
+        # Close the panel after selection
+        current_style["display"] = "none"
+        return current_style, new_mode
+
+    return current_style, no_update
+
+
+# --------------------- UPDATE PROFILE PLOT ---------------------
 @app.callback(
     Output("profile_plot_main", "figure", allow_duplicate=True),
     Output("flex-layout", "action"),
-    Output("model_section", "figure", allow_duplicate=True),
-    Input("line-final-store", "data"),
+    Input("map", "relayoutData"), 
     Input("section-mode-store", "data"),
     Input("selected-line-index", "data"),
     Input('global-colorbar-store', 'data'),
     State("map-view-store", "data"),
-    # State("points-attr", "value"),
     prevent_initial_call=True
 )
-
-def update_profile_callback(lines, mode, selected_idx, global_cbar_data,view):# , current_attr):
+def update_profile_callback(relayout, mode, selected_idx, global_cbar_data, view):
     ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
-    
+
+    # Sync colorbars as before
     if global_cbar_data and 'resistivity' in global_cbar_data:
         res_config = global_cbar_data['resistivity']
         profile.settings.update_attributes(res_config)
-        mod2.settings.update_attributes(res_config)
-
-    # print(f"VMAX SYNCED - Profile Settings: {profile.settings.vmax}, Mod2 Settings: {mod2.settings.vmax}")
-
-    fig = profile.render(lines=lines, mode=mode, selected_idx=selected_idx, view=view)
     
-    return fig, {"type": "select", "tabId": "tab-profile-plot-content_2"}, mod2.render() 
+    fig = profile.render(
+        lines=m1.lines, 
+        mode=mode, 
+        selected_idx=selected_idx, 
+        view=view
+    )
+    
+    return fig, {"type": "select", "tabId": "tab-profile-plot-content_2"},# mod2.render()
+
 
 # --------------------- SAVE PROFILE AS PNG AND KMZ ---------------------
 @app.callback(
-    # Output("download-profile-files", "data"),
     Output("export-message-container", "children"),
     Input("btn-export-profile", "n_clicks"),
     State("profile_plot_main", "figure"), 
-    State("line-final-store", "data"),
     State("selected-line-index", "data"),
     prevent_initial_call=True
 )
-
-def trigger_export(n_clicks, fig_data, all_lines, current_idx):
-    if not n_clicks or not all_lines:
+def trigger_export(n_clicks, fig_data, current_idx):
+    # 1. Validation
+    if not n_clicks:
         return no_update
-    
-    # Check if a save directory is set in your session object
+
+    # Access the lines from your m1 instance (Map class)
+    if m1.lines is None or m1.lines.empty:
+        return dbc.Alert("Error: No profile lines found to export!", color="warning")
+
+    # 2. Setup Directory
     target_dir = getattr(sesh, 'save_dir', None)
-    
     if target_dir is None:
-        print("No save directory selected. Saving to current folder.")
         target_dir = os.getcwd()
-        return dbc.Alert("Error: Please select a Save Directory first!", color="danger")
 
     try:
-        current_line_coords = all_lines[current_idx]
+        # 3. Get specific line data
+        unique_ids = sorted(m1.lines['line'].unique())
+        if current_idx >= len(unique_ids):
+            return dbc.Alert("Error: Selected line index out of range.", color="danger")
+            
+        line_id = unique_ids[current_idx]
+        # Filter the dataframe for just the coordinates of the current profile
+        current_line_df = m1.lines[m1.lines['line'] == line_id]
         
-        # Save both files to the sesh.save_dir
-        kmz_full_path, png_full_path = GIS_helpers.save_profile_data(fig_data, current_line_coords, current_idx,target_dir)
+        # Convert to list of dicts or whatever GIS_helpers expects
+        current_coords = current_line_df.to_dict('records')
+        print("CURRENT COORDS",current_coords)
+
+        # 4. Execute Save logic
+        # Passing fig_data, coords, and the ID to your helper
+        kmz_full_path, png_full_path = GIS_helpers.save_profile_data(
+            fig_data, 
+            current_coords, 
+            line_id, 
+            target_dir
+        )
         
-        # Get just the filenames for the message
         kmz_name = os.path.basename(kmz_full_path)
         png_name = os.path.basename(png_full_path)
 
-        # return dcc.send_file(kmz_full_path)
-        return  dbc.Alert(f"Successfully saved {kmz_name} and {png_name} to {target_dir}",color="success",
-                        duration=2000, # Message disappears after 4 seconds
-                    )
+        return dbc.Alert(
+            f"✅ Successfully saved {kmz_name} and {png_name} to {target_dir}",
+            color="success",
+            duration=4000, 
+            dismissable=True
+        )
                     
     except Exception as e:
         print(f"Export Error: {e}")
-        return no_update
+        return dbc.Alert(f"Export Failed: {str(e)}", color="danger")
+
+
+
 
 @app.callback(
     Output('output-dem-load', 'children'),
@@ -1898,90 +2020,113 @@ def load_dem_vs_gps(n_clicks, use_dem):
     dem_applied = replace_error is None
     return html.Div(message_children), build_data_summary(), dem_applied
 
-
-# --------------------- MULTI LINE select profile dropdown and clear all or selected ---------------------
+# --------------------- Warning for when map not zoomed in and view is None ---------------------
 @app.callback(
-    Output("line-final-store", "data", allow_duplicate=True),
+    Output('zoom-toast', 'is_open'),
+    Input('map', 'relayoutData'),
+    prevent_initial_call=True
+)
+def show_zoom_warning(relayout_data):
+    # If the user tries to draw a shape
+    if relayout_data and 'shapes' in relayout_data:
+        # Check if the coordinate system is missing
+        if m1.view is None:
+            return True            
+    return False
+
+# --------------------- MULTI LINE select profile dropdown and clear all or selected --------------------
+@app.callback(
     Output("profile-list-container", "children"),
     Output("selected-line-index", "data"),
     Output("btn-prev-line", "disabled"), 
-    Output("btn-next-line", "disabled"), 
-    Input("line-final-store", "data"),
+    Output("btn-next-line", "disabled"),
+    Output("map", "figure", allow_duplicate=True),
+    Input("map", "relayoutData"),           
     Input("btn-clear-sel", "n_clicks"),  
     Input("btn-clear-all", "n_clicks"),  
     Input("btn-prev-line", "n_clicks"), 
     Input("btn-next-line", "n_clicks"), 
-
     Input({"type": "view-line-btn", "index": ALL}, "n_clicks"), 
     State({"type": "del-check", "index": ALL}, "value"),        
     State("selected-line-index", "data"),
     prevent_initial_call=True
 )
-def master_line_controller(lines, clear_sel_n, clear_all_n, prev_n, next_n, view_clicks, check_states, current_idx):
+def master_line_controller(relayout, clear_sel_n, clear_all_n, prev_n, next_n, view_clicks, check_states, current_idx):
     ctx = callback_context
     if not ctx.triggered:
         return no_update
+        
+    if m1.lines is None:
+        m1.lines = pd.DataFrame(columns=['latitude', 'longitude', 'line'])
+
+    unique_ids = sorted(m1.lines['line'].unique()) if not m1.lines.empty else []
+    num_lines = len(unique_ids)
+    if current_idx is None or current_idx >= num_lines:
+        current_idx = num_lines - 1 if num_lines > 0 else 0
 
     trigger_id = ctx.triggered[0]["prop_id"]
-    new_lines = lines if lines else []
-    num_lines = len(new_lines)
-    new_active_idx = current_idx if current_idx is not None else 0
+    
+    if "map.relayoutData" in trigger_id:
+        if relayout and 'shapes' not in relayout:
+            return no_update, no_update, no_update, no_update, no_update#, False
+        unique_ids = sorted(m1.lines['line'].unique())
+        num_lines = len(unique_ids)
+        current_idx = num_lines - 1
 
     # --- ACTION: PREVIOUS ---
     if "btn-prev-line" in trigger_id:
-        new_active_idx = max(0, new_active_idx - 1)
+        current_idx = max(0, current_idx - 1) 
+        print ("PREVIOUS BUTTON",current_idx)
 
     # --- ACTION: NEXT ---
     elif "btn-next-line" in trigger_id:
-        new_active_idx = min(num_lines - 1, new_active_idx + 1)
+        current_idx = min(num_lines - 1, current_idx + 1)
+        print ("NEXT BUTTON",current_idx)
 
     # --- ACTION: CLEAR ALL ---
-    if "btn-clear-all" in trigger_id:
-        return [], [], 0
+    elif "btn-clear-all" in trigger_id:
+        m1.lines = pd.DataFrame(columns=['latitude', 'longitude', 'line'])
+        updated_map = m1.render(current_idx=0)
+        updated_map.update_layout(shapes=[])
+        return [], 0, True, True, updated_map #, False
 
-    # --- ACTION: CLEAR SELECTED --
-    if "btn-clear-sel" in trigger_id:
-            # check_states is a list of lists because of dcc.Checklist
-            indices_to_remove = [i for i, val in enumerate(check_states) if val and len(val) > 0]
-            new_lines = [line for i, line in enumerate(new_lines) if i not in indices_to_remove]
-            # new_active_idx = max(0, len(new_lines) - 1)
-            num_lines = len(new_lines)
-            new_active_idx = max(0, min(new_active_idx, num_lines - 1))
+    # --- ACTION: CLEAR SELECTED ---
+    elif "btn-clear-sel" in trigger_id:
+        ids_to_remove = [unique_ids[i] for i, val in enumerate(check_states) if val and len(val) > 0]
+        m1.lines = m1.lines[~m1.lines['line'].isin(ids_to_remove)]
+        unique_ids = sorted(m1.lines['line'].unique())
+        num_profiles = len(unique_ids)
+        current_idx = max(0, min((current_idx or 0), num_profiles - 1))
 
-    # --- ACTION: CHANGE VIEW (👁️) ---
-    if "view-line-btn" in trigger_id:
-        prop_dict = eval(trigger_id.split(".")[0])
-        new_active_idx = prop_dict["index"]
+    # --- ACTION: CHANGE VIEW (EYE ICON) ---
+    elif "view-line-btn" in trigger_id:
+        btn_index = json.loads(trigger_id.split(".")[0])["index"]
+        current_idx = btn_index
 
-    # --- ACTION: NEW LINE ADDED ---
-    if "line-final-store.data" in trigger_id:
-        # new_active_idx = len(new_lines) - 1
-        new_active_idx = num_lines - 1
+    num_profiles = len(unique_ids)
+    
+    prev_disabled = (current_idx <= 0) or (num_profiles == 0)
+    next_disabled = (current_idx >= num_profiles - 1) or (num_profiles == 0)
+    
 
-    # --- CALCULATE DISABLED STATES ---
-    # Disable "Prev" if at index 0 or no lines exist
-    prev_disabled = (new_active_idx <= 0) or (num_lines == 0)
-    # Disable "Next" if at last index or no lines exist
-    next_disabled = (new_active_idx >= num_lines - 1) or (num_lines == 0)    
+    updated_map = m1.render(current_idx=current_idx)
+    updated_map.update_layout(shapes=[])
 
-    # --- UI GENERATION ---
-    # We rebuild the list so the "Active" row is highlighted
     rows = []
-    for i in range(len(new_lines)):
-        is_active = (i == new_active_idx)
+    for i, l_id in enumerate(unique_ids):
+        is_active = (i == current_idx)
         rows.append(html.Div(
             style={
                 "display": "flex", "alignItems": "center", "padding": "8px",
                 "borderBottom": "1px solid #ddd",
-                "backgroundColor": "#D1ECF1" if is_active else "transparent", # Light blue highlight
+                "backgroundColor": "#D1ECF1" if is_active else "transparent",
                 "borderRadius": "4px", "marginBottom": "2px"
             },
             children=[
-                html.Span(f"Profile {i+1}", style={
+                html.Span(f"Profile {int(l_id)}", style={
                     "flex": 1, "fontSize": "13px", 
                     "fontWeight": "bold" if is_active else "normal"
                 }),
-                # Eye icon button
                 html.Button(
                     "👁️", 
                     id={"type": "view-line-btn", "index": i},
@@ -1991,7 +2136,6 @@ def master_line_controller(lines, clear_sel_n, clear_all_n, prev_n, next_n, view
                         "opacity": "1" if is_active else "0.3"
                     }
                 ),
-                # Delete checkbox
                 dcc.Checklist(
                     id={"type": "del-check", "index": i},
                     options=[{"label": "", "value": 1}],
@@ -2000,7 +2144,7 @@ def master_line_controller(lines, clear_sel_n, clear_all_n, prev_n, next_n, view
             ]
         ))
 
-    return new_lines, rows, new_active_idx, prev_disabled, next_disabled
+    return rows, current_idx, prev_disabled, next_disabled, updated_map#, False
 
 
 
@@ -2099,30 +2243,6 @@ def toggle_dem_inputs(source, current_value):
     if source == 'opentopo':
         return {'marginBottom': '8px'}, {'display': 'flex', 'gap': '10px'}, options, value
     return {'display': 'none'}, {'display': 'flex', 'gap': '10px'}, options, value
-
-
-# @app.callback(
-#     Output("map-hover-marker-store", "data"),
-#     Input("profile-plot_main", "hoverData"),
-#     State("line-final-store", "data"),
-#     State("selected-line-index", "data"),
-#     prevent_initial_call=True
-# )
-# def fill_dem_bbox_from_data(n_clicks):
-#     if not n_clicks:
-#         raise PreventUpdate
-#     if sesh.data is None:
-#         return no_update, no_update, no_update, no_update
-#     if 'longitude' not in sesh.data.columns or 'latitude' not in sesh.data.columns:
-#         return no_update, no_update, no_update, no_update
-
-#     min_lon = float(sesh.data['longitude'].min())
-#     max_lon = float(sesh.data['longitude'].max())
-#     min_lat = float(sesh.data['latitude'].min())
-#     max_lat = float(sesh.data['latitude'].max())
-
-#     pad = 0.01
-#     return min_lon - pad, min_lat - pad, max_lon + pad, max_lat + pad
 
 @app.callback(
     Output('map', 'figure', allow_duplicate=True),
@@ -2377,14 +2497,6 @@ def manage_windows(click_data, n_closes, current_windows, combined_state,all_lin
             tem_ids = [it[0] for it in items if it[1] == "tem"]
             bh_ids = [it[0] for it in items if it[1] == "borehole"]
 
-            # GENERATE CONTENT BASED ON SELECTION
-            # Scenario: Only TEMs selected -> Overlay Plot
-            # if len(bh_ids) == 0:
-            #     fig = build_combined_step_figure(df_up_map, tem_ids, use_elevation=True)
-            #     content = dcc.Graph(figure=fig, style={"height": "100%"})
-            #     title = f"Combined TEM Models ({len(tem_ids)})"
-            #     # width = "650px"
-
             if len(bh_ids) == 0:
                 # 1. Build the combined Resistivity plot
                 fig_combined_step = build_combined_step_figure(df_up_map, tem_ids, use_elevation=True)
@@ -2482,212 +2594,72 @@ def manage_windows(click_data, n_closes, current_windows, combined_state,all_lin
 
     return no_update, no_update
 
-
-
-# --------------------- draw lines and/or multilines ---------------------
+# # --------------------- #  hover on map from profile ---------------------
 @app.callback(
-    Output("line-final-store", "data", allow_duplicate=True),
-    Output("zoom-warning-dialog", "displayed"), # To trigger an alert message
-    Input('gis', "relayoutData"),
-    State("map-view-store", "data"),
-    State("line-final-store", "data"),
-    prevent_initial_call=True
-    )
-
-def on_draw_polyline(relayout, view, store): #, current_fig
-    if not relayout or "shapes" not in relayout:
-        return no_update, False
-
-    if not view or "bbox" not in view:
-            print("⛔ on_draw blocked — bbox not ready yet")            
-           
-            return no_update, True 
-
-    # Get the most recently drawn shape
-    shape = relayout["shapes"][-1]
-    
-    # 1. Handle Multi-point Polyline (path)
-    if "path" in shape:
-        path_str = shape["path"]
-        # Use our robust regex parser from earlier
-        new_line_coords = parse_polyline_path(path_str, view=view)
-    
-    # 2. Fallback for simple two-point lines (x0, y0, x1, y1)
-    elif "x0" in shape:
-        p0 = paper_to_geo(shape["x0"], shape["y0"], view)
-        p1 = paper_to_geo(shape["x1"], shape["y1"], view)
-        new_line_coords = [p0, p1]    
-    else:
-        return no_update
-
-    if not new_line_coords or None in new_line_coords:
-        return no_update, "Coordinate parsing failed."
-
-    # Initialize store if empty
-    current_store = store if store is not None else []
-    # Append the new list of coordinates [[lon1, lat1], [lon2, lat2], ...]
-    current_store.append(new_line_coords)
-
-    print(f"✔ Added Polyline with {len(new_line_coords)} points")
-    return current_store, False 
-
-# --------------------- hover on map ---------------------
-@app.callback(
-    Output("map-hover-marker-store", "data"),
+    Output("map", "figure", allow_duplicate=True),
     Input("profile_plot_main", "hoverData"),
-    State("line-final-store", "data"),
     State("selected-line-index", "data"),
     prevent_initial_call=True
 )
-
-def sync_hover_to_map(hoverData, lines, selected_idx):
-    if not hoverData or 'points' not in hoverData:
-        return None
+def update_map_hover(hoverData, active_idx):
+    if not hoverData or 'points' not in hoverData or not hoverData['points']:
+        m1.hover_marker = None
+        return m1.render()
 
     try:
-        pt = hoverData['points'][0]
+        point = hoverData['points'][0]
+        custom = point.get('customdata')
         
-        # 1. Try to get 'x'
-        dist_m = pt.get('x')
+        if custom is None:
+            return no_update
+
+        # Flatten nested customdata lists if they exist
+        val = custom
+        while isinstance(val, list) and len(val) > 0:
+            val = val[0]
+            
+        if isinstance(val, list): return no_update
+
+        # --- Case A: Site ID (Column Bar) ---
+        is_site = False
+        if sesh.models is not None and not sesh.models.empty:
+            if val in sesh.models["site_id"].values:
+                is_site = True
+
+        if is_site:
+            row = sesh.models[sesh.models["site_id"] == val]
+            lat, lon = row.iloc[0]["latitude"], row.iloc[0]["longitude"]
         
-        # 2. If 'x' is missing or None, look into 'customdata'
-        if dist_m is None and 'customdata' in pt:
-            val = pt['customdata']
-            # If it's a list (like your debug data shows), take the first item
-            dist_m = val[1] if isinstance(val, list) else val
+        else:
+            # --- Case B: Distance (Interpolated) ---
+            if m1.lines is None or m1.lines.empty:
+                return no_update
+                
+            unique_ids = sorted(m1.lines['line'].unique())
+            idx = active_idx if (active_idx is not None and active_idx < len(unique_ids)) else -1
+            
+            target_id = unique_ids[idx]
+            current_line_df = m1.lines[m1.lines['line'] == target_id]
+            # Polyline expects [[lon, lat], [lon, lat]...]
+            polyline = current_line_df[['longitude', 'latitude']].values.tolist()
+            
+            # Use your helper function
+            geo_pos = get_geo_at_distance(polyline, float(val))
+            
+            # Since geo_pos is [lon, lat], extract by index
+            lon, lat = geo_pos[0], geo_pos[1]
 
-        if dist_m is None or not lines:
-            return None
-
-        # 3. Standard line lookup logic
-        try:
-            current_line = lines[selected_idx]
-        except (IndexError, TypeError):
-            current_line = lines[-1] 
-
-        # 4. Math: Distance -> Lon/Lat
-        geo_pt = get_geo_at_distance(current_line, float(dist_m))
-        return geo_pt
+        # Update the class marker and render
+        m1.hover_marker = {
+            "latitude": lat,
+            "longitude": lon
+        }
+        
+        return m1.render()
 
     except Exception as e:
-        print(f"⚠️ Sync Error: {e}")
-        return None
-
-# # --------------------- Update map ---------------------
-@app.callback(
-    Output('gis', "figure", allow_duplicate=True),
-    # Output("test-display", "children"),
-    # Output("raster-busy-store", "data" , allow_duplicate=True),
-    Input("raster-load-trigger", "data"),
- 
-    Input("layers-store", "data"),
-    Input("opacity-store", "data"),
-    Input("map-view-store", "data"),
-    Input("line-final-store", "data"),
-    Input("selected-line-index", "data"),
-    Input("map-hover-marker-store", "data"),
-    Input("raster-registry-store", "data"),     
-    Input("points-color-map-store", "data"),
-    Input("points-filter", "value"),
-    State("points-attr", "value"),
-    prevent_initial_call=True)
- 
-def update_map(_trigger,layers, opacity, view, lines,selected_idx, hover_pt,rasters, 
-               color_map, actual_filters, actual_attr,):
-    layers = layers or []
-    opacity = opacity or {}
-    rasters = rasters or []
-    color_map = color_map or {}
-    actual_attr = actual_attr or "date"
-    actual_filters = actual_filters or []
- 
-    # color_map = mcolors.LogNorm(vmin=1, vmax=1000)
-    gis.dataframe = sesh.models
-    df_up_map, color_master_map, existing_attrs = preprocess_new_df(gis.dataframe)
- 
-    if layers is None and lines is None:
+        print(f"Hover Sync Error: {e}")
         return no_update
- 
-    # ----- raster controls (dynamic TIFF/PNG rows) -----
-    # Find which raster IDs are active
-    active_rasters = [r for r in rasters if r.get("id") in layers]
- 
-    # For your CURRENT gis (single tiff + single png), pick first of each kind
-    active_tiffs = [r for r in active_rasters if r.get("kind") == "tiff"]
-    active_pngs  = [r for r in active_rasters if r.get("kind") == "png"]
- 
-    show_tiff = len(active_tiffs) > 0
-    show_png  = len(active_pngs) > 0
- 
-    if show_tiff:
-        gis.tiff_info = gis.get_tiff_info(active_tiffs[0]["path"])
-    else:
-        gis.tiff_info = None
- 
-    if show_png:
-        gis.png_info = gis.get_png_info(active_pngs[0]["path"])
-    else:
-        gis.png_info = None
- 
-    # Use per-layer opacity if present; else default fallback
-    tiff_layer_id = active_tiffs[0]["id"] if show_tiff else None
-    png_layer_id  = active_pngs[0]["id"] if show_png else None
- 
-    tiff_op = opacity.get(tiff_layer_id, 0.6) if show_tiff else 0.6
-    png_op  = opacity.get(png_layer_id, 0.6) if show_png else 0.6
- 
-    current_line = None
-    if lines and len(lines) > 0:
-        idx = selected_idx if selected_idx is not None else -1
-        current_line = lines[idx]
-    # Check if boreholes and points should be displayed
-    is_points_visible = "points" in layers
-    is_bh_visible = ("boreholes" in layers) and (bh_data is not None)
-    if bh_data is not None:
-        bh_projections = get_borehole_projections(current_line, bh_data, view, search_radius_m=Settings.radius)
-    fig = gis.render(
-                show_google="google" in layers,
-                show_tiff=show_tiff,
-                show_png=show_png,
-                show_points=is_points_visible,
-                google_op=opacity.get("google", 1),
-                tiff_op=tiff_op,
-                png_op=png_op,       
-                view=view,
-                final_line=lines,
-                selected_idx=selected_idx,
-                hover_pt=hover_pt,
-                boreholes=bh_projections if is_bh_visible else None, # This now contains the Lon/Lat!
-                show_boreholes=is_bh_visible,
-                point_filters=actual_filters,
-                point_attr=actual_attr,
-                color_map=color_map,
-                uirevision=f"{str(lines)}_{actual_attr}",
-
- 
-    )
-    # print(f"DEBUG: Mapping attr{actual_attr} and FILTERS {actual_filters}")#. Color Map Keys: {list(color_map.keys())[:5]}")
- 
-    if fig is None: return no_update
- 
-    if fig:
-        # Just keep the camera stable
-        fig.layout.uirevision = f"view_{actual_attr}"
-        # Optional: ensure no leftover coloraxis if switching to Date
-        if actual_attr == 'date':
-            fig.layout.coloraxis = None
-        # 2. FORCE empty shapes to kill the cyan preview
-        fig.layout.shapes =  [] 
-     # Force the uirevision to be unique to this attribute
-    fig.update_layout(showlegend=False)
-    fig.layout.uirevision = f"{str(lines)}"
-    return fig #, debug_text #, False
-
-# import signal
-# @app.server.route("/shutdown", methods=["POST"])
-# def shutdown():
-#     os.kill(os.getpid(), signal.SIGINT)  # Send a signal to the process to terminate
-
 
 if __name__ == "__main__":
     try:

@@ -500,7 +500,11 @@ class GIS_helpers(Panel):
         # 2. Create KML and Link the Image
         kml = simplekml.Kml()
         ls = kml.newlinestring(name=f"Profile {profile_index+1}")
-        ls.coords = [tuple(coord) for coord in line_data]
+        
+        # FIX: Map dictionary to (Longitude, Latitude) tuples
+        # SimpleKML uses (lon, lat, alt) - order matters!
+        ls.coords = [(d['longitude'], d['latitude']) for d in line_data]
+        
         ls.style.linestyle.width = 5
         ls.style.linestyle.color = simplekml.Color.red
         

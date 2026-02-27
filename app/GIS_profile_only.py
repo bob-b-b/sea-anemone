@@ -96,18 +96,28 @@ class Profile(Panel):
 
 
     def get_figure(self, lines, mode, selected_idx, view, title='Profile'):
-        # print("lines", lines)
-        # 1. Handle Empty State
-        if not lines or len(lines) == 0:
+        if lines is None or (isinstance(lines, pd.DataFrame) and lines.empty):
             return self.empty_render()
-            # return self.empty_figure('Draw a line')
 
-        # 2. Extract Data Context
+        # 2. Extract Data Context (Updated for DataFrame)
         try:
-            idx = selected_idx if selected_idx is not None else -1
-            current_line = lines[idx]
-        except (IndexError, TypeError):
-            current_line = lines[-1]
+            # Get unique line IDs (e.g., [1.0, 2.0])
+            unique_lines = lines['line'].unique()
+            
+            # Determine which line ID to use
+            idx = selected_idx if selected_idx is not None else 0
+            if idx >= len(unique_lines):
+                idx = -1 # Default to last line
+                
+            line_id = unique_lines[idx]
+            current_line_df = lines[lines['line'] == line_id].sort_index()
+            current_line = current_line_df[['longitude', 'latitude']].values.tolist()
+            # print("current line", current_line)
+            
+        except (IndexError, TypeError, KeyError) as e:
+            print(f"Error extracting line: {e}")
+            return self.empty_figure("Error selecting line data.")
+
 
         # 3. Pre-process Dataframe
         # Note: self.dataframe is passed during __init__
@@ -189,10 +199,19 @@ class Profile(Panel):
         log_vmin = np.log10(vmin)
         log_vmax = np.log10(vmax)
         
-        if not lines:
+        is_empty = lines is None or (isinstance(lines, pd.DataFrame) and lines.empty)
+        
+        if is_empty:
             fig = self.empty_figure("Draw a line to generate a profile.")
         else:
+            # If lines came as a list of dicts (from a Store), convert to DF
+            if isinstance(lines, (list, dict)):
+                lines = pd.DataFrame(lines)
+                
+            # 3. Call your core figure generation logic
             fig = self.get_figure(lines, mode, selected_idx, view)            
+            
+            # 4. Colorbar Setup
             tick_vals = np.linspace(log_vmin, log_vmax, self.settings.nticks)
             tick_text = [f"{10**v:.0f}" for v in tick_vals]
             
@@ -227,6 +246,7 @@ class Profile(Panel):
 
             dcc.Store(id="line-preview-store"),
             dcc.Store(id="line-final-store"),
+
             dcc.Store(id="section-mode-store", data="blocky"),
             dcc.Store(id="map-view-store"),
             dcc.Store(id="selected-line-index", data=0),

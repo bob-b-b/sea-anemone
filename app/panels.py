@@ -12,7 +12,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import numpy as np
 import os
-
+import re
 
 
 
@@ -71,20 +71,23 @@ class Map(Panel):
     buffer_sites: list = None
     view  = None
     lines = None
+    hover_marker: dict = None
 
     def __init__(self, data, **kwargs):
         settings = MapSettings(id='map', **kwargs)
         super().__init__(id='map', settings=settings)
         self.dataframe = data
 
-    def render(self):
+    def render(self, current_idx=None):
         if self.dataframe is None: return self.empty_render()
         df_plot = self.dataframe
         # if 'site_id' in df_plot.columns:
             # df_plot = df_plot[df_plot['site_id'] != -1]
 
         zoom = self.view['map.zoom'] if self.view is not None else self.settings.zoom
-        center = self.view['map.center'] if self.view is not None else None
+        center = self.view['map.center'] if self.view is not None else None      
+        
+        
         from __main__ import sesh
         # if sesh.models is not None:
         if sesh.models is not None and self.settings.plot_by in sesh.models.columns:
@@ -140,7 +143,7 @@ class Map(Panel):
                 zoom=zoom,
                 center=center,
                 color_discrete_sequence=[self.settings.color],
-                custom_data=["site_id"]   # <-- ADD THIS
+                custom_data=["site_id"]   
             )
         fig.update_traces(marker={'size': 12})    
         if self.buffer_sites is not None and len(self.buffer_sites) > 0 and self.dataframe is not None and 'site_id' in self.dataframe.columns:
@@ -183,21 +186,76 @@ class Map(Panel):
                 zoom=zoom,
                 center=center,
                 color_discrete_sequence=[self.settings.highlight_color],
-                custom_data=["site_id"]   # <-- ADD THIS
+                custom_data=["site_id"],   # <-- ADD THIS
             )
             highlight_trace.update_traces(marker=dict(size=14))
             for trace in highlight_trace.data:
                 fig.add_trace(
-                    trace
-                )
-        if self.lines is not None:
-            fig2 = px.line_map(self.lines, lat='latitude', lon='longitude', line_group='line', color='line', zoom=zoom, center=center, hover_name='line')
-            fig = go.Figure(data=fig2.data+fig.data, layout=fig.layout)
+                    trace)
+        else:
+            highlight_trace = px.scatter_map(
+                df_plot,
+                lat="latitude",
+                lon="longitude",
+                zoom=zoom,
+                center=center,
+                color_discrete_sequence=[self.settings.color],
+                # custom_data=["site_id"],   # <-- ADD THIS
+            )
 
-        fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0},
-                        modebar=dict(add=['drawline'], remove=['zoomIn', 'zoomOut']),
-                        newshape=dict(line_color='cyan', line_width=3, line_dash='dash'),
-                        dragmode='select', showlegend=False)
+        # if self.lines is not None:
+        #     fig2 = px.line_map(self.lines, lat='latitude', lon='longitude', line_group='line', color='line',  zoom=zoom, center=center, hover_name='line')
+        #     fig = go.Figure(data=fig2.data+fig.data, layout=fig.layout)
+
+        if self.lines is not None and not self.lines.empty:
+            unique_ids = sorted(self.lines['line'].unique())
+            
+            # Identify the actual ID of the active line
+            # (Handling case where current_idx might be out of range)
+            active_line_id = None
+            if current_idx is not None and 0 <= current_idx < len(unique_ids):
+                active_line_id = unique_ids[current_idx]
+
+            # --- Trace 1: Inactive Lines (Yellow, Width 5) ---
+            inactive_df = self.lines[self.lines['line'] != active_line_id]
+            if not inactive_df.empty:
+                inactive_fig = px.line_map(
+                    inactive_df, lat='latitude', lon='longitude', 
+                    line_group='line', zoom=zoom, center=center
+                )
+                inactive_fig.update_traces(line=dict(color="yellow", width=5), name="Inactive Profile")
+                fig.add_traces(inactive_fig.data)
+
+            # --- Trace 2: Active Line (Red, Width 8) ---
+            active_df = self.lines[self.lines['line'] == active_line_id]
+            if not active_df.empty:
+                active_fig = px.line_map(
+                    active_df, lat='latitude', lon='longitude', 
+                    line_group='line', zoom=zoom, center=center
+                )
+                active_fig.update_traces(line=dict(color="red", width=8), name="Active Profile")
+                fig.add_traces(active_fig.data)
+
+            if self.hover_marker is not None:
+                hover_trace = px.scatter_map(
+                    pd.DataFrame([self.hover_marker]),
+                    lat="latitude",
+                    lon="longitude",
+                    zoom=zoom,
+                    center=center,)
+                hover_trace.update_traces(
+                    marker=dict(size=16, color="red"),
+                    name="Hover position")
+
+                for trace in hover_trace.data:
+                    fig.add_trace(trace)
+            
+        fig.update_traces(marker=dict(size=7))
+
+        fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, #uirevision='keep',
+                        modebar=dict(add=['drawline', 'drawopenpath'], remove=['select2d','lasso2d','zoomIn', 'zoomOut']),
+                        newshape=dict(line_color='cyan', line_width=4, line_dash='dash'),
+                        dragmode='pan', showlegend=False)
         
         return fig    
     
@@ -216,9 +274,13 @@ class Map(Panel):
         
     def paper2latlon(self, x, y):
         if self.view is None:
-            raise Warning("no view, please zoom")
+            # raise Warning("no view, please zoom")
+            return None
+            # raise ValueError("Map coordinate system not initialized")
         elif self.view['map.bearing']!=0 or self.view['map.pitch']!=0:
-            raise Warning("no view, please zoom")
+            # raise Warning("no view, please zoom")
+            return None
+            # raise ValueError("Map coordinate system not initialized")
         else:
             lat = self.lat0 + (self.lat1-self.lat0)*y
             lon = self.lon0 + (self.lon1-self.lon0)*x
@@ -243,11 +305,12 @@ class Map(Panel):
             [
                 html.Div(
                     [
-                        html.Div(   # 👈 padding wrapper
+                        html.Div(  
                             dcc.Graph(
                                 figure=self.render(),
                                 id=self.id,
                                 mathjax=True,
+                                responsive=True,
                                 style={
                                     'height': '100%',
                                     'width': '100%'
@@ -267,7 +330,7 @@ class Map(Panel):
                             value='misfit',
                             style={
                                 'position': 'absolute',
-                                'top': '15px',
+                                'bottom': '75px',
                                 'left': '50%',
                                 'transform': 'translateX(-50%)',
                                 'width': '150px'
@@ -294,7 +357,6 @@ class Map(Panel):
     def add_callbacks(self, app):
         super().add_callbacks(app)
 
-
         @app.callback(
             self.output,
             Input(self.id+'_plot_by', 'value'),
@@ -317,22 +379,54 @@ class Map(Panel):
         )
         def update_view(relayout_data):
             fig=no_update
+            
             if 'map.center' in relayout_data:
                 self.view = relayout_data
+
             elif 'shapes' in relayout_data:
-                lat0,lon0 = self.paper2latlon(relayout_data['shapes'][-1]['x0'], relayout_data['shapes'][-1]['y0'])
-                lat1,lon1 = self.paper2latlon(relayout_data['shapes'][-1]['x1'], relayout_data['shapes'][-1]['y1'])
-                line_id = 1
-                if self.lines is None:
-                    self.lines = pd.DataFrame({'latitude':[lat0], 'longitude':[lon0], 'line':[line_id]})
-                else:
-                    lat,lon,line_id = self.lines.loc[len(self.lines)-1].tolist()
-                    if cdist(lat,lon, lat0, lon0) > 10:
-                        line_id +=1 
-                        self.lines.loc[len(self.lines)] = [lat0, lon0, line_id]
-                self.lines.loc[len(self.lines)] = [lat1, lon1, line_id]
-                del relayout_data['shapes']
-                fig=self.render()
+                if self.view is None:
+                    return no_update, no_update
+
+                # 1. Get the last drawn shape
+                last_shape = relayout_data['shapes'][-1]
+                new_points = []
+
+                if 'path' in last_shape:
+                    path_str = last_shape['path']                    
+                    coords = re.findall(r"[-+]?\d*\.\d+|\d+", path_str)
+                    for i in range(0, len(coords), 2):
+                        try:
+                            lon_val = float(coords[i])
+                            lat_val = float(coords[i+1])
+                            lat, lon = self.paper2latlon(lon_val, lat_val)
+                            new_points.append({'latitude': lat, 'longitude': lon})
+                        except (IndexError, ValueError):
+                            continue
+                
+                elif 'x0' in last_shape:
+                    lat0, lon0 = self.paper2latlon(last_shape['x0'], last_shape['y0'])
+                    lat1, lon1 = self.paper2latlon(last_shape['x1'], last_shape['y1'])
+                    new_points = [
+                        {'latitude': lat0, 'longitude': lon0},
+                        {'latitude': lat1, 'longitude': lon1}
+                    ]
+                if new_points:
+                    if self.lines is None or self.lines.empty:
+                        line_id = 1.0
+                    else:
+                        last_row = self.lines.iloc[-1]
+                        last_lat, last_lon, line_id = last_row['latitude'], last_row['longitude'], last_row['line']
+                        if cdist(last_lat, last_lon, new_points[0]['latitude'], new_points[0]['longitude']) > 10:
+                            line_id += 1.0
+                    new_df = pd.DataFrame(new_points)
+                    new_df['line'] = line_id
+                    
+                    if self.lines is None or self.lines.empty:
+                        self.lines = new_df
+                    else:
+                        self.lines = pd.concat([self.lines, new_df], ignore_index=True)
+                    del relayout_data['shapes']
+                    fig = self.render()
             return relayout_data, fig
 
 
