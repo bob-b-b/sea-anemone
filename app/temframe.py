@@ -159,7 +159,7 @@ class TEMframe(DataFrame):
             for i, fname in enumerate(usf_files):
                 with z.open(fname, 'r') as f:
                     new_sweeps = usf.Sweep.from_buffer(f, combine=False)
-                    if set([x.points for x in new_sweeps]) == {6,22} or set([x.points for x in new_sweeps]) == {20,27}:
+                    if set([x.points for x in new_sweeps]) == {6,22}:# or set([x.points for x in new_sweeps]) == {20,27}:
                         sweeps += new_sweeps
                     else:
                         print(f'Ignoring {fname} because it does not contain both low and high moment data.')                    
@@ -312,10 +312,10 @@ class TEMframe(DataFrame):
 
             site_meta = (
                 df_data.loc[valid]
-                .groupby('site_id')[['date','daytime']]
+                .groupby('site_id')[['date', 'daytime']]
                 .first()
                 .reset_index()
-                .sort_values(['date','daytime'])
+                .sort_values(['date', 'daytime'])
             )
 
             site_meta['new_site_id'] = np.arange(1, len(site_meta) + 1)
