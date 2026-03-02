@@ -237,8 +237,8 @@ class Profile(Panel):
         return fig
     
     def initialize(self):            
-        return html.Div([
-            # --- STORES ---
+        return html.Div(style={"height": "100%","display": "flex","flexDirection": "column","minHeight": 0},
+            children=[ # --- STORES ---
             html.Div(id="window-container", style={"position": "relative", "zIndex": 9999}), # --- for ctrl + alt + left click and show models  ---
             dcc.Store(id="combined-window-store", data={"window_id": None, "indices": []}),            
             dcc.Store(id="right-click-index-store", data=None),
@@ -256,8 +256,7 @@ class Profile(Panel):
             dcc.Store(id="points-available-attrs-store", data=None),# if self.dataframe is not None else 'date'),
             dcc.Store(id="profile-busy-store", data=False),
             dcc.Store(id="profile-load-trigger", data=0),
-            
-            html.Div(
+                html.Div(
                         style={
                             "display": "flex",
                             "gap": "10px",
@@ -351,4 +350,5 @@ class Profile(Panel):
                 ),                       
             gear_maker(self.id)
         ])
+        # ])
         

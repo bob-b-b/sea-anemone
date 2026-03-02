@@ -91,6 +91,7 @@ class Session:
             self.site = self.data.overview()
         if self.lines is not None and isinstance(self.lines, str):
             self.lines = pd.read_csv(self.save_dir+self.lines)
+
     @classmethod
     def from_folder(cls, folder):
         obj = cls.load(folder+'session.json')

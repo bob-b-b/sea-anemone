@@ -47,7 +47,7 @@ import shutil
 import pandas as pd
 import numpy as np
 from GIS_profile_only import *
-from gis import GIS
+# from gis import GIS
 import json
 
 # df_overview = pd.DataFrame(columns=['date', 'daytime', 'latitude', 'longitude', 'elevation', 'utm_x', 'utm_y', 'distance'])
@@ -325,7 +325,7 @@ mod1 = ModelGraph(   dataframe=sesh.models )
 mod2 = ModelSection( dataframe=sesh.models )
 Multi_inv = MultiInversion( dataframe=sesh.data )
 
-gis = GIS(dataframe =sesh.models)
+# gis = GIS(dataframe =sesh.models)
 profile = Profile(sesh.models)
 
 
@@ -339,19 +339,22 @@ profile_controls = html.Div([
                 dbc.Button("Next \nProfile →", id="btn-next-line", color="primary", outline=True, disabled=True),
                             ]),
                 html.Div(id="profile-list-container", style={
-                "maxHeight": "200px", "overflowY": "auto", "width": "100%", "marginTop": "10px"
+                # "maxHeight": "200px", 
+                "flex": "1",
+                "overflowY": "auto", "width": "100%", "marginTop": "10px"
                         }),
             dbc.ButtonGroup([
                 dbc.Button("Clear Selected", id="btn-clear-sel", color="warning", outline=True),
                 dbc.Button("Clear All", id="btn-clear-all", color="danger", outline=True),
                 dbc.Button("Export Selected as PNG/KMZ", id="btn-export-profile", color="success", outline=True),
+                dbc.Button("Save Session [ctrl+s]", id='saveButton-profiles', color="info"), 
                             ]),
         ], 
-        style={'padding': '10px', 'display': 'flex', 'flexDirection': 'column', 'gap': '10px'}
+        style={'padding': '10px', 'display': 'flex', 'flexDirection': 'column', 'gap': '10px','height': '100%',}
     ),
     html.Div(id="export-message-container"),
     dcc.Download(id="download-profile-files"),
-], id='profile-buttons')
+], id='profile-buttons', style={"height": "85%"})
 
 
 #stmod = StartingModel.standard(rho=10.)F
@@ -362,7 +365,7 @@ Sing_inv = Single_site( dataframe=sesh.data, rho=10 )
 
 hkr = HotKeyReminder()
 
-panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, Multi_inv, Sing_inv, pyInt, rhoa, hkr, gis, profile]
+panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, Multi_inv, Sing_inv, rhoa, hkr, profile] #,gis
 nodes = [node for panel in panels for node in panel.to_nodes()]+[dfl.Tab(id=f'tab-profile-buttons', children=[profile_controls])] #dfl.Tab(id=f'tab-processing_buttons', children=[x]),
 
 
@@ -947,10 +950,11 @@ def update_model_on_review(_, invert_color):
 @app.callback(
     Output('output-click', 'children', allow_duplicate=True),
     Input('saveButton', 'n_clicks'),
+    Input('saveButton-profiles', 'n_clicks'),
     prevent_initial_call=True,
     allow_duplicate=True
 )
-def save_session(n1):
+def save_session(n1,n2):
     if sesh.save_dir is None:
         _configure_tk_dpi_awareness()
         root = Tk()
@@ -1200,7 +1204,7 @@ def upload_file(contents, current_process_clicks):
     mod1.buffer_sites = initial_sites.tolist()
     mod2.dataframe  = sesh.models
 
-    gis.dataframe   = sesh.models
+    # gis.dataframe   = sesh.models
     profile.dataframe = sesh.models
     
     
@@ -1909,7 +1913,6 @@ def remember_api_key_on_download(dem_downloaded, api_key, api_keys):
     Output('map', 'figure', allow_duplicate=True),
     Input('flex-layout', 'model'),
     prevent_initial_call=True
-
 )
 def print_flex_layout_model(model):
     # print(f"Flex layout model: {model}")
@@ -2085,8 +2088,8 @@ def manage_windows(click_data, n_closes, current_windows, combined_state,all_lin
     if not ctx.triggered:
         return no_update, no_update
     
-    gis.dataframe = sesh.models
-    df_up_map, color_master_map, existing_attrs = preprocess_new_df(gis.dataframe)
+    profile.dataframe = sesh.models
+    df_up_map, color_master_map, existing_attrs = preprocess_new_df(profile.dataframe)
     
     dbdt_df = sesh.data
 
@@ -2484,6 +2487,7 @@ def show_zoom_warning(relayout_data):
     Output("btn-prev-line", "disabled"), 
     Output("btn-next-line", "disabled"),
     Output("map", "figure", allow_duplicate=True),
+    Input("url", "hash"),
     Input("map", "relayoutData"),           
     Input("btn-clear-sel", "n_clicks"),  
     Input("btn-clear-all", "n_clicks"),  
@@ -2494,10 +2498,17 @@ def show_zoom_warning(relayout_data):
     State("selected-line-index", "data"),
     prevent_initial_call=True
 )
-def master_line_controller(relayout, clear_sel_n, clear_all_n, prev_n, next_n, view_clicks, check_states, current_idx):
+def master_line_controller(url_hash,relayout, clear_sel_n, clear_all_n, prev_n, next_n, view_clicks, check_states, current_idx):
     ctx = callback_context
     if not ctx.triggered:
         return no_update
+    
+    if url_hash and '#load' in url_hash:
+        # from __main__ import sesh
+        # If the session has lines, make sure m1 has them
+        if sesh.lines is not None and not sesh.lines.empty:
+            m1.lines = sesh.lines.copy()
+            # print("Lines loaded into Controller via URL Trigger ")
         
     if m1.lines is None:
         m1.lines = pd.DataFrame(columns=['latitude', 'longitude', 'line'])
@@ -2529,6 +2540,7 @@ def master_line_controller(relayout, clear_sel_n, clear_all_n, prev_n, next_n, v
     # --- ACTION: CLEAR ALL ---
     elif "btn-clear-all" in trigger_id:
         m1.lines = pd.DataFrame(columns=['latitude', 'longitude', 'line'])
+        sesh.lines = m1.lines.copy()
         updated_map = m1.render(current_idx=0)
         updated_map.update_layout(shapes=[])
         return [], 0, True, True, updated_map #, False
@@ -2537,9 +2549,19 @@ def master_line_controller(relayout, clear_sel_n, clear_all_n, prev_n, next_n, v
     elif "btn-clear-sel" in trigger_id:
         ids_to_remove = [unique_ids[i] for i, val in enumerate(check_states) if val and len(val) > 0]
         m1.lines = m1.lines[~m1.lines['line'].isin(ids_to_remove)]
+        sesh.lines = m1.lines.copy()
         unique_ids = sorted(m1.lines['line'].unique())
         num_profiles = len(unique_ids)
-        current_idx = max(0, min((current_idx or 0), num_profiles - 1))
+        # current_idx = max(0, min((current_idx or 0), num_profiles - 1))
+        if num_profiles == 0:
+            current_idx = 0
+            updated_map = m1.render()
+            updated_map.update_layout(shapes=[])
+            return [], 0, True, True, updated_map
+        else:
+            current_idx = max(0, min((current_idx or 0), num_profiles - 1))
+            # Fallback to the last available profile if current one was deleted
+            updated_map = m1.render(current_idx=current_idx)
 
     # --- ACTION: CHANGE VIEW (EYE ICON) ---
     elif "view-line-btn" in trigger_id:
@@ -2587,9 +2609,7 @@ def master_line_controller(relayout, clear_sel_n, clear_all_n, prev_n, next_n, v
             ]
         ))
 
-    print("LINES IN m1.lines df", m1.lines)
-
-    return rows, current_idx, prev_disabled, next_disabled, updated_map#, False
+    return rows, current_idx, prev_disabled, next_disabled, updated_map
 
 
 

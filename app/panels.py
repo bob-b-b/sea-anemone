@@ -204,7 +204,7 @@ class Map(Panel):
                     inactive_df, lat='latitude', lon='longitude', 
                     line_group='line', zoom=zoom, center=center
                 )
-                inactive_fig.update_traces(line=dict(color="yellow", width=5), name="Inactive Profile")
+                inactive_fig.update_traces(line=dict(color="yellow", width=2), name="Inactive Profile")
                 fig.add_traces(inactive_fig.data)
 
             # --- Trace 2: Active Line (Red, Width 8) ---
@@ -214,7 +214,7 @@ class Map(Panel):
                     active_df, lat='latitude', lon='longitude', 
                     line_group='line', zoom=zoom, center=center
                 )
-                active_fig.update_traces(line=dict(color="red", width=8), name="Active Profile")
+                active_fig.update_traces(line=dict(color="red", width=4), name="Active Profile")
                 fig.add_traces(active_fig.data)
 
             if self.hover_marker is not None:
@@ -406,6 +406,8 @@ class Map(Panel):
                         self.lines = new_df
                     else:
                         self.lines = pd.concat([self.lines, new_df], ignore_index=True)
+                    from __main__ import sesh
+                    sesh.lines = self.lines
                     del relayout_data['shapes']
                     fig = self.render()
             return relayout_data, fig

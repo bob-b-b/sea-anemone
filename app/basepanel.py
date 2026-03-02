@@ -455,48 +455,7 @@ class Panel:
 
             if not self.settings.flat_keys:
                         return
-
-            # # def update_render(*args):
-            # def update_render(global_data, current_attr, *args):
-            #     # 1. Update local settings from Global Store before rendering
-            #     if global_data and current_attr in global_data:
-            #         config = global_data[current_attr]
-            #         # Assuming your settings object has these attributes
-            #         if hasattr(self.settings, 'vmin'): self.settings.vmin = config['vmin']
-            #         if hasattr(self.settings, 'vmax'): self.settings.vmax = config['vmax']
-            #         if hasattr(self.settings, 'log'): self.settings.log = config['log']
-
-
-            #     for key, arg in zip(self.settings.flat_keys, args):
-            #         if isinstance(arg, dict) and 'hex' in arg:
-            #             arg = arg['hex']
-                    
-            #         if hasattr(self.settings, key):
-            #             # print("KEY HERE", key)
-            #             # print('type',self.settings.schema['properties'][key].get('type') )
-            #             if self.settings.schema['properties'][key].get('type')=='integer':
-            #                 arg = int(arg)
-            #             elif self.settings.schema['properties'][key].get('type')=='number':
-            #                 arg = float(arg)
-            #             elif self.settings.schema['properties'][key].get('type')=='boolean':
-            #                 arg = (arg=='true' or arg is True)
-            #             setattr(self.settings, key, arg)
-            #         elif '-' in key:
-            #             basekey,index = key.split('-')
-            #             if hasattr(self.settings, basekey):
-            #                 arg = (arg=='true' or arg is True)
-            #                 exec(f'self.settings.{basekey}[{index}] = arg')
-            #     return self.render()        
-            
-            # update_render = app.callback(Output(self.id, self.childname),#, allow_duplicate=True),
-            #             [Input('global-colorbar-store', 'data'),
-            #                 # Input('points-attr', 'value')
-            #                 ] +    
-            #             [Input({'type': f'settings-{self.id}', 'key': x}, 'value') for x in self.settings.flat_keys])(update_render)
     
-    
-
-
             def update_render(global_data, current_attr, *args):
                 # 1. Update from Global Store (vmin, vmax, log)
                 if global_data and current_attr in global_data:
@@ -538,17 +497,17 @@ class Panel:
 
             # --- The Callback Definition ---
             # Crucial: The order of Inputs here MUST match the arguments above
-            update_render = app.callback(
-                Output(self.id, self.childname),
-                [
-                    Input('global-colorbar-store', 'data'), # Maps to global_data
-                    Input('points-attr', 'value')            # Maps to current_attr
-                ] + [
-                    # These all map into the *args tuple
-                    Input({'type': f'settings-{self.id}', 'key': x}, 'value') 
-                    for x in self.settings.flat_keys
-                ]
-            )(update_render)
+            # update_render = app.callback(
+            #     Output(self.id, self.childname),
+            #     [
+            #         Input('global-colorbar-store', 'data'), # Maps to global_data
+            #         Input('points-attr', 'value')            # Maps to current_attr
+            #     ] + [
+            #         # These all map into the *args tuple
+            #         Input({'type': f'settings-{self.id}', 'key': x}, 'value') 
+            #         for x in self.settings.flat_keys
+            #     ]
+            # )(update_render)
 
 
             

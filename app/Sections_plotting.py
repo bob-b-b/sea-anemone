@@ -808,7 +808,6 @@ def create_blocky_polygons(stations_on_line, depths, vmin, vmax, log,show_misfit
         xaxis_title="Distance along path (m)",
         yaxis_title="Elevation (m)",
         hovermode="x",
-        height=500,
         showlegend=False,
         xaxis=dict(showgrid=True,gridcolor="lightgray",gridwidth=0.5,zeroline=False,
             showline=True,linecolor="black",mirror=True),
@@ -985,8 +984,7 @@ def plot_section_topographic(x, y_depth, vmin, vmax, log, res_models, elev, dois
         xaxis=dict(showgrid=True,gridcolor="lightgray",gridwidth=0.5,zeroline=False,showline=True,linecolor="black",mirror=True),
         yaxis=dict(showgrid=True,gridcolor="lightgray",gridwidth=0.5,zeroline=False,showline=True,linecolor="black",mirror=True,
                 autorange=True), 
-        margin=dict(l=60, r=40, t=50, b=60),
-        height=500)
+        margin=dict(l=60, r=40, t=50, b=60),)
     
     return fig
 
