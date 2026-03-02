@@ -538,9 +538,19 @@ class TEMframe(DataFrame):
             y_list.append(row_meta['utm_y'])
         
         inv = SCI(inv_list, x=np.array(x_list), y=np.array(y_list), log=write_log)
-        # inv.data_misfit_acceptance_threshold = 0.95
         res_mods = inv.invert(iter_cap=max_iterations)
-        doi = [x.item() for x in inv.doi]#.item()
+
+        # DOI: try to get from SCI, fall back to individual inversions, then 0
+        if hasattr(inv, 'doi') and inv.doi is not None:
+            doi = [x.item() if hasattr(x, 'item') else float(x) for x in inv.doi]
+        else:
+            doi = []
+            for individual_inv in inv_list:
+                if hasattr(individual_inv, 'doi') and individual_inv.doi is not None:
+                    val = individual_inv.doi
+                    doi.append(val.item() if hasattr(val, 'item') else float(val))
+                else:
+                    doi.append(0.0)
         for i,((id_row, row), (id_meta, row_meta)) in enumerate(zip(pivot_multi.iterrows(), df_overview.iterrows())):
             assert id_meta == id_row, "Site ID mismatch between row and metadata"
 

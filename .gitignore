@@ -175,3 +175,5 @@ scripts/plog_opener.cmd
 stb_reader_lib/*
 inversion_log.txt
 app/recent_projects.txt
+*.bor
+cache/*
