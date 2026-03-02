@@ -395,10 +395,10 @@ def build_combined_borehole_figure(bh_ids, bh_projections, rock_color_map):
     return fig
 
 # ----------- BOREHOLES ----------------
-bh_data, rock_color_map = load_borehole_file("C:/Users/au679476/Downloads/boreholes_Gende_Rige_test.bor")
+# bh_data, rock_color_map = load_borehole_file("C:/Users/au679476/Downloads/boreholes_Gende_Rige_test.bor")
 # bh_data, rock_color_map = load_borehole_file("C:/Users/au679476/Downloads/Boreholes_Dollow.bor")
-# bh_data = None 
-# rock_color_map = None
+bh_data = None 
+rock_color_map = None
 
 
 # model_frame = TEMframe.from_pandas(pd.read_csv("models.csv"))

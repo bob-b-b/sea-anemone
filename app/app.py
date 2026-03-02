@@ -2244,15 +2244,6 @@ def toggle_dem_inputs(source, current_value):
         return {'marginBottom': '8px'}, {'display': 'flex', 'gap': '10px'}, options, value
     return {'display': 'none'}, {'display': 'flex', 'gap': '10px'}, options, value
 
-@app.callback(
-    Output('map', 'figure', allow_duplicate=True),
-    Input('flex-layout', 'model'),
-    prevent_initial_call=True
-
-)
-def print_flex_layout_model(model):
-    # print(f"Flex layout model: {model}")
-    return m1.render()
 
 @app.callback(
     [

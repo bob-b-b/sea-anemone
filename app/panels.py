@@ -131,7 +131,7 @@ class Map(Panel):
                 color_discrete_sequence=[self.settings.color],
                 custom_data=["site_id"]   # <-- ADD THIS
             )
-            data_trace.update_traces(marker={'size': 9})
+            data_trace.update_traces(marker={'size': 12})
             for trace in data_trace.data:
                 fig.add_trace(trace)
         else:
@@ -145,7 +145,8 @@ class Map(Panel):
                 color_discrete_sequence=[self.settings.color],
                 custom_data=["site_id"]   
             )
-        fig.update_traces(marker={'size': 12})    
+        fig.update_traces(marker={'size': 12})
+        print(self.dataframe['site_id'])    
         if self.buffer_sites is not None and len(self.buffer_sites) > 0 and self.dataframe is not None and 'site_id' in self.dataframe.columns:
             df_buffer = self.dataframe[self.dataframe["site_id"].isin(self.buffer_sites)]
 
@@ -250,7 +251,7 @@ class Map(Panel):
                 for trace in hover_trace.data:
                     fig.add_trace(trace)
             
-        fig.update_traces(marker=dict(size=7))
+        # fig.update_traces(marker=dict(size=7))
 
         fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, #uirevision='keep',
                         modebar=dict(add=['drawline', 'drawopenpath'], remove=['select2d','lasso2d','zoomIn', 'zoomOut']),
