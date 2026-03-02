@@ -15,6 +15,8 @@ session_tracker = fpath+'/recent_projects.txt'
 
 from panels import *
 from inversion_panels import *
+from draggable_windows import create_draggable_window
+import json
 
 from dash import dcc
 from dash import Dash, callback_context, ALL
@@ -413,6 +415,10 @@ app.layout = html.Div([
     dcc.Store(id="dem-applied", data=False),
     dcc.Store(id="dem-downloaded", data=False),
     dcc.Store(id="dem-api-keys", data=[], storage_type="local"),
+    dcc.Store(id="borehole-loaded", data=False),
+    dcc.Store(id="right-click-index-store", data=None),
+    dcc.Store(id="combined-window-store", data={"window_id": None, "items": []}),
+    html.Div(id="window-container", style={"position": "relative", "zIndex": 9999}),
     html.Div([
         dbc.ButtonGroup([
             dbc.Button("1. Load Data",  id="upload_layout",    color="primary"),
@@ -862,7 +868,12 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color):
         x_value = click_data['points'][0]['x']
         site_id = mod2.dataframe.query(f'{mod2.settings.x_axis} == @x_value')['site_id'].iloc[0]
     elif trigger_id == 'map':
-        site_id = int(click_data['points'][0]['pointNumber'])
+        # Skip borehole marker clicks — handled by manage_windows
+        pt = click_data['points'][0]
+        cd = pt.get('customdata')
+        if cd and isinstance(cd, list) and len(cd) >= 3 and cd[2] == 'borehole':
+            raise PreventUpdate
+        site_id = int(pt['pointNumber'])
     else:
         site_id = None
     df_data = sesh.data
@@ -949,6 +960,7 @@ def reset_polling(n):
      Output('dem-bbox-maxlon', 'value', allow_duplicate=True),
      Output('dem-bbox-maxlat', 'value', allow_duplicate=True),
      Output('dem-options-container', 'style', allow_duplicate=True),
+     Output('borehole-options-container', 'style', allow_duplicate=True),
     #  Output(t1.id, 'children', allow_duplicate=True),
     ],
     Input('upload-data', 'contents'),
@@ -1015,8 +1027,57 @@ def upload_file(contents, current_process_clicks):
     if warning_msg:
         upload_msg = f"{upload_msg} {warning_msg}"
 
-    return html.Div(upload_msg), m1.render(), dbdt1.render(), dbdt2.render(), rhoa.render(), summary, True, toast_msg, False, False, new_process_clicks, *bbox_vals, {'display': 'block'}#, t1.render()
+    return html.Div(upload_msg), m1.render(), dbdt1.render(), dbdt2.render(), rhoa.render(), summary, True, toast_msg, False, False, new_process_clicks, *bbox_vals, {'display': 'block'}, {'display': 'block'}#, t1.render()
 
+
+@app.callback(
+    Output('output-borehole-upload', 'children'),
+    Output('borehole-loaded', 'data'),
+    m1.output,
+    Output('upload-toast', 'is_open', allow_duplicate=True),
+    Output('upload-toast', 'children', allow_duplicate=True),
+    Input('upload-borehole', 'contents'),
+    State('upload-borehole', 'filename'),
+    running=[(Output('upload-borehole', 'disabled'), True, False)],
+    prevent_initial_call=True
+)
+def upload_borehole(contents, filename):
+    if contents is None:
+        raise PreventUpdate
+
+    import tempfile
+    from borehole_utils import load_borehole_file, get_borehole_projections
+
+    # Decode base64 content and write to temp file
+    content_type, content_string = contents.split(',', 1)
+    decoded = base64.b64decode(content_string)
+    text = decoded.decode('utf-8', errors='replace')
+
+    # Parse borehole data
+    try:
+        bh_data, rock_color_map = load_borehole_file(text, from_string=True)
+    except Exception as e:
+        return html.Div(f"Error parsing borehole file: {e}"), False, no_update, True, f"Borehole upload failed: {e}"
+
+    if not bh_data:
+        return html.Div("No boreholes found in file."), False, no_update, True, "No boreholes found."
+
+    # Project UTM -> lat/lon
+    bh_projections = get_borehole_projections(bh_data)
+
+    # Store on panels
+    m1.boreholes = bh_projections
+    m1.rock_color_map = rock_color_map
+    mod2.boreholes = bh_projections
+    mod2.rock_color_map = rock_color_map
+    mod1.boreholes = bh_projections
+    mod1.rock_color_map = rock_color_map
+
+    n_bh = len(bh_data)
+    bh_ids = ', '.join(b['id'] for b in bh_data)
+    msg = f"Loaded {n_bh} borehole(s): {bh_ids}"
+
+    return html.Div(msg), True, m1.render(), True, f"Loaded {n_bh} borehole(s)"
 
 @app.callback(
     Output('output-dem-upload', 'children'),
@@ -1528,15 +1589,34 @@ def toggle_dem_upload(use_dem):
 
 
 @app.callback(
+    Output('borehole-upload-container', 'style'),
+    m1.output,
+    Input('use-borehole', 'value'),
+    prevent_initial_call=True
+)
+def toggle_borehole_upload(use_borehole):
+    if use_borehole:
+        return {'display': 'block', 'marginTop': '10px'}, no_update
+    # Clear borehole data when unchecked
+    m1.boreholes = None
+    m1.rock_color_map = None
+    mod2.boreholes = None
+    mod2.rock_color_map = None
+    mod1.boreholes = None
+    mod1.rock_color_map = None
+    return {'display': 'none', 'marginTop': '10px'}, m1.render()
+
+@app.callback(
     Output('dem-options-container', 'style'),
+    Output('borehole-options-container', 'style'),
     Input('upload-data', 'contents'),
     Input('url', 'hash'),
     prevent_initial_call=False
 )
 def toggle_dem_options(contents, url_hash):
     if sesh.data is None:
-        return {'display': 'none'}
-    return {'display': 'block'}
+        return {'display': 'none'}, {'display': 'none'}
+    return {'display': 'block'}, {'display': 'block'}
 
 
 @app.callback(
@@ -1739,6 +1819,132 @@ def handle_url_hash(url_hash, model):
 # @app.server.route("/shutdown", methods=["POST"])
 # def shutdown():
 #     os.kill(os.getpid(), signal.SIGINT)  # Send a signal to the process to terminate
+
+
+# ---------------------------------------------------------------------------
+# Alt+Click / Ctrl+Alt+Click  →  popup borehole windows
+# ---------------------------------------------------------------------------
+
+# Clientside: detect Alt+click on the MAP and extract borehole info
+app.clientside_callback(
+    """
+    function(clickData) {
+        if (!clickData || !window._keyTracker || !window._keyTracker.alt) {
+            return window.dash_clientside.no_update;
+        }
+        var pt = clickData.points[0];
+        var cd = pt.customdata;
+        var extractedId = pt.pointNumber;
+        var extractedType = "tem";
+
+        if (cd !== undefined && cd !== null) {
+            var dataArray = cd;
+            if (Array.isArray(dataArray) && Array.isArray(dataArray[0])) {
+                dataArray = dataArray[0];
+            }
+            if (Array.isArray(dataArray)) {
+                extractedId = dataArray[0];
+                if (dataArray.length >= 3 && dataArray[2] === "borehole") {
+                    extractedType = "borehole";
+                }
+            } else {
+                extractedId = dataArray;
+            }
+        }
+
+        return {
+            "index": extractedId,
+            "type": extractedType,
+            "multi": window._keyTracker.ctrl,
+            "timestamp": Date.now()
+        };
+    }
+    """,
+    Output("right-click-index-store", "data"),
+    Input("map", "clickData"),
+    prevent_initial_call=True
+)
+
+
+@app.callback(
+    Output("window-container", "children"),
+    Output("combined-window-store", "data"),
+    Input("right-click-index-store", "data"),
+    Input({"type": "close-window", "index": ALL}, "n_clicks"),
+    State("window-container", "children"),
+    State("combined-window-store", "data"),
+    prevent_initial_call=True
+)
+def manage_windows(click_data, n_closes, current_windows, combined_state):
+    """Create/close popup windows for borehole inspection."""
+    from borehole_utils import build_combined_borehole_figure
+
+    if not ctx.triggered:
+        return no_update, no_update
+
+    trigger = ctx.triggered[0]["prop_id"]
+    windows = list(current_windows or [])
+    combined_state = combined_state or {"window_id": None, "items": []}
+
+    # --- Retrieve current borehole data ---
+    bh_projections = getattr(m1, 'boreholes', None) or []
+    rock_color = getattr(m1, 'rock_color_map', None) or {}
+
+    # --- 1. NEW CLICK ---
+    if "right-click-index-store" in trigger:
+        if not click_data:
+            return no_update, no_update
+
+        idx = click_data.get("index")
+        item_type = click_data.get("type", "tem")
+        is_combined = bool(click_data.get("multi"))
+        ts = click_data.get("timestamp")
+
+        # Only handle borehole clicks in this callback
+        if item_type != "borehole":
+            return no_update, no_update
+
+        # A) Alt only -> single borehole window
+        if not is_combined:
+            new_id = f"win-{idx}-{ts}"
+            fig = build_combined_borehole_figure([idx], bh_projections, rock_color)
+            title = f"Borehole Log: {idx}"
+            content = dcc.Graph(figure=fig, style={"height": "100%"})
+            windows.append(create_draggable_window(new_id, title, content, width="550px", height="700px"))
+            return windows, combined_state
+
+        # B) Ctrl+Alt -> add to comparison window
+        else:
+            if not combined_state.get("window_id"):
+                combined_state["window_id"] = f"win-comparison-{ts}"
+                combined_state["items"] = []
+
+            if [idx, item_type] not in combined_state["items"]:
+                combined_state["items"].append([idx, item_type])
+
+            bh_ids = [it[0] for it in combined_state["items"] if it[1] == "borehole"]
+            fig = build_combined_borehole_figure(bh_ids, bh_projections, rock_color)
+            content = dcc.Graph(figure=fig, style={"height": "100%"})
+            title = f"Borehole Comparison ({len(bh_ids)})"
+
+            comp_id = combined_state["window_id"]
+            windows = [w for w in windows if w["props"]["id"] != comp_id]
+            windows.append(create_draggable_window(comp_id, title, content, width="700px", height="700px"))
+            return windows, combined_state
+
+    # --- 2. CLOSE BUTTON ---
+    if "close-window" in trigger:
+        try:
+            prop_dict = json.loads(trigger.split(".")[0])
+            closed_id = prop_dict.get("index")
+            windows = [w for w in windows if w["props"]["id"] != closed_id]
+            if combined_state.get("window_id") == closed_id:
+                combined_state = {"window_id": None, "items": []}
+            return windows, combined_state
+        except Exception as e:
+            print(f"Error closing window: {e}")
+
+    return no_update, no_update
 
 
 if __name__ == "__main__":

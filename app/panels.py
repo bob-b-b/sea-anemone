@@ -71,6 +71,8 @@ class Map(Panel):
     buffer_sites: list = None
     view  = None
     lines = None
+    boreholes = None
+    rock_color_map = None
 
     def __init__(self, data, **kwargs):
         settings = MapSettings(id='map', **kwargs)
@@ -145,6 +147,11 @@ class Map(Panel):
         if self.lines is not None:
             fig2 = px.line_map(self.lines, lat='latitude', lon='longitude', line_group='line', color='line', zoom=zoom, center=center, hover_name='line')
             fig = go.Figure(data=fig2.data+fig.data, layout=fig.layout)
+
+        # --- Borehole overlay ---
+        if self.boreholes:
+            from borehole_utils import add_boreholes_to_map_fig
+            fig = add_boreholes_to_map_fig(fig, self.boreholes)
 
         fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0},
                           modebar=dict(add=['drawline'], remove=['zoomIn', 'zoomOut']),
@@ -1114,6 +1121,41 @@ class Upload(Panel):
                     id='dem-options-container',
                     style={'display': 'none'}
                 ),
+                html.Br(),
+                html.Div(
+                    [
+                        dbc.Checkbox(
+                            id='use-borehole',
+                            value=False,
+                            label='Use Borehole Data (optional)',
+                            style={'marginLeft': '5px'}
+                        ),
+                        html.Div(
+                            [
+                                dcc.Upload(
+                                    id='upload-borehole',
+                                    children=html.Div([
+                                        'Borehole: Drag and Drop .bor file or ',
+                                        html.A('Select File')
+                                    ], style={'height': '80px', 'lineHeight': '70px', 'textAlign': 'center'}),
+                                    style={
+                                        'borderWidth': '2px',
+                                        'borderStyle': 'dashed',
+                                        'borderRadius': '5px',
+                                        'textAlign': 'center',
+                                    },
+                                    multiple=False,
+                                    accept='.bor',
+                                ),
+                                html.Div(id='output-borehole-upload', style={'marginTop': '6px'}),
+                            ],
+                            id='borehole-upload-container',
+                            style={'display': 'none', 'marginTop': '10px'}
+                        ),
+                    ],
+                    id='borehole-options-container',
+                    style={'display': 'none'}
+                ),
         ],
         )
     
@@ -1317,6 +1359,8 @@ class ModelSection(Panel):
     highlighted: int = None
     buffer_len = 50
     buffer_start = 0
+    boreholes = None
+    rock_color_map = None
     def __init__(self, **kwargs):
         settings = kwargs.pop('settings', ModelSectionSettings(id='model_section'))
         super().__init__(id='model_section', settings=settings)
@@ -1504,6 +1548,16 @@ class ModelSection(Panel):
             autorange=False
         )
         fig.update_layout(yaxis2=dict(range=[0, 8]))
+
+        # --- Borehole overlay ---
+        if self.boreholes and self.rock_color_map:
+            from borehole_utils import add_boreholes_to_section_fig
+            fig = add_boreholes_to_section_fig(
+                fig, self.boreholes, self.rock_color_map,
+                section_df=self.dataframe,
+                x_axis=self.settings.x_axis,
+            )
+
         return fig
     # def add_callbacks(self, app):
     #     super().add_callbacks(app)
