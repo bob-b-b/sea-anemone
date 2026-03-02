@@ -112,7 +112,6 @@ class Profile(Panel):
             line_id = unique_lines[idx]
             current_line_df = lines[lines['line'] == line_id].sort_index()
             current_line = current_line_df[['longitude', 'latitude']].values.tolist()
-            # print("current line", current_line)
             
         except (IndexError, TypeError, KeyError) as e:
             print(f"Error extracting line: {e}")
@@ -127,7 +126,7 @@ class Profile(Panel):
         y_depth = np.array(df_up_map["Depths"].iloc[0])[:-1]
         all_x, interp_lons, interp_lats = get_polyline_profile(current_line, df_up_map, resolution_m=50)
         direction = self.get_direction_label(interp_lons, interp_lats)
-        dynamic_title = f"Profile {idx+1}: {direction}"
+        dynamic_title = f"Profile {int(line_id)}: {direction}"
 
         # 5. Get Stations and Boreholes
         stations_on_line = get_station_projections(current_line, df_up_map, search_radius_m=self.settings.radius)

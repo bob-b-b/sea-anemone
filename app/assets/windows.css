@@ -1,0 +1,18 @@
+/* Draggable popup windows */
+.draggable-window {
+    border-radius: 8px;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+.window-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-radius: 8px 8px 0 0;
+    user-select: none;
+}
+
+.window-header button {
+    font-size: 16px;
+    padding: 0 8px;
+}
