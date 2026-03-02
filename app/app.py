@@ -818,10 +818,11 @@ def show_value(n1, n2, ttem_selected, sounding_selected, rhoa_selected):
     Output('data-buffer', 'data', allow_duplicate=True),
     Input('next-buffer', 'n_clicks'),
     Input('prev-buffer', 'n_clicks'),
+    Input('beginning-buffer', 'n_clicks'),
     State('data-buffer', 'data'),
     prevent_initial_call=True
 )
-def update_buffer(next_clicks, prev_clicks, buffer_data):
+def update_buffer(next_clicks, prev_clicks, beginning_clicks, buffer_data):
     if not ctx.triggered:
         raise PreventUpdate
 
@@ -842,6 +843,8 @@ def update_buffer(next_clicks, prev_clicks, buffer_data):
         start += length
     elif trigger == "prev-buffer":
         start -= length
+    elif trigger == "beginning-buffer":
+        start = 0
 
     # Clamp safely
     start = max(0, min(start, max(0, n_sites - length)))
@@ -1075,17 +1078,17 @@ def highlight_change(n1, n2, invert_layout_color,model):
     return ctx.triggered_id, m1.render(), mod1.render(), dbdt1.render(), Multi_inv.render(), mod2.render(), dbdt2.render(), rhoa.render()
 
 
-
 @app.callback(
     m1.output, mod1.output, dbdt1.output, mod2.output, dbdt2.output, rhoa.output,
     Input('model_section', 'clickData'),
     Input('tTEM', 'clickData'),
     Input('map', 'clickData'),
     State('invert_layout',  'color'),
+    State('review_layout', 'color'),
     State('data-buffer', 'data'),
     prevent_initial_call=True
 )
-def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color,buffer_data):
+def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color,review_layout_color, buffer_data):
     # ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
@@ -1100,7 +1103,11 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color,bu
         x_value = click_data['points'][0]['x']
         site_id = mod2.dataframe.query(f'{mod2.settings.x_axis} == @x_value')['site_id'].iloc[0]
     elif trigger_id == 'map':
-        site_id = sesh.data['site_id'].iloc[click_data['points'][0]['pointNumber']]
+        if review_layout_color != 'primary':
+            site_id = sesh.data['site_id'].iloc[click_data['points'][0]['pointNumber']]
+        else:
+            site_id = sesh.models['site_id'].iloc[click_data['points'][0]['pointNumber']]
+
     else:
         site_id = None
     df_data = sesh.data
@@ -1730,7 +1737,7 @@ def prune_models_without_data():
     active = real_rows & active_flag
 
     active_sites = df.loc[active, 'site_id'].dropna().unique()
-    # active_sites = [s for s in active_sites if s != -1]
+    active_sites = [s for s in active_sites if s != -1]
 
     sesh.models = sesh.models[sesh.models['site_id'].isin(active_sites)].copy()
 

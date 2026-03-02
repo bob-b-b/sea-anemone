@@ -137,17 +137,6 @@ class MultiInversion(Panel):
 
             )
 
-            fig.update_traces(name="Misfit", showlegend=True)
-            
-            
-            fig = px.line(
-                x=self.iterations,
-                y=self.misfit, labels={'x':'Iterations', 'y':'Misfit'},
-                markers=True,
-                color_discrete_sequence=[self.settings.line_color, self.settings.line_color],
-
-            )
-
             fig.update_traces(name="Total misfit", showlegend=True)
 
             fig.update_layout(title=self.title,xaxis_title='Iterations',yaxis_title='Misfit',xaxis_type='linear',yaxis_type='log',yaxis=dict(range=[-1,2]),
@@ -318,7 +307,6 @@ class MultiInversion(Panel):
                 elif hc_level == "tight":
                     Horz = 0.1
                 res_start                        = LogResistivity.smooth(rho,z) 
-                # print(TABLES['data'])
                 sesh.models, sesh.data, self.site = sesh.data.invert(res_start,vc = Vert, hc = Horz)
                 # sesh.site = sesh.data.overview()
                 self.title = "Inversion Finished!!!"
@@ -540,7 +528,6 @@ class Single_site(Panel):
 
                 err_plus  = d_obs * e
                 err_minus = d_obs * e / (1 + e)
-                # print(len(sesh.data[sesh.data['site_id']==1].time),len(dbdt))
                 time = sesh.data[sesh.data['site_id']==site_with_median_dbdt].time.dropna().values
                 fig.add_trace(go.Scatter(x=time,y=dbdt,mode="lines",line=dict(color=self.settings.line_color),name="Starting model"), row=1, col=2        )
                 fig.add_trace(go.Scatter(x=time,y=d_obs,mode="markers",name="Observed dB/dt",marker=dict(color="black",size=6,),

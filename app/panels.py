@@ -59,6 +59,7 @@ def cdist(lat1,lon1,lat2,lon2):
 class MapSettings(PanelSettings):
     zoom: int = 14
     color: str = '#ff0000'
+    color_data: str = '#000000'
     highlight_color: str= '#ffff00'  # Default highlight color
     plot_by: str = 'misfit'
     buffer_color: str= '#ffffff'  # Default buffer color
@@ -102,7 +103,7 @@ class Map(Panel):
                 center=center,
                 color=self.settings.plot_by,
                 color_continuous_scale='turbo',
-                custom_data=["site_id"]   # <-- ADD THIS
+                custom_data=["site_id"]
             )
             
             fig.update_layout(
@@ -128,10 +129,10 @@ class Map(Panel):
                 lon="longitude",
                 zoom=zoom,
                 center=center,
-                color_discrete_sequence=[self.settings.color],
+                color_discrete_sequence=[self.settings.color_data],
                 custom_data=["site_id"]   # <-- ADD THIS
             )
-            data_trace.update_traces(marker={'size': 12})
+            data_trace.update_traces(marker={'size': 8})
             for trace in data_trace.data:
                 fig.add_trace(trace)
         else:
@@ -145,8 +146,8 @@ class Map(Panel):
                 color_discrete_sequence=[self.settings.color],
                 custom_data=["site_id"]   
             )
+        
         fig.update_traces(marker={'size': 12})
-        print(self.dataframe['site_id'])    
         if self.buffer_sites is not None and len(self.buffer_sites) > 0 and self.dataframe is not None and 'site_id' in self.dataframe.columns:
             df_buffer = self.dataframe[self.dataframe["site_id"].isin(self.buffer_sites)]
 
@@ -167,7 +168,8 @@ class Map(Panel):
                 for trace in buffer_trace.data:
                     fig.add_trace(trace)
                 fig.data = (fig.data[1], fig.data[0])
-        
+
+
         fig.update_layout(map_style="white-bg",
             map_layers=[
                 {
@@ -177,7 +179,6 @@ class Map(Panel):
                     "source": ['https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}']
                 }])
         if self.highlighted is not None:
-            print('in panels', self.highlighted)
             # highlight_trace = px.scatter_map(df_plot[df_plot.index == self.highlighted], lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.highlight_color])
             
             highlight_trace = px.scatter_map(
@@ -622,7 +623,39 @@ class dbdtSounding(Panel):
             margin={"l": 50, "r": 50, "t": 50, "b": 50},
             dragmode='select'
         )
+        shown_groups = set()
 
+        for trace in fig.data:
+
+            # ----- LINES -----
+            if trace.mode == "lines":
+                if trace.name == "lm":
+                    trace.name = "LM lines"
+                    trace.legendgroup = "lm_lines"
+                elif trace.name == "hm":
+                    trace.name = "HM lines"
+                    trace.legendgroup = "hm_lines"
+
+            # ----- MARKERS -----
+            elif trace.mode == "markers":
+
+                if trace.marker.color == "black":
+                    trace.name = "Enabled"
+                    trace.legendgroup = "enabled_points"
+
+                elif trace.marker.color == "gray":
+                    trace.name = "Disabled"
+                    trace.legendgroup = "disabled_points"
+
+            # ---- SHOW LEGEND ONLY ONCE PER GROUP ----
+            if trace.legendgroup not in shown_groups:
+                trace.showlegend = True
+                shown_groups.add(trace.legendgroup)
+            else:
+                trace.showlegend = False
+
+        # ---- REMOVE LEGEND TITLE ----
+        fig.update_layout(legend_title_text=None)
         return fig
    
 
@@ -791,6 +824,40 @@ class rhoaSounding(dbdtSounding):
             margin={"l": 50, "r": 50, "t": 50, "b": 50},
             dragmode='select'
         )
+
+        shown_groups = set()
+
+        for trace in fig.data:
+
+            # ----- LINES -----
+            if trace.mode == "lines":
+                if trace.name == "lm":
+                    trace.name = "LM lines"
+                    trace.legendgroup = "lm_lines"
+                elif trace.name == "hm":
+                    trace.name = "HM lines"
+                    trace.legendgroup = "hm_lines"
+
+            # ----- MARKERS -----
+            elif trace.mode == "markers":
+
+                if trace.marker.color == "black":
+                    trace.name = "Enabled"
+                    trace.legendgroup = "enabled_points"
+
+                elif trace.marker.color == "gray":
+                    trace.name = "Disabled"
+                    trace.legendgroup = "disabled_points"
+
+            # ---- SHOW LEGEND ONLY ONCE PER GROUP ----
+            if trace.legendgroup not in shown_groups:
+                trace.showlegend = True
+                shown_groups.add(trace.legendgroup)
+            else:
+                trace.showlegend = False
+
+        # ---- REMOVE LEGEND TITLE ----
+        fig.update_layout(legend_title_text=None)
         return fig
 
 @nosj
@@ -900,12 +967,48 @@ class dbdtSection(Panel):
             title="field data versus simulated data",
             custom_data=["system_id", "data_id", "site_id"],
         )
+        # ---- Add ENABLED markers (black scatter) as ONE legend entry ----
+        enabled_seen = False
+        for tr in fig3.data:
+            tr.name = "Enabled"
+            tr.legendgroup = "enabled_points"
+            tr.showlegend = not enabled_seen
+            enabled_seen = True
+            fig.add_trace(tr)
 
-        for trace in fig3.data:
-            fig.add_trace(trace)
+        # ---- Add LM/HM LINES as TWO legend entries ----
+        lm_line_seen = False
+        hm_line_seen = False
+        for tr in fig2.data:
+            # px.line(..., color="system_id") gives tr.name == "hm" or "lm"
+            if tr.name == "lm":
+                tr.name = "LM"
+                tr.legendgroup = "lm_lines"
+                tr.showlegend = not lm_line_seen
+                lm_line_seen = True
+            elif tr.name == "hm":
+                tr.name = "HM"
+                tr.legendgroup = "hm_lines"
+                tr.showlegend = not hm_line_seen
+                hm_line_seen = True
+            else:
+                tr.showlegend = False
+            fig.add_trace(tr)
 
-        for trace in fig2.data:
-            fig.add_trace(trace)
+        # ---- Add DISABLED markers (gray scatter) as ONE legend entry ----
+        disabled_seen = False
+        # IMPORTANT: this refers to the *original* gray scatter figure in this function.
+        # In your current code, that figure is named `fig` at creation time; rename it
+        # to `fig_disabled` (see note below) so you can still access its traces here.
+        for tr in fig_disabled.data:
+            tr.name = "Disabled"
+            tr.legendgroup = "disabled_points"
+            tr.showlegend = not disabled_seen
+            disabled_seen = True
+            fig.add_trace(tr)
+        fig.update_layout(legend_title_text=None)
+
+
         dx = xmax - xmin
         fig.update_xaxes(range=[xmin-0.01*dx, xmax+0.01*dx])
         return fig    
@@ -1002,8 +1105,39 @@ class dbdtSection(Panel):
 
         for trace in fig2.data:
             fig.add_trace(trace)
+
+        shown_groups = set()
+
+        for trace in fig.data:
+
+            # ----- LINES -----
+            if trace.mode == "lines":
+                if trace.name == "lm":
+                    trace.name = "LM lines"
+                    trace.legendgroup = "lm_lines"
+                elif trace.name == "hm":
+                    trace.name = "HM lines"
+                    trace.legendgroup = "hm_lines"
+
+            # ----- MARKERS -----
+            elif trace.mode == "markers":
+
+                if trace.marker.color == "black":
+                    trace.name = "Enabled"
+                    trace.legendgroup = "enabled_points"
+
+                elif trace.marker.color == "gray":
+                    trace.name = "Disabled"
+                    trace.legendgroup = "disabled_points"
+
+            # ---- SHOW LEGEND ONLY ONCE PER GROUP ----
+            if trace.legendgroup not in shown_groups:
+                trace.showlegend = True
+                shown_groups.add(trace.legendgroup)
+            else:
+                trace.showlegend = False
         dx = xmax - xmin
-        
+        fig.update_layout(legend_title_text=None)
         fig.update_xaxes(range=[xmin-0.01*dx, xmax+0.01*dx])
         
         return fig  
@@ -1567,19 +1701,12 @@ class ModelSection(Panel):
             if isinstance(trigger, dict):
                 trigger = f"{trigger.get('type')}[{trigger.get('key')}]"
 
-        # print("--- RENDER DEBUG ---")
-        # print(f"TRIGGERED BY: {trigger}")
-        # print("VMAX RENDER MODEL SECTION", vmax_ms)
-        # print("SETTINGS OBJECT ID:", id(self.settings))
 
         log_vmin = np.log10(vmin_ms)
         log_vmax = np.log10(vmax_ms)
 
         tick_vals = np.linspace(log_vmin, log_vmax, self.settings.nticks)
         tick_text = [f"{10**v:.0f}" for v in tick_vals]
-        
-        # print(tick_vals)
-
 
         vmin_ms = self.settings.__dict__.get('vmin', self.settings.vmin)
         vmax_ms = self.settings.__dict__.get('vmax', self.settings.vmax)
@@ -2018,6 +2145,7 @@ class HotKeyReminder(Panel):
                     dbc.Button("enable  [ctrl+e]", id='enableButton'),
                     ]),
                     dbc.ButtonGroup([
+                        dbc.Button("Beggining [<<]", id='beginning-buffer', style={"marginRight": "6px"}),
                         dbc.Button("Previous buffer [<<-]", id='prev-buffer', style={"marginRight": "6px"}),
                         dbc.Button("Previous [<-]", id='highlight_prev', style={"marginRight": "6px"}),
                         dbc.Button("Next [->]", id='highlight_next', style={"marginRight": "6px"}),
