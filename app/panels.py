@@ -1,15 +1,12 @@
 from dataclasses import field
 from basepanel import *
-#from database_panel import DatabasePanel
-from dash import dash_table, ctx, no_update
-import numpy as np
-from nosj import nosj
+from map import Map, MapSettings
+from inversion_panels import MultiInversion, MultiInversionSettings, Single_site, SinglesiteSettings
+from model import ModelGraph, ModelGraphSettings, ModelSection, ModelSectionSettings
 
+from dash import dash_table, ctx, no_update
 import plotly.io as pio
-from typing import Literal
-import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+
 import numpy as np
 import os
 import re
@@ -1056,21 +1053,6 @@ class dbdtSection(Panel):
         )
         return fig    
 
-markdown_text = '''
-# Panels
-## Data
-- [Sounding](#sounding)     [[+]](#new_sounding)
-- [Section](#section)       [[+]](#new_section)
-## Models
-- [graph](#graph)           [[+]](#new_graph)
-- [colorbar](#colorbar)     [[+]](#new_colorbar)
-- [table](#table)           [[+]](#new_table)
-'''
-
-panel_list = html.Div([
-    dcc.Markdown(children=markdown_text)
-])
-
 @nosj
 class AutoProcessing(PanelSettings):
     sign_correction:  bool = False
@@ -2047,5 +2029,3 @@ class HotKeyReminder(Panel):
     
     def add_callbacks(self, app):
         pass
-        # return super().add_callbacks(app)
-

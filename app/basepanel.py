@@ -1,3 +1,6 @@
+from typing import Literal
+from nosj import nosj
+
 import dash_bootstrap_components as dbc
 from dash import  html, Output, Input, dcc, State,ALL, MATCH
 from dash.exceptions import PreventUpdate
@@ -9,7 +12,7 @@ from dataclasses_jsonschema import JsonSchemaMixin
 import tkinter as tk
 
 import plotly.express as px
-
+import plotly.graph_objects as go
 
 
 

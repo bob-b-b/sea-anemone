@@ -16,13 +16,12 @@ sesh = session.Session()
 session_tracker = fpath+'/recent_projects.txt'
 
 from panels import *
-from inversion_panels import *
 
 from dash import dcc
 from dash import Dash, callback_context, ALL
 from dash.exceptions import PreventUpdate
 from dash import Input, Output, State, html, dcc, ctx
-from dash_bootstrap_components import Button, ButtonGroup, themes
+from dash_bootstrap_components import themes
 import dash_bootstrap_components as dbc
 from dash.dash import no_update
 from flask import send_from_directory
@@ -316,15 +315,12 @@ if os.path.exists(session_tracker):
 else:
     session_files = []
 
-
-pyInt = PyInterpretter()
 m1    = Map(data=sesh.overview)
 dbdt1 = dbdtSounding(dataframe=sesh.data)
 dbdt2 = dbdtSection(dataframe=sesh.data)
 rhoa  = rhoaSounding(dataframe=sesh.data)
 
 u1    = Upload(session_files=session_files)
-# t1    = Table(df_overview, id='table_overview', settings=TableSettings('table_overview', visible_columns=[True]*len(df_overview.columns)))
 mod1 = ModelGraph(   dataframe=sesh.models )
 mod2 = ModelSection( dataframe=sesh.models )
 Multi_inv = MultiInversion( dataframe=sesh.data )
@@ -1992,12 +1988,41 @@ def handle_url_hash(url_hash, model):
     res[-1] = ''
     layout=model
     print(f'url hash: {url_hash}')
+    if url_hash.startswith('#open_session'):
+        root = Tk()
+        root.withdraw()  # Hide the root window
+        root.attributes('-topmost', True)
+        root.lift()
+        root.focus_force()
+        root.update()
+        folder_path = filedialog.askdirectory(title="Select Working Directory", parent=root)
+        url_hash = '#load='+folder_path+'/'
+    
+    if url_hash.startswith('#change_working'):
+        _configure_tk_dpi_awareness()
+        root = Tk()
+        root.withdraw()  # Hide the root window
+        root.attributes('-topmost', True)
+        root.lift()
+        root.focus_force()
+        root.update()
+        folder_path = filedialog.askdirectory(title="Select Working Directory", parent=root)
+        print(folder_path)
+        root.destroy()  # Destroy the root window after selection
+        if folder_path:
+            sesh.save_dir = folder_path + '/' if not folder_path.endswith('/') else folder_path
+            print(f'Working directory changed to: {sesh.save_dir}')
+            res[-2] = sesh.save_dir
+
     if url_hash.startswith('#load'):
         folder = url_hash.split('=')[1].replace('%20', ' ').replace('%22', '')
         print(f'loading session from folder: {folder}')
         sesh = session.Session.from_folder(folder)
         res[-2] = sesh.save_dir
 
+        if sesh.lines is not None:
+            m1.lines = sesh.lines.copy()
+            
         if sesh.data is not None:
             dbdt1.dataframe = sesh.data.copy()    
             dbdt2.dataframe = sesh.data.copy()    
@@ -2034,21 +2059,7 @@ def handle_url_hash(url_hash, model):
             res[11]  = False
             res[12]  = False
             res[13]  = True
-    elif url_hash.startswith('#change_working'):
-        _configure_tk_dpi_awareness()
-        root = Tk()
-        root.withdraw()  # Hide the root window
-        root.attributes('-topmost', True)
-        root.lift()
-        root.focus_force()
-        root.update()
-        folder_path = filedialog.askdirectory(title="Select Working Directory", parent=root)
-        print(folder_path)
-        root.destroy()  # Destroy the root window after selection
-        if folder_path:
-            sesh.save_dir = folder_path + '/' if not folder_path.endswith('/') else folder_path
-            print(f'Working directory changed to: {sesh.save_dir}')
-            res[-2] = sesh.save_dir
+
     return res
 
 

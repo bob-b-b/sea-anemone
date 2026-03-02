@@ -2,6 +2,7 @@ import sys
 sys.path.insert(0, 'C:/Users/au646858/OneDrive - Aarhus Universitet/Documents/_repositories/sea-anemone/app')
 
 from panels import *
+from map import *
 from typing import List
 from pandas import DataFrame
 import json_numpy
@@ -20,9 +21,10 @@ import pandas as pd
 
 @nosj
 class Session:
-    data:   TEMframe  = None
-    models: DataFrame = None
-    site:   DataFrame = None
+    data:     TEMframe  = None
+    models:   DataFrame = None
+    site:     DataFrame = None
+    lines:    DataFrame = None
     forwards: List[Forward] = None
     settings: SessionSettings = None
     save_dir: str = None
@@ -50,6 +52,9 @@ class Session:
         if other.site is not None:
             other.site.to_csv(folder+'site.csv', index=False)
             other.site = 'site.csv'                        
+        if other.lines is not None:
+            other.lines.to_csv(folder+'lines.csv', index=False)
+            other.lines = 'lines.csv'
 
         if other.forwards is not None:
             for i in range(len(other.forwards)):
@@ -57,7 +62,9 @@ class Session:
             other.forwards = [f'forward_{i}.json' for i in range(len(other.forwards))]
 
         other.__annotations__['data']   = str            
+        other.__annotations__['site']   = str            
         other.__annotations__['models'] = str
+        other.__annotations__['lines']   = str            
         other.__annotations__['forwards'] = List[str]
         res = json_numpy.dumps(other._to_nosj(binary_threshold=binary_threshold), indent=4)
         with open(folder+'session.json', 'wt') as f:
@@ -82,7 +89,8 @@ class Session:
             self.site = pd.read_csv(self.save_dir+self.site)
         else:
             self.site = self.data.overview()
-
+        if self.lines is not None and isinstance(self.lines, str):
+            self.lines = pd.read_csv(self.save_dir+self.lines)
     @classmethod
     def from_folder(cls, folder):
         obj = cls.load(folder+'session.json')
@@ -91,6 +99,9 @@ class Session:
 
     @property
     def overview(self):
+        if self.site is not None:
+            return self.site
+
         if self.data is not None:
             return self.data.overview()
         else:
