@@ -1052,7 +1052,6 @@ def highlight_change(n1, n2, invert_layout_color,model):
     return ctx.triggered_id, m1.render(), mod1.render(), dbdt1.render(), Multi_inv.render(), mod2.render(), dbdt2.render(), rhoa.render()
 
 
-
 @app.callback(
     m1.output, mod1.output, dbdt1.output, mod2.output, dbdt2.output, rhoa.output,
     Input('model_section', 'clickData'),
@@ -1134,10 +1133,6 @@ def update_starting_model_from_single_drag(relayout, model):
 
     model["rho"] = float(relayout[moved[0]])
     return model
-
-
-
-
 
 
 @app.callback(
@@ -1240,6 +1235,298 @@ def upload_file(contents, current_process_clicks):
     return html.Div(upload_msg), m1.render(), dbdt1.render(), dbdt2.render(), rhoa.render(), summary, True, toast_msg,  False, False, new_process_clicks, *bbox_vals, {'display': 'block'}#, t1.render() gis.render(),
 
 
+
+
+
+# --------------------- auto-close callback for layers ---------------------
+# @app.callback(
+#     Output("layers-panel", "style", allow_duplicate=True),
+#     Input({"type": "layer-check", "layer": ALL}, "value"),   # checkboxes
+#     Input({"type": "layer-opacity", "layer": ALL}, "value"),    # opacity sliders
+#     Input({"type": "layer-menu-btn", "layer": ALL}, "n_clicks"),# 3-dot menus
+#     State("layers-panel", "style"),
+#     prevent_initial_call=True,
+# )
+# def auto_close_layers(layer_values, opacity_values, menu_clicks, style):
+
+#     # Check for ANY triggered change:
+#     changed = False
+
+#     # Layer checkbox values (lists)
+#     if layer_values and any(v is not None for v in layer_values):
+#         changed = True
+
+#     # Opacity slider values (floats)
+#     if opacity_values and any(v is not None for v in opacity_values):
+#         changed = True
+
+#     # 3-dot menu clicks (ints)
+#     if menu_clicks and any((x or 0) > 0 for x in menu_clicks):
+#         changed = True
+
+#     if not changed:
+#         return no_update
+
+#     # Close panel
+#     new = style.copy()
+#     new["display"] = "none"
+#     # print(">> Layers panel auto-closed")
+
+#     return new
+
+# @app.callback(
+#     Output("points-attr", "options"),
+#     Output("points-attr", "value"),
+#     Output("points-filter", "options"),
+#     Output("points-filter", "value"),
+#     Output("points-color-map-store", "data"),
+#     Output("points-filters-by-attr-store", "data"),
+#     Input("interpret_layout", 'n_clicks'),
+#     Input("map-settings-store", "data"),     # so it can initialize from settings
+#     Input("points-attr", "value"),           # user changes attribute
+#     Input("points-filter", "value"),         # user changes checklist
+ 
+#     State("points-attr", "options"),
+#     State("points-filters-by-attr-store", "data"),
+#     State("points-available-attrs-store", "data"),
+#     prevent_initial_call=False,)
+# def sync_points_ui(trig, settings, attr_value, filter_value,
+#                    existing_attr_options, filters_by_attr, 
+#                    existing_attrs):
+#     gis.dataframe = sesh.models
+#     local_df, color_master_map, existing_attrs = preprocess_new_df(gis.dataframe)
+#     if gis.dataframe is None:
+#         return [], no_update, [], [], {}, (filters_by_attr or {})
+ 
+       
+#     filters_by_attr = filters_by_attr or {}
+ 
+#     # ---- available attributes come ONLY from existing_attrs ----
+#     # existing_attrs = []
+#     # existing_attrs = existing_attrs or []
+#     available_attrs = [a for a in existing_attrs if a in local_df.columns]
+ 
+#     attr_options = [{"label": a, "value": a} for a in available_attrs]
+ 
+#     # ---- decide default attribute ----
+#     default_attr = None
+#     if settings and isinstance(settings, dict):
+#         default_attr = settings.get("plot_attribute")
+ 
+#     if not default_attr or default_attr not in available_attrs:
+#         default_attr = "date" if "date" in available_attrs else (available_attrs[0] if available_attrs else None)
+ 
+#     # what triggered?
+#     trig = ctx.triggered_id
+ 
+#     # ---- choose current attribute ----
+#     current_attr = attr_value if attr_value in available_attrs else default_attr
+ 
+#     if not current_attr:
+#         return attr_options, no_update, [], [], {}, filters_by_attr
+ 
+#     # ---- compute unique cleaned values (must match renderer cleaning) ----
+#     series_cleaned = (local_df[current_attr].astype(str)
+#                       .str.replace(r"\.0$", "", regex=True)
+#                       .str.strip())
+#     unique_vals = sorted(series_cleaned.unique().tolist())
+ 
+#     filter_options = [{"label": str(v), "value": str(v)} for v in unique_vals]
+#     all_values = [str(v) for v in unique_vals]
+ 
+#     # ---- numeric vs categorical ----
+#     is_numeric = pd.api.types.is_numeric_dtype(local_df[current_attr]) and current_attr != "date"
+#     if is_numeric:
+#         color_map = {}  # numeric uses colorscale in renderer
+#     else:
+#         palette = px.colors.qualitative.Light24
+#         color_map = {val: palette[i % len(palette)] for i, val in enumerate(unique_vals)}
+ 
+#     # ---- decide checklist value & persist memory ----
+#     if trig == "points-filter":
+#         # print("POINT FILTER SYNC FUN", filter_value)
+#         selected = filter_value or []
+#         filters_by_attr[current_attr] = selected
+#         checklist_value = selected
+#     else:
+#         restored = filters_by_attr.get(current_attr)
+#         if restored is None:
+#             checklist_value = all_values
+#         else:
+#             restored = [v for v in restored if v in set(all_values)]
+#             checklist_value = restored if restored else all_values
+ 
+#         filters_by_attr[current_attr] = checklist_value
+ 
+#     return attr_options,current_attr,filter_options,checklist_value,color_map,filters_by_attr
+
+
+
+
+
+
+
+
+
+
+# # --------------------- DEM ---------------------
+@app.callback(
+    Output('dem-upload-container', 'style'),
+    Input('use-dem', 'value'),
+    prevent_initial_call=False
+)
+def toggle_dem_upload(use_dem):
+    if use_dem:
+        return {'display': 'block', 'marginTop': '10px'}
+    sesh.dem_path = None
+    sesh.dem_name = None
+    return {'display': 'none', 'marginTop': '10px'}
+
+@app.callback(
+    Output('dem-options-container', 'style'),
+    Input('upload-data', 'contents'),
+    Input('url', 'hash'),
+    prevent_initial_call=False
+)
+def toggle_dem_options(contents, url_hash):
+    if sesh.data is None:
+        return {'display': 'none'}
+    return {'display': 'block'}
+
+@app.callback(
+    Output('dem-api-key-container', 'style'),
+    Output('dem-resolution-container', 'style'),
+    Output('dem-resolution', 'options'),
+    Output('dem-resolution', 'value'),
+    Input('dem-source', 'value'),
+    State('dem-resolution', 'value'),
+    prevent_initial_call=False
+)
+def toggle_dem_inputs(source, current_value):
+    resolution_options_map = {
+        'opentopo': [
+            {'label': 'Global Copernicus GLO-30 (~30 m)', 'value': 'opentopo_cop30'},
+            {'label': 'Global SRTMGL1 (~30 m)', 'value': 'opentopo_srtmgl1'},
+            {'label': 'Global SRTMGL3 (~90 m)', 'value': 'opentopo_srtmgl3'},
+            {'label': 'Global ALOS (~30 m)', 'value': 'opentopo_alos'},
+        ],
+        'etopo': [
+            {'label': 'ETOPO2022 30 arc-second (surface, global)', 'value': 'etopo_30s'},
+            {'label': 'ETOPO2022 60 arc-second (surface, global)', 'value': 'etopo_60s'},
+        ],
+    }
+
+    options = resolution_options_map.get(source, [])
+    valid_values = {opt['value'] for opt in options}
+    default_value = options[0]['value'] if options else None
+    value = current_value if current_value in valid_values else default_value
+
+    if source == 'opentopo':
+        return {'marginBottom': '8px'}, {'display': 'flex', 'gap': '10px'}, options, value
+    return {'display': 'none'}, {'display': 'flex', 'gap': '10px'}, options, value
+
+@app.callback(
+    Output('output-dem-load', 'children'),
+    Output('output-data-summary', 'children', allow_duplicate=True),
+    Output('dem-applied', 'data'),
+    Input('load-dem-vs-gps', 'n_clicks'),
+    State('use-dem', 'value'),
+    prevent_initial_call=True
+)
+def load_dem_vs_gps(n_clicks, use_dem):
+    if not n_clicks:
+        raise PreventUpdate
+    if not use_dem:
+        return html.Div("Enable 'Use DEM' first."), build_data_summary(), False
+    if not sesh.dem_path or not os.path.exists(sesh.dem_path):
+        return html.Div("No DEM found. Please download or upload a DEM first."), build_data_summary(), False
+
+    stats = build_gps_dem_summary()
+    replace_error = None
+    try:
+        df = sesh.data
+        if df is not None:
+            if 'elevation_gps' not in df.columns:
+                df['elevation_gps'] = df['elevation']
+            if 'site_id' in df.columns:
+                df_sites = df.loc[df['site_id'] != -1].drop_duplicates(subset=['site_id'])[['site_id', 'longitude', 'latitude', 'elevation']]
+                lons = df_sites['longitude'].astype(float).to_numpy()
+                lats = df_sites['latitude'].astype(float).to_numpy()
+                valid_coords = np.isfinite(lons) & np.isfinite(lats)
+                df_sites = df_sites.loc[valid_coords].reset_index(drop=True)
+                lons = lons[valid_coords]
+                lats = lats[valid_coords]
+
+                if len(df_sites) > 0:
+                    dem_vals = _sample_dem_at_points(lons, lats, sesh.dem_path)
+                    valid_dem = np.isfinite(dem_vals)
+                    if valid_dem.any():
+                        dem_map = pd.Series(dem_vals[valid_dem], index=df_sites.loc[valid_dem, 'site_id']).to_dict()
+                        dem_series = df['site_id'].map(dem_map)
+                        df.loc[dem_series.notna(), 'elevation'] = dem_series
+            else:
+                lons = df['longitude'].astype(float).to_numpy()
+                lats = df['latitude'].astype(float).to_numpy()
+                valid_coords = np.isfinite(lons) & np.isfinite(lats)
+                if valid_coords.any():
+                    dem_vals = _sample_dem_at_points(lons[valid_coords], lats[valid_coords], sesh.dem_path)
+                    valid_dem = np.isfinite(dem_vals)
+                    idx = df.index[valid_coords]
+                    df.loc[idx[valid_dem], 'elevation'] = dem_vals[valid_dem]
+
+            sesh.data = df
+            if dbdt1.dataframe is not None and 'site_id' in df.columns:
+                dbdt1.dataframe = df[df['site_id'].isin(dbdt1.dataframe['site_id'].unique())]
+            if dbdt2.dataframe is not None and 'site_id' in df.columns:
+                dbdt2.dataframe = df[df['site_id'].isin(dbdt2.dataframe['site_id'].unique())]
+    except Exception as exc:
+        replace_error = exc
+
+    message_children = [
+        html.Div("DEM loaded. GPS vs DEM updated."),
+        stats
+    ]
+    if replace_error is not None:
+        message_children.append(html.Div(f"DEM elevation replace failed: {replace_error}"))
+
+    dem_applied = replace_error is None
+    return html.Div(message_children), build_data_summary(), dem_applied
+
+@app.callback(
+    Output('output-dem-load', 'children', allow_duplicate=True),
+    Output('output-data-summary', 'children', allow_duplicate=True),
+    Output('dem-applied', 'data', allow_duplicate=True),
+    Input('restore-gps-elevation', 'n_clicks'),
+    prevent_initial_call=True
+)
+def restore_gps_elevation(n_clicks):
+    if not n_clicks:
+        raise PreventUpdate
+    if sesh.data is None:
+        return html.Div("No data loaded."), build_data_summary(), False
+    df = sesh.data
+    if 'elevation_gps' not in df.columns:
+        return html.Div("No GPS elevation backup found."), build_data_summary(), False
+
+    df['elevation'] = df['elevation_gps']
+    sesh.data = df
+
+    if dbdt1.dataframe is not None and 'site_id' in df.columns:
+        dbdt1.dataframe = df[df['site_id'].isin(dbdt1.dataframe['site_id'].unique())]
+    if dbdt2.dataframe is not None and 'site_id' in df.columns:
+        dbdt2.dataframe = df[df['site_id'].isin(dbdt2.dataframe['site_id'].unique())]
+
+    return html.Div("GPS elevation restored."), build_data_summary(), False
+
+@app.callback(
+    Output('restore-gps-elevation', 'disabled'),
+    Input('dem-applied', 'data'),
+    Input('use-dem', 'value'),
+    prevent_initial_call=False
+)
+def toggle_restore_button(dem_applied, use_dem):
+    return not bool(dem_applied and use_dem)
+
 @app.callback(
     Output('output-dem-upload', 'children'),
     Output('output-data-summary', 'children', allow_duplicate=True),
@@ -1276,7 +1563,6 @@ def upload_dem(contents, filename, use_dem):
     sesh.dem_name = safe_name
 
     return html.Div(f"DEM uploaded: {safe_name}"), build_data_summary(), False
-
 
 @app.callback(
     Output('output-dem-download', 'children'),
@@ -1422,7 +1708,6 @@ def download_dem(n_clicks, use_dem, source, api_key, min_lon, min_lat, max_lon, 
 
     return html.Div(f"DEM downloaded: {safe_name}"), build_data_summary(), True
 
-
 @app.callback(
     Output('save-dem', 'disabled'),
     Input('dem-downloaded', 'data'),
@@ -1431,7 +1716,6 @@ def download_dem(n_clicks, use_dem, source, api_key, min_lon, min_lat, max_lon, 
 )
 def toggle_save_dem_button(dem_downloaded, use_dem):
     return not bool(dem_downloaded and use_dem)
-
 
 @app.callback(
     Output('dem-downloaded', 'data', allow_duplicate=True),
@@ -1442,7 +1726,6 @@ def reset_dem_downloaded(use_dem):
     if use_dem:
         raise PreventUpdate
     return False
-
 
 @app.callback(
     Output('output-dem-save', 'children'),
@@ -1518,7 +1801,6 @@ def save_dem(n_clicks, dem_downloaded, use_dem):
         html.Ul([html.Li(save_path_effective)])
     ])
 
-
 @app.callback(
     Output('dem-api-key-list', 'children'),
     Output('dem-api-key-history', 'children'),
@@ -1570,7 +1852,6 @@ def sync_api_key_options(api_keys):
     ) if history_rows else html.Div("No history yet.", style={'color': '#6c757d', 'fontSize': '12px'})
     return datalist_options, history_container
 
-
 @app.callback(
     Output('dem-api-key-history-collapse', 'is_open'),
     Input('dem-api-key-history-toggle', 'n_clicks'),
@@ -1581,7 +1862,6 @@ def toggle_api_key_history(n_clicks, is_open):
     if not n_clicks:
         raise PreventUpdate
     return not is_open
-
 
 @app.callback(
     Output('dem-api-key', 'value'),
@@ -1610,7 +1890,6 @@ def handle_api_key_history(select_clicks, delete_clicks, api_keys):
 
     raise PreventUpdate
 
-
 @app.callback(
     Output('dem-api-keys', 'data', allow_duplicate=True),
     Input('dem-downloaded', 'data'),
@@ -1629,555 +1908,6 @@ def remember_api_key_on_download(dem_downloaded, api_key, api_keys):
         keys = [k for k in keys if k != api_key]
     keys.insert(0, api_key)
     return keys[:20]
-
-
-# --------------------- auto-close callback for layers ---------------------
-@app.callback(
-    Output("layers-panel", "style", allow_duplicate=True),
-    Input({"type": "layer-check", "layer": ALL}, "value"),   # checkboxes
-    Input({"type": "layer-opacity", "layer": ALL}, "value"),    # opacity sliders
-    Input({"type": "layer-menu-btn", "layer": ALL}, "n_clicks"),# 3-dot menus
-    State("layers-panel", "style"),
-    prevent_initial_call=True,
-)
-def auto_close_layers(layer_values, opacity_values, menu_clicks, style):
-
-    # Check for ANY triggered change:
-    changed = False
-
-    # Layer checkbox values (lists)
-    if layer_values and any(v is not None for v in layer_values):
-        changed = True
-
-    # Opacity slider values (floats)
-    if opacity_values and any(v is not None for v in opacity_values):
-        changed = True
-
-    # 3-dot menu clicks (ints)
-    if menu_clicks and any((x or 0) > 0 for x in menu_clicks):
-        changed = True
-
-    if not changed:
-        return no_update
-
-    # Close panel
-    new = style.copy()
-    new["display"] = "none"
-    # print(">> Layers panel auto-closed")
-
-    return new
-
-
-
-
-@app.callback(
-    Output("points-attr", "options"),
-    Output("points-attr", "value"),
-    Output("points-filter", "options"),
-    Output("points-filter", "value"),
-    Output("points-color-map-store", "data"),
-    Output("points-filters-by-attr-store", "data"),
-    Input("interpret_layout", 'n_clicks'),
-    Input("map-settings-store", "data"),     # so it can initialize from settings
-    Input("points-attr", "value"),           # user changes attribute
-    Input("points-filter", "value"),         # user changes checklist
- 
-    State("points-attr", "options"),
-    State("points-filters-by-attr-store", "data"),
-    State("points-available-attrs-store", "data"),
-    prevent_initial_call=False,)
- 
-def sync_points_ui(trig, settings, attr_value, filter_value,
-                   existing_attr_options, filters_by_attr, 
-                   existing_attrs):
-    gis.dataframe = sesh.models
-    local_df, color_master_map, existing_attrs = preprocess_new_df(gis.dataframe)
-    if gis.dataframe is None:
-        return [], no_update, [], [], {}, (filters_by_attr or {})
- 
-       
-    filters_by_attr = filters_by_attr or {}
- 
-    # ---- available attributes come ONLY from existing_attrs ----
-    # existing_attrs = []
-    # existing_attrs = existing_attrs or []
-    available_attrs = [a for a in existing_attrs if a in local_df.columns]
- 
-    attr_options = [{"label": a, "value": a} for a in available_attrs]
- 
-    # ---- decide default attribute ----
-    default_attr = None
-    if settings and isinstance(settings, dict):
-        default_attr = settings.get("plot_attribute")
- 
-    if not default_attr or default_attr not in available_attrs:
-        default_attr = "date" if "date" in available_attrs else (available_attrs[0] if available_attrs else None)
- 
-    # what triggered?
-    trig = ctx.triggered_id
- 
-    # ---- choose current attribute ----
-    current_attr = attr_value if attr_value in available_attrs else default_attr
- 
-    if not current_attr:
-        return attr_options, no_update, [], [], {}, filters_by_attr
- 
-    # ---- compute unique cleaned values (must match renderer cleaning) ----
-    series_cleaned = (local_df[current_attr].astype(str)
-                      .str.replace(r"\.0$", "", regex=True)
-                      .str.strip())
-    unique_vals = sorted(series_cleaned.unique().tolist())
- 
-    filter_options = [{"label": str(v), "value": str(v)} for v in unique_vals]
-    all_values = [str(v) for v in unique_vals]
- 
-    # ---- numeric vs categorical ----
-    is_numeric = pd.api.types.is_numeric_dtype(local_df[current_attr]) and current_attr != "date"
-    if is_numeric:
-        color_map = {}  # numeric uses colorscale in renderer
-    else:
-        palette = px.colors.qualitative.Light24
-        color_map = {val: palette[i % len(palette)] for i, val in enumerate(unique_vals)}
- 
-    # ---- decide checklist value & persist memory ----
-    if trig == "points-filter":
-        # print("POINT FILTER SYNC FUN", filter_value)
-        selected = filter_value or []
-        filters_by_attr[current_attr] = selected
-        checklist_value = selected
-    else:
-        restored = filters_by_attr.get(current_attr)
-        if restored is None:
-            checklist_value = all_values
-        else:
-            restored = [v for v in restored if v in set(all_values)]
-            checklist_value = restored if restored else all_values
- 
-        filters_by_attr[current_attr] = checklist_value
- 
-    return attr_options,current_attr,filter_options,checklist_value,color_map,filters_by_attr
-
-
-
-# --------------------- SECTION BUTTON ---------------------
-@app.callback(
-    Output("section-panel", "style"),
-    Output("section-mode-store", "data"),
-    Input("section-toggle", "n_clicks"),
-    Input({"type": "section-option", "mode": ALL}, "n_clicks"),
-    State("section-panel", "style"),
-    State("section-mode-store", "data"),
-    prevent_initial_call=True
-)
-def manage_section_mode(toggle_n, option_clicks, current_style, current_mode):
-    ctx = callback_context
-    if not ctx.triggered:
-        return no_update, no_update
-
-    trigger_id = ctx.triggered[0]["prop_id"]
-    
-    # Logic to show/hide the dropdown panel
-    if "section-toggle" in trigger_id:
-        is_visible = current_style.get("display") == "block"
-        current_style["display"] = "none" if is_visible else "block"
-        return current_style, no_update
-
-    # Logic to handle picking a mode
-    if "section-option" in trigger_id:
-        # Extract the mode from the triggered ID dictionary
-        triggered_dict = json.loads(trigger_id.split(".")[0])
-        new_mode = triggered_dict["mode"]
-        
-        # Close the panel after selection
-        current_style["display"] = "none"
-        return current_style, new_mode
-
-    return current_style, no_update
-
-
-# --------------------- UPDATE PROFILE PLOT ---------------------
-@app.callback(
-    Output("profile_plot_main", "figure", allow_duplicate=True),
-    Output("flex-layout", "action"),
-    Input("map", "relayoutData"), 
-    Input("section-mode-store", "data"),
-    Input("selected-line-index", "data"),
-    Input('global-colorbar-store', 'data'),
-    State("map-view-store", "data"),
-    prevent_initial_call=True
-)
-def update_profile_callback(relayout, mode, selected_idx, global_cbar_data, view):
-    ctx = callback_context
-    if not ctx.triggered:
-        raise PreventUpdate
-
-    # Sync colorbars as before
-    if global_cbar_data and 'resistivity' in global_cbar_data:
-        res_config = global_cbar_data['resistivity']
-        profile.settings.update_attributes(res_config)
-    
-    fig = profile.render(
-        lines=m1.lines, 
-        mode=mode, 
-        selected_idx=selected_idx, 
-        view=view
-    )
-    
-    return fig, {"type": "select", "tabId": "tab-profile-plot-content_2"},# mod2.render()
-
-
-# --------------------- SAVE PROFILE AS PNG AND KMZ ---------------------
-@app.callback(
-    Output("export-message-container", "children"),
-    Input("btn-export-profile", "n_clicks"),
-    State("profile_plot_main", "figure"), 
-    State("selected-line-index", "data"),
-    prevent_initial_call=True
-)
-def trigger_export(n_clicks, fig_data, current_idx):
-    # 1. Validation
-    if not n_clicks:
-        return no_update
-
-    # Access the lines from your m1 instance (Map class)
-    if m1.lines is None or m1.lines.empty:
-        return dbc.Alert("Error: No profile lines found to export!", color="warning")
-
-    # 2. Setup Directory
-    target_dir = getattr(sesh, 'save_dir', None)
-    if target_dir is None:
-        target_dir = os.getcwd()
-
-    try:
-        # 3. Get specific line data
-        unique_ids = sorted(m1.lines['line'].unique())
-        if current_idx >= len(unique_ids):
-            return dbc.Alert("Error: Selected line index out of range.", color="danger")
-            
-        line_id = unique_ids[current_idx]
-        # Filter the dataframe for just the coordinates of the current profile
-        current_line_df = m1.lines[m1.lines['line'] == line_id]
-        
-        # Convert to list of dicts or whatever GIS_helpers expects
-        current_coords = current_line_df.to_dict('records')
-        print("CURRENT COORDS",current_coords)
-
-        # 4. Execute Save logic
-        # Passing fig_data, coords, and the ID to your helper
-        kmz_full_path, png_full_path = GIS_helpers.save_profile_data(
-            fig_data, 
-            current_coords, 
-            line_id, 
-            target_dir
-        )
-        
-        kmz_name = os.path.basename(kmz_full_path)
-        png_name = os.path.basename(png_full_path)
-
-        return dbc.Alert(
-            f"✅ Successfully saved {kmz_name} and {png_name} to {target_dir}",
-            color="success",
-            duration=4000, 
-            dismissable=True
-        )
-                    
-    except Exception as e:
-        print(f"Export Error: {e}")
-        return dbc.Alert(f"Export Failed: {str(e)}", color="danger")
-
-
-
-
-@app.callback(
-    Output('output-dem-load', 'children'),
-    Output('output-data-summary', 'children', allow_duplicate=True),
-    Output('dem-applied', 'data'),
-    Input('load-dem-vs-gps', 'n_clicks'),
-    State('use-dem', 'value'),
-    prevent_initial_call=True
-)
-def load_dem_vs_gps(n_clicks, use_dem):
-    if not n_clicks:
-        raise PreventUpdate
-    if not use_dem:
-        return html.Div("Enable 'Use DEM' first."), build_data_summary(), False
-    if not sesh.dem_path or not os.path.exists(sesh.dem_path):
-        return html.Div("No DEM found. Please download or upload a DEM first."), build_data_summary(), False
-
-    stats = build_gps_dem_summary()
-    replace_error = None
-    try:
-        df = sesh.data
-        if df is not None:
-            if 'elevation_gps' not in df.columns:
-                df['elevation_gps'] = df['elevation']
-            if 'site_id' in df.columns:
-                df_sites = df.loc[df['site_id'] != -1].drop_duplicates(subset=['site_id'])[['site_id', 'longitude', 'latitude', 'elevation']]
-                lons = df_sites['longitude'].astype(float).to_numpy()
-                lats = df_sites['latitude'].astype(float).to_numpy()
-                valid_coords = np.isfinite(lons) & np.isfinite(lats)
-                df_sites = df_sites.loc[valid_coords].reset_index(drop=True)
-                lons = lons[valid_coords]
-                lats = lats[valid_coords]
-
-                if len(df_sites) > 0:
-                    dem_vals = _sample_dem_at_points(lons, lats, sesh.dem_path)
-                    valid_dem = np.isfinite(dem_vals)
-                    if valid_dem.any():
-                        dem_map = pd.Series(dem_vals[valid_dem], index=df_sites.loc[valid_dem, 'site_id']).to_dict()
-                        dem_series = df['site_id'].map(dem_map)
-                        df.loc[dem_series.notna(), 'elevation'] = dem_series
-            else:
-                lons = df['longitude'].astype(float).to_numpy()
-                lats = df['latitude'].astype(float).to_numpy()
-                valid_coords = np.isfinite(lons) & np.isfinite(lats)
-                if valid_coords.any():
-                    dem_vals = _sample_dem_at_points(lons[valid_coords], lats[valid_coords], sesh.dem_path)
-                    valid_dem = np.isfinite(dem_vals)
-                    idx = df.index[valid_coords]
-                    df.loc[idx[valid_dem], 'elevation'] = dem_vals[valid_dem]
-
-            sesh.data = df
-            if dbdt1.dataframe is not None and 'site_id' in df.columns:
-                dbdt1.dataframe = df[df['site_id'].isin(dbdt1.dataframe['site_id'].unique())]
-            if dbdt2.dataframe is not None and 'site_id' in df.columns:
-                dbdt2.dataframe = df[df['site_id'].isin(dbdt2.dataframe['site_id'].unique())]
-    except Exception as exc:
-        replace_error = exc
-
-    message_children = [
-        html.Div("DEM loaded. GPS vs DEM updated."),
-        stats
-    ]
-    if replace_error is not None:
-        message_children.append(html.Div(f"DEM elevation replace failed: {replace_error}"))
-
-    dem_applied = replace_error is None
-    return html.Div(message_children), build_data_summary(), dem_applied
-
-# --------------------- Warning for when map not zoomed in and view is None ---------------------
-@app.callback(
-    Output('zoom-toast', 'is_open'),
-    Input('map', 'relayoutData'),
-    prevent_initial_call=True
-)
-def show_zoom_warning(relayout_data):
-    # If the user tries to draw a shape
-    if relayout_data and 'shapes' in relayout_data:
-        # Check if the coordinate system is missing
-        if m1.view is None:
-            return True            
-    return False
-
-# --------------------- MULTI LINE select profile dropdown and clear all or selected --------------------
-@app.callback(
-    Output("profile-list-container", "children"),
-    Output("selected-line-index", "data"),
-    Output("btn-prev-line", "disabled"), 
-    Output("btn-next-line", "disabled"),
-    Output("map", "figure", allow_duplicate=True),
-    Input("map", "relayoutData"),           
-    Input("btn-clear-sel", "n_clicks"),  
-    Input("btn-clear-all", "n_clicks"),  
-    Input("btn-prev-line", "n_clicks"), 
-    Input("btn-next-line", "n_clicks"), 
-    Input({"type": "view-line-btn", "index": ALL}, "n_clicks"), 
-    State({"type": "del-check", "index": ALL}, "value"),        
-    State("selected-line-index", "data"),
-    prevent_initial_call=True
-)
-def master_line_controller(relayout, clear_sel_n, clear_all_n, prev_n, next_n, view_clicks, check_states, current_idx):
-    ctx = callback_context
-    if not ctx.triggered:
-        return no_update
-        
-    if m1.lines is None:
-        m1.lines = pd.DataFrame(columns=['latitude', 'longitude', 'line'])
-
-    unique_ids = sorted(m1.lines['line'].unique()) if not m1.lines.empty else []
-    num_lines = len(unique_ids)
-    if current_idx is None or current_idx >= num_lines:
-        current_idx = num_lines - 1 if num_lines > 0 else 0
-
-    trigger_id = ctx.triggered[0]["prop_id"]
-    
-    if "map.relayoutData" in trigger_id:
-        if relayout and 'shapes' not in relayout:
-            return no_update, no_update, no_update, no_update, no_update#, False
-        unique_ids = sorted(m1.lines['line'].unique())
-        num_lines = len(unique_ids)
-        current_idx = num_lines - 1
-
-    # --- ACTION: PREVIOUS ---
-    if "btn-prev-line" in trigger_id:
-        current_idx = max(0, current_idx - 1) 
-        print ("PREVIOUS BUTTON",current_idx)
-
-    # --- ACTION: NEXT ---
-    elif "btn-next-line" in trigger_id:
-        current_idx = min(num_lines - 1, current_idx + 1)
-        print ("NEXT BUTTON",current_idx)
-
-    # --- ACTION: CLEAR ALL ---
-    elif "btn-clear-all" in trigger_id:
-        m1.lines = pd.DataFrame(columns=['latitude', 'longitude', 'line'])
-        updated_map = m1.render(current_idx=0)
-        updated_map.update_layout(shapes=[])
-        return [], 0, True, True, updated_map #, False
-
-    # --- ACTION: CLEAR SELECTED ---
-    elif "btn-clear-sel" in trigger_id:
-        ids_to_remove = [unique_ids[i] for i, val in enumerate(check_states) if val and len(val) > 0]
-        m1.lines = m1.lines[~m1.lines['line'].isin(ids_to_remove)]
-        unique_ids = sorted(m1.lines['line'].unique())
-        num_profiles = len(unique_ids)
-        current_idx = max(0, min((current_idx or 0), num_profiles - 1))
-
-    # --- ACTION: CHANGE VIEW (EYE ICON) ---
-    elif "view-line-btn" in trigger_id:
-        btn_index = json.loads(trigger_id.split(".")[0])["index"]
-        current_idx = btn_index
-
-    num_profiles = len(unique_ids)
-    
-    prev_disabled = (current_idx <= 0) or (num_profiles == 0)
-    next_disabled = (current_idx >= num_profiles - 1) or (num_profiles == 0)
-    
-
-    updated_map = m1.render(current_idx=current_idx)
-    updated_map.update_layout(shapes=[])
-
-    rows = []
-    for i, l_id in enumerate(unique_ids):
-        is_active = (i == current_idx)
-        rows.append(html.Div(
-            style={
-                "display": "flex", "alignItems": "center", "padding": "8px",
-                "borderBottom": "1px solid #ddd",
-                "backgroundColor": "#D1ECF1" if is_active else "transparent",
-                "borderRadius": "4px", "marginBottom": "2px"
-            },
-            children=[
-                html.Span(f"Profile {int(l_id)}", style={
-                    "flex": 1, "fontSize": "13px", 
-                    "fontWeight": "bold" if is_active else "normal"
-                }),
-                html.Button(
-                    "👁️", 
-                    id={"type": "view-line-btn", "index": i},
-                    style={
-                        "border": "none", "background": "none", "cursor": "pointer", 
-                        "fontSize": "16px", "marginRight": "10px",
-                        "opacity": "1" if is_active else "0.3"
-                    }
-                ),
-                dcc.Checklist(
-                    id={"type": "del-check", "index": i},
-                    options=[{"label": "", "value": 1}],
-                    value=[],
-                )
-            ]
-        ))
-
-    return rows, current_idx, prev_disabled, next_disabled, updated_map#, False
-
-
-
-@app.callback(
-    Output('output-dem-load', 'children', allow_duplicate=True),
-    Output('output-data-summary', 'children', allow_duplicate=True),
-    Output('dem-applied', 'data', allow_duplicate=True),
-    Input('restore-gps-elevation', 'n_clicks'),
-    prevent_initial_call=True
-)
-def restore_gps_elevation(n_clicks):
-    if not n_clicks:
-        raise PreventUpdate
-    if sesh.data is None:
-        return html.Div("No data loaded."), build_data_summary(), False
-    df = sesh.data
-    if 'elevation_gps' not in df.columns:
-        return html.Div("No GPS elevation backup found."), build_data_summary(), False
-
-    df['elevation'] = df['elevation_gps']
-    sesh.data = df
-
-    if dbdt1.dataframe is not None and 'site_id' in df.columns:
-        dbdt1.dataframe = df[df['site_id'].isin(dbdt1.dataframe['site_id'].unique())]
-    if dbdt2.dataframe is not None and 'site_id' in df.columns:
-        dbdt2.dataframe = df[df['site_id'].isin(dbdt2.dataframe['site_id'].unique())]
-
-    return html.Div("GPS elevation restored."), build_data_summary(), False
-
-
-@app.callback(
-    Output('restore-gps-elevation', 'disabled'),
-    Input('dem-applied', 'data'),
-    Input('use-dem', 'value'),
-    prevent_initial_call=False
-)
-def toggle_restore_button(dem_applied, use_dem):
-    return not bool(dem_applied and use_dem)
-
-
-
-# --------------------- draw lines and/or multilines ---------------------
-@app.callback(
-    Output('dem-upload-container', 'style'),
-    Input('use-dem', 'value'),
-    prevent_initial_call=False
-)
-def toggle_dem_upload(use_dem):
-    if use_dem:
-        return {'display': 'block', 'marginTop': '10px'}
-    sesh.dem_path = None
-    sesh.dem_name = None
-    return {'display': 'none', 'marginTop': '10px'}
-
-
-@app.callback(
-    Output('dem-options-container', 'style'),
-    Input('upload-data', 'contents'),
-    Input('url', 'hash'),
-    prevent_initial_call=False
-)
-def toggle_dem_options(contents, url_hash):
-    if sesh.data is None:
-        return {'display': 'none'}
-    return {'display': 'block'}
-
-
-@app.callback(
-    Output('dem-api-key-container', 'style'),
-    Output('dem-resolution-container', 'style'),
-    Output('dem-resolution', 'options'),
-    Output('dem-resolution', 'value'),
-    Input('dem-source', 'value'),
-    State('dem-resolution', 'value'),
-    prevent_initial_call=False
-)
-def toggle_dem_inputs(source, current_value):
-    resolution_options_map = {
-        'opentopo': [
-            {'label': 'Global Copernicus GLO-30 (~30 m)', 'value': 'opentopo_cop30'},
-            {'label': 'Global SRTMGL1 (~30 m)', 'value': 'opentopo_srtmgl1'},
-            {'label': 'Global SRTMGL3 (~90 m)', 'value': 'opentopo_srtmgl3'},
-            {'label': 'Global ALOS (~30 m)', 'value': 'opentopo_alos'},
-        ],
-        'etopo': [
-            {'label': 'ETOPO2022 30 arc-second (surface, global)', 'value': 'etopo_30s'},
-            {'label': 'ETOPO2022 60 arc-second (surface, global)', 'value': 'etopo_60s'},
-        ],
-    }
-
-    options = resolution_options_map.get(source, [])
-    valid_values = {opt['value'] for opt in options}
-    default_value = options[0]['value'] if options else None
-    value = current_value if current_value in valid_values else default_value
-
-    if source == 'opentopo':
-        return {'marginBottom': '8px'}, {'display': 'flex', 'gap': '10px'}, options, value
-    return {'display': 'none'}, {'display': 'flex', 'gap': '10px'}, options, value
 
 @app.callback(
     Output('map', 'figure', allow_duplicate=True),
@@ -2322,6 +2052,9 @@ def handle_url_hash(url_hash, model):
     return res
 
 
+
+
+# # --------------------- #  MAP + PROFILE PLOT ---------------------
 # # --------------------- #  GOOD CALLBACK FOR ALT+LEFT CLICK + CTRL FOR click on models ---------------------
 @app.callback(
     Output("window-container", "children"),
@@ -2595,6 +2328,260 @@ def update_map_hover(hoverData, active_idx):
     except Exception as e:
         print(f"Hover Sync Error: {e}")
         return no_update
+
+# --------------------- SECTION BUTTON ---------------------
+@app.callback(
+    Output("section-panel", "style"),
+    Output("section-mode-store", "data"),
+    Input("section-toggle", "n_clicks"),
+    Input({"type": "section-option", "mode": ALL}, "n_clicks"),
+    State("section-panel", "style"),
+    State("section-mode-store", "data"),
+    prevent_initial_call=True
+)
+def manage_section_mode(toggle_n, option_clicks, current_style, current_mode):
+    ctx = callback_context
+    if not ctx.triggered:
+        return no_update, no_update
+
+    trigger_id = ctx.triggered[0]["prop_id"]
+    
+    # Logic to show/hide the dropdown panel
+    if "section-toggle" in trigger_id:
+        is_visible = current_style.get("display") == "block"
+        current_style["display"] = "none" if is_visible else "block"
+        return current_style, no_update
+
+    # Logic to handle picking a mode
+    if "section-option" in trigger_id:
+        # Extract the mode from the triggered ID dictionary
+        triggered_dict = json.loads(trigger_id.split(".")[0])
+        new_mode = triggered_dict["mode"]
+        
+        # Close the panel after selection
+        current_style["display"] = "none"
+        return current_style, new_mode
+
+    return current_style, no_update
+
+# --------------------- UPDATE PROFILE PLOT ---------------------
+@app.callback(
+    Output("profile_plot_main", "figure", allow_duplicate=True),
+    Input("map", "relayoutData"), 
+    Input("section-mode-store", "data"),
+    Input("selected-line-index", "data"),
+    Input('global-colorbar-store', 'data'),
+    State("map-view-store", "data"),
+    prevent_initial_call=True
+)
+def update_profile_callback(relayout, mode, selected_idx, global_cbar_data, view):
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+
+    # Sync colorbars as before
+    if global_cbar_data and 'resistivity' in global_cbar_data:
+        res_config = global_cbar_data['resistivity']
+        profile.settings.update_attributes(res_config)
+    
+    fig = profile.render(
+        lines=m1.lines, 
+        mode=mode, 
+        selected_idx=selected_idx, 
+        view=view
+    )
+    
+    return fig
+
+# --------------------- SAVE PROFILE AS PNG AND KMZ ---------------------
+@app.callback(
+    Output("export-message-container", "children"),
+    Input("btn-export-profile", "n_clicks"),
+    State("profile_plot_main", "figure"), 
+    State("selected-line-index", "data"),
+    prevent_initial_call=True
+)
+def trigger_export(n_clicks, fig_data, current_idx):
+    # 1. Validation
+    if not n_clicks:
+        return no_update
+
+    # Access the lines from your m1 instance (Map class)
+    if m1.lines is None or m1.lines.empty:
+        return dbc.Alert("Error: No profile lines found to export!", color="warning")
+
+    # 2. Setup Directory
+    target_dir = getattr(sesh, 'save_dir', None)
+    if target_dir is None:
+        target_dir = os.getcwd()
+
+    try:
+        # 3. Get specific line data
+        unique_ids = sorted(m1.lines['line'].unique())
+        if current_idx >= len(unique_ids):
+            return dbc.Alert("Error: Selected line index out of range.", color="danger")
+            
+        line_id = unique_ids[current_idx]
+        # Filter the dataframe for just the coordinates of the current profile
+        current_line_df = m1.lines[m1.lines['line'] == line_id]
+        
+        # Convert to list of dicts or whatever GIS_helpers expects
+        current_coords = current_line_df.to_dict('records')
+        print("CURRENT COORDS",current_coords)
+
+        # 4. Execute Save logic
+        # Passing fig_data, coords, and the ID to your helper
+        kmz_full_path, png_full_path = GIS_helpers.save_profile_data(
+            fig_data, 
+            current_coords, 
+            line_id, 
+            target_dir
+        )
+        
+        kmz_name = os.path.basename(kmz_full_path)
+        png_name = os.path.basename(png_full_path)
+
+        return dbc.Alert(
+            f"✅ Successfully saved {kmz_name} and {png_name} to {target_dir}",
+            color="success",
+            duration=4000, 
+            dismissable=True
+        )
+                    
+    except Exception as e:
+        print(f"Export Error: {e}")
+        return dbc.Alert(f"Export Failed: {str(e)}", color="danger")
+
+# --------------------- Warning for when map not zoomed in and view is None ---------------------
+@app.callback(
+    Output('zoom-toast', 'is_open'),
+    Input('map', 'relayoutData'),
+    prevent_initial_call=True
+)
+def show_zoom_warning(relayout_data):
+    # If the user tries to draw a shape
+    if relayout_data and 'shapes' in relayout_data:
+        # Check if the coordinate system is missing
+        if m1.view is None:
+            return True            
+    return False
+
+# --------------------- MULTI LINE select profile dropdown and clear all or selected --------------------
+@app.callback(
+    Output("profile-list-container", "children"),
+    Output("selected-line-index", "data"),
+    Output("btn-prev-line", "disabled"), 
+    Output("btn-next-line", "disabled"),
+    Output("map", "figure", allow_duplicate=True),
+    Input("map", "relayoutData"),           
+    Input("btn-clear-sel", "n_clicks"),  
+    Input("btn-clear-all", "n_clicks"),  
+    Input("btn-prev-line", "n_clicks"), 
+    Input("btn-next-line", "n_clicks"), 
+    Input({"type": "view-line-btn", "index": ALL}, "n_clicks"), 
+    State({"type": "del-check", "index": ALL}, "value"),        
+    State("selected-line-index", "data"),
+    prevent_initial_call=True
+)
+def master_line_controller(relayout, clear_sel_n, clear_all_n, prev_n, next_n, view_clicks, check_states, current_idx):
+    ctx = callback_context
+    if not ctx.triggered:
+        return no_update
+        
+    if m1.lines is None:
+        m1.lines = pd.DataFrame(columns=['latitude', 'longitude', 'line'])
+
+    unique_ids = sorted(m1.lines['line'].unique()) if not m1.lines.empty else []
+    num_lines = len(unique_ids)
+    if current_idx is None or current_idx >= num_lines:
+        current_idx = num_lines - 1 if num_lines > 0 else 0
+
+    trigger_id = ctx.triggered[0]["prop_id"]
+    
+    if "map.relayoutData" in trigger_id:
+        if relayout and 'shapes' not in relayout:
+            return no_update, no_update, no_update, no_update, no_update#, False
+        unique_ids = sorted(m1.lines['line'].unique())
+        num_lines = len(unique_ids)
+        current_idx = num_lines - 1
+
+    # --- ACTION: PREVIOUS ---
+    if "btn-prev-line" in trigger_id:
+        current_idx = max(0, current_idx - 1) 
+        print ("PREVIOUS BUTTON",current_idx)
+
+    # --- ACTION: NEXT ---
+    elif "btn-next-line" in trigger_id:
+        current_idx = min(num_lines - 1, current_idx + 1)
+        print ("NEXT BUTTON",current_idx)
+
+    # --- ACTION: CLEAR ALL ---
+    elif "btn-clear-all" in trigger_id:
+        m1.lines = pd.DataFrame(columns=['latitude', 'longitude', 'line'])
+        updated_map = m1.render(current_idx=0)
+        updated_map.update_layout(shapes=[])
+        return [], 0, True, True, updated_map #, False
+
+    # --- ACTION: CLEAR SELECTED ---
+    elif "btn-clear-sel" in trigger_id:
+        ids_to_remove = [unique_ids[i] for i, val in enumerate(check_states) if val and len(val) > 0]
+        m1.lines = m1.lines[~m1.lines['line'].isin(ids_to_remove)]
+        unique_ids = sorted(m1.lines['line'].unique())
+        num_profiles = len(unique_ids)
+        current_idx = max(0, min((current_idx or 0), num_profiles - 1))
+
+    # --- ACTION: CHANGE VIEW (EYE ICON) ---
+    elif "view-line-btn" in trigger_id:
+        btn_index = json.loads(trigger_id.split(".")[0])["index"]
+        current_idx = btn_index
+
+    num_profiles = len(unique_ids)
+    
+    prev_disabled = (current_idx <= 0) or (num_profiles == 0)
+    next_disabled = (current_idx >= num_profiles - 1) or (num_profiles == 0)
+    
+
+    updated_map = m1.render(current_idx=current_idx)
+    updated_map.update_layout(shapes=[])
+
+    rows = []
+    for i, l_id in enumerate(unique_ids):
+        is_active = (i == current_idx)
+        rows.append(html.Div(
+            style={
+                "display": "flex", "alignItems": "center", "padding": "8px",
+                "borderBottom": "1px solid #ddd",
+                "backgroundColor": "#D1ECF1" if is_active else "transparent",
+                "borderRadius": "4px", "marginBottom": "2px"
+            },
+            children=[
+                html.Span(f"Profile {int(l_id)}", style={
+                    "flex": 1, "fontSize": "13px", 
+                    "fontWeight": "bold" if is_active else "normal"
+                }),
+                html.Button(
+                    "👁️", 
+                    id={"type": "view-line-btn", "index": i},
+                    style={
+                        "border": "none", "background": "none", "cursor": "pointer", 
+                        "fontSize": "16px", "marginRight": "10px",
+                        "opacity": "1" if is_active else "0.3"
+                    }
+                ),
+                dcc.Checklist(
+                    id={"type": "del-check", "index": i},
+                    options=[{"label": "", "value": 1}],
+                    value=[],
+                )
+            ]
+        ))
+
+    print("LINES IN m1.lines df", m1.lines)
+
+    return rows, current_idx, prev_disabled, next_disabled, updated_map#, False
+
+
+
 
 if __name__ == "__main__":
     try:

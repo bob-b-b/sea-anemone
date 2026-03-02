@@ -234,7 +234,7 @@ class Map(Panel):
                 for trace in hover_trace.data:
                     fig.add_trace(trace)
             
-        fig.update_traces(marker=dict(size=7))
+        # fig.update_traces(marker=dict(size=7))
 
         fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, #uirevision='keep',
                         modebar=dict(add=['drawline', 'drawopenpath'], remove=['select2d','lasso2d','zoomIn', 'zoomOut']),

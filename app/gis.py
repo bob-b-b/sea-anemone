@@ -490,7 +490,7 @@ class GIS(Panel):
                                                     value=[],
                                                     style={'marginBottom': '15px'}
                                                 )
-                                            ], id='borehole-toggle-container', style={'display': 'block'} if (bh_data and len(bh_data) > 0) else {'none'}
+                                            ], id='borehole-toggle-container', style={'display': 'block'} # if (bh_data and len(bh_data) > 0) else {'none'}
                                             ),
                                             html.Div([
                                                 layer_row("Points", "points", checked=True, default_opacity=1),
