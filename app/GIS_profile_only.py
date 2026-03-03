@@ -22,6 +22,8 @@ from pydantic import Field
 from Map_external_layers import GIS_helpers
 from Sections_plotting import *
 
+# from borehole_utils import *
+
 
 @nosj
 class ProfileSettings(PanelSettings):
@@ -35,7 +37,8 @@ class ProfileSettings(PanelSettings):
     radius: int = 50 
     num_labels_colorbar: int = 4
 
-    column_width: int = 6 
+    column_width: int = 6
+    borehole_width : int = 6
 
     @classmethod
     def _create_schema(cls):
@@ -55,6 +58,9 @@ class ProfileSettings(PanelSettings):
 
 
 class Profile(Panel):
+    rock_color_map = None
+    boreholes = None
+
     def __init__(self, dataframe, **kwargs):
                     
         settings = kwargs.pop('settings', ProfileSettings(id='profile_plot_main'))       
@@ -95,7 +101,7 @@ class Profile(Panel):
         else: return "W - E"
 
 
-    def get_figure(self, lines, mode, selected_idx, view, title='Profile'):
+    def get_figure(self, lines, mode, selected_idx, view,  title='Profile'):
         if lines is None or (isinstance(lines, pd.DataFrame) and lines.empty):
             return self.empty_render()
 
@@ -112,7 +118,6 @@ class Profile(Panel):
             line_id = unique_lines[idx]
             current_line_df = lines[lines['line'] == line_id].sort_index()
             current_line = current_line_df[['longitude', 'latitude']].values.tolist()
-            # print("current line", current_line)
             
         except (IndexError, TypeError, KeyError) as e:
             print(f"Error extracting line: {e}")
@@ -127,14 +132,17 @@ class Profile(Panel):
         y_depth = np.array(df_up_map["Depths"].iloc[0])[:-1]
         all_x, interp_lons, interp_lats = get_polyline_profile(current_line, df_up_map, resolution_m=50)
         direction = self.get_direction_label(interp_lons, interp_lats)
-        dynamic_title = f"Profile {idx+1}: {direction}"
+        dynamic_title = f"Profile {int(line_id)}: {direction}"
 
         # 5. Get Stations and Boreholes
         stations_on_line = get_station_projections(current_line, df_up_map, search_radius_m=self.settings.radius)
         
         bh_projections = []
-        if bh_data is not None:
-            bh_projections = get_borehole_projections(current_line, bh_data, view, search_radius_m=self.settings.radius)
+        # if bh_data is not None:
+        #     bh_projections = get_borehole_projections(current_line, bh_data, view, search_radius_m=self.settings.radius)
+
+        if hasattr(self, "boreholes") and self.boreholes:
+            bh_projections = get_boreholes_on_line(current_line,self.boreholes,search_radius_m=self.settings.radius)
 
         # 6. Check for Data Availability
         if not stations_on_line and not bh_projections:
@@ -167,9 +175,8 @@ class Profile(Panel):
 
         # 9. Add Boreholes if they exist
         if bh_projections:
-            rock_map = rock_color_map
-            fig = add_boreholes_to_fig(fig, bh_projections, rock_map)
-
+            fig = add_boreholes_to_section_fig(fig, bh_projections, self.rock_color_map, self.settings.borehole_width)
+        
         # 10. Final Layout Adjustments
         all_x_vals = list(all_x)
         if stations_on_line:
@@ -196,6 +203,7 @@ class Profile(Panel):
         vmin = self.settings.vmin
         vmax = self.settings.vmax
 
+        
         log_vmin = np.log10(vmin)
         log_vmax = np.log10(vmax)
         
@@ -209,7 +217,7 @@ class Profile(Panel):
                 lines = pd.DataFrame(lines)
                 
             # 3. Call your core figure generation logic
-            fig = self.get_figure(lines, mode, selected_idx, view)            
+            fig = self.get_figure(lines, mode, selected_idx, view, )            
             
             # 4. Colorbar Setup
             tick_vals = np.linspace(log_vmin, log_vmax, self.settings.nticks)
@@ -237,8 +245,8 @@ class Profile(Panel):
         return fig
     
     def initialize(self):            
-        return html.Div([
-            # --- STORES ---
+        return html.Div(style={"height": "100%","display": "flex","flexDirection": "column","minHeight": 0},
+            children=[ # --- STORES ---
             html.Div(id="window-container", style={"position": "relative", "zIndex": 9999}), # --- for ctrl + alt + left click and show models  ---
             dcc.Store(id="combined-window-store", data={"window_id": None, "indices": []}),            
             dcc.Store(id="right-click-index-store", data=None),
@@ -256,8 +264,7 @@ class Profile(Panel):
             dcc.Store(id="points-available-attrs-store", data=None),# if self.dataframe is not None else 'date'),
             dcc.Store(id="profile-busy-store", data=False),
             dcc.Store(id="profile-load-trigger", data=0),
-            
-            html.Div(
+                html.Div(
                         style={
                             "display": "flex",
                             "gap": "10px",
@@ -351,4 +358,5 @@ class Profile(Panel):
                 ),                       
             gear_maker(self.id)
         ])
+        # ])
         

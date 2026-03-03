@@ -1,15 +1,12 @@
 from dataclasses import field
 from basepanel import *
-#from database_panel import DatabasePanel
-from dash import dash_table, ctx, no_update
-import numpy as np
-from nosj import nosj
+from map import Map, MapSettings
+from inversion_panels import MultiInversion, MultiInversionSettings, Single_site, SinglesiteSettings
+from model import ModelGraph, ModelGraphSettings, ModelSection, ModelSectionSettings
 
+from dash import dash_table, ctx, no_update
 import plotly.io as pio
-from typing import Literal
-import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+
 import numpy as np
 import os
 import re
@@ -72,7 +69,8 @@ class Map(Panel):
     buffer_sites: list = None
     view  = None
     lines = None
-    boreholes = None
+    hover_marker: dict = None
+    boreholes : dict = None
     rock_color_map = None
     hover_marker: dict = None
 
@@ -232,7 +230,7 @@ class Map(Panel):
                     inactive_df, lat='latitude', lon='longitude', 
                     line_group='line', zoom=zoom, center=center
                 )
-                inactive_fig.update_traces(line=dict(color="yellow", width=5), name="Inactive Profile")
+                inactive_fig.update_traces(line=dict(color="yellow", width=2), name="Inactive Profile")
                 fig.add_traces(inactive_fig.data)
 
             # --- Trace 2: Active Line (Red, Width 8) ---
@@ -242,7 +240,7 @@ class Map(Panel):
                     active_df, lat='latitude', lon='longitude', 
                     line_group='line', zoom=zoom, center=center
                 )
-                active_fig.update_traces(line=dict(color="red", width=8), name="Active Profile")
+                active_fig.update_traces(line=dict(color="red", width=4), name="Active Profile")
                 fig.add_traces(active_fig.data)
 
             if self.hover_marker is not None:
@@ -260,11 +258,19 @@ class Map(Panel):
                     fig.add_trace(trace)
             
         # fig.update_traces(marker=dict(size=7))
+        if self.boreholes:
+            from Sections_plotting import add_boreholes_to_map_fig
+            fig = add_boreholes_to_map_fig(fig, self.boreholes)
+
 
         fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, #uirevision='keep',
                         modebar=dict(add=['drawline', 'drawopenpath'], remove=['select2d','lasso2d','zoomIn', 'zoomOut']),
                         newshape=dict(line_color='cyan', line_width=4, line_dash='dash'),
-                        dragmode='pan', showlegend=False)
+                        dragmode='pan', showlegend=False,
+                        map=dict(
+        bearing=0,
+        pitch=0,)
+                        )
         
         return fig    
     
@@ -434,6 +440,8 @@ class Map(Panel):
                         self.lines = new_df
                     else:
                         self.lines = pd.concat([self.lines, new_df], ignore_index=True)
+                    from __main__ import sesh
+                    sesh.lines = self.lines
                     del relayout_data['shapes']
                     fig = self.render()
             return relayout_data, fig
@@ -1214,21 +1222,6 @@ class dbdtSection(Panel):
         )
         return fig    
 
-markdown_text = '''
-# Panels
-## Data
-- [Sounding](#sounding)     [[+]](#new_sounding)
-- [Section](#section)       [[+]](#new_section)
-## Models
-- [graph](#graph)           [[+]](#new_graph)
-- [colorbar](#colorbar)     [[+]](#new_colorbar)
-- [table](#table)           [[+]](#new_table)
-'''
-
-panel_list = html.Div([
-    dcc.Markdown(children=markdown_text)
-])
-
 @nosj
 class AutoProcessing(PanelSettings):
     sign_correction:  bool = False
@@ -1443,7 +1436,7 @@ class Upload(Panel):
                     id='dem-options-container',
                     style={'display': 'none'}
                 ),
-                html.Br(),
+            html.Br(),
                 html.Div(
                     [
                         dbc.Checkbox(
@@ -1478,6 +1471,8 @@ class Upload(Panel):
                     id='borehole-options-container',
                     style={'display': 'none'}
                 ),
+
+
         ],
         )
     
@@ -1686,8 +1681,6 @@ class ModelSection(Panel):
     highlighted: int = None
     buffer_len = 50
     buffer_start = 0
-    boreholes = None
-    rock_color_map = None
     def __init__(self, **kwargs):
         settings = kwargs.pop('settings', ModelSectionSettings(id='model_section'))
         super().__init__(id='model_section', settings=settings)
@@ -1936,16 +1929,6 @@ class ModelSection(Panel):
             autorange=False
         )
         fig.update_layout(yaxis2=dict(range=[0, 8]))
-
-        # --- Borehole overlay ---
-        if self.boreholes and self.rock_color_map:
-            from borehole_utils import add_boreholes_to_section_fig
-            fig = add_boreholes_to_section_fig(
-                fig, self.boreholes, self.rock_color_map,
-                section_df=self.dataframe,
-                x_axis=self.settings.x_axis,
-            )
-
         return fig
     # def add_callbacks(self, app):
     #     super().add_callbacks(app)
@@ -2276,6 +2259,4 @@ class HotKeyReminder(Panel):
             percent = (end / total_sites) * 100
 
             return percent, f"{start}–{end} of {total_sites} sites"
-        pass
-        # return super().add_callbacks(app)
 
