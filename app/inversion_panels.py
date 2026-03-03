@@ -263,6 +263,7 @@ class MultiInversion(Panel):
         
         @app.callback(
                 [Output('review_layout', 'disabled', allow_duplicate=True),
+                Output('interpret_layout', 'disabled', allow_duplicate=True),
                 Output("multi_inv", "figure", allow_duplicate=True),
                 Output("review_layout","color", allow_duplicate=True),],
             Input('invert_all_button', 'n_clicks'),
@@ -312,7 +313,7 @@ class MultiInversion(Panel):
                 self.title = "Inversion Finished!!!"
                 new_review_clicks = (current_review_clicks or 0) + 1
                 # layouts.invert = layouts.invert_multi_first
-                return False, self.render(), "success" #,new_review_clicks,  0mod2.render(), dbdt1.render(), 
+                return False, False, self.render(), "success" #,new_review_clicks,  0mod2.render(), dbdt1.render(), 
             raise PreventUpdate
         
         @app.callback(
@@ -776,12 +777,6 @@ class Single_site(Panel):
     def build_depth_from_loop(self, gates=None, n_layers=31):
         import numpy as np
 
-        # scale maximum depth with sqrt(area)
-        # zmax = 0.5 * np.sqrt(loop_area)  # empirical factor
-
-        # log spacing
-        # thickness = np.logspace(-1, np.log10(zmax), n_layers)
-        print('gates:', gates)
         if gates <35:
             depth = np.cumsum(np.logspace(0, 1.3, 31)).tolist()
         elif gates > 35:

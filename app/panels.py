@@ -532,7 +532,7 @@ class dbdtSounding(Panel):
             x=self.settings.x_axis,
             y='dbdt_syn',
             color="system_id",
-            color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
+            color_discrete_sequence=[self.settings.lm_color, self.settings.hm_color],
             title="dbdt vs time by site_id",
             custom_data=["system_id", "data_id", "site_id"],
             # range_y=[self.settings.dbdt_min, self.settings.dbdt_max]
@@ -984,46 +984,46 @@ class dbdtSection(Panel):
             custom_data=["system_id", "data_id", "site_id"],
         )
         fig2.update_traces(line_width=1.5)
-        # ---- Add ENABLED markers (black scatter) as ONE legend entry ----
-        enabled_seen = False
-        for tr in fig3.data:
-            tr.name = "Enabled"
-            tr.legendgroup = "enabled_points"
-            tr.showlegend = not enabled_seen
-            enabled_seen = True
-            fig.add_trace(tr)
 
-        # ---- Add LM/HM LINES as TWO legend entries ----
-        lm_line_seen = False
-        hm_line_seen = False
-        for tr in fig2.data:
-            # px.line(..., color="system_id") gives tr.name == "hm" or "lm"
-            if tr.name == "lm":
-                tr.name = "LM"
-                tr.legendgroup = "lm_lines"
-                tr.showlegend = not lm_line_seen
-                lm_line_seen = True
-            elif tr.name == "hm":
-                tr.name = "HM"
-                tr.legendgroup = "hm_lines"
-                tr.showlegend = not hm_line_seen
-                hm_line_seen = True
+        for trace in fig3.data:
+            fig.add_trace(trace)
+
+        for trace in fig2.data:
+            fig.add_trace(trace)
+
+        shown_groups = set()
+
+        for trace in fig.data:
+
+            # ----- LINES -----
+            if trace.mode == "lines":
+                if trace.name == "lm":
+                    trace.name = "LM lines"
+                    trace.legendgroup = "lm_lines"
+                elif trace.name == "hm":
+                    trace.name = "HM lines"
+                    trace.legendgroup = "hm_lines"
+
+            # ----- MARKERS -----
+            elif trace.mode == "markers":
+
+                if trace.marker.color == "black":
+                    trace.name = "Enabled"
+                    trace.legendgroup = "enabled_points"
+
+                elif trace.marker.color == "gray":
+                    trace.name = "Disabled"
+                    trace.legendgroup = "disabled_points"
+
+            # ---- SHOW LEGEND ONLY ONCE PER GROUP ----
+            if trace.legendgroup not in shown_groups:
+                trace.showlegend = True
+                shown_groups.add(trace.legendgroup)
             else:
-                tr.showlegend = False
-            fig.add_trace(tr)
-
-        # ---- Add DISABLED markers (gray scatter) as ONE legend entry ----
-        disabled_seen = False
-        # IMPORTANT: this refers to the *original* gray scatter figure in this function.
-        # In your current code, that figure is named `fig` at creation time; rename it
-        # to `fig_disabled` (see note below) so you can still access its traces here.
-        for tr in fig_disabled.data:
-            tr.name = "Disabled"
-            tr.legendgroup = "disabled_points"
-            tr.showlegend = not disabled_seen
-            disabled_seen = True
-            fig.add_trace(tr)
+                trace.showlegend = False
+        dx = xmax - xmin
         fig.update_layout(legend_title_text=None)
+        fig.update_xaxes(range=[xmin-0.01*dx, xmax+0.01*dx])
 
 
         dx = xmax - xmin
@@ -1600,7 +1600,7 @@ class ModelGraph(Panel):
         # ...existing code...
         df_layers_long = pd.melt(
             self.dataframe,
-            id_vars=['site_id', 'daytime', 'longitude', 'latitude', 'date', 'elevation', 'layer', 'resistivity'],
+            id_vars=['site_id', 'daytime', 'longitude', 'latitude', 'date', 'elevation', 'layer', 'resistivity','doi'],
             value_vars=['top_depth', 'bottom_depth'],
             var_name='depth_type',
             value_name='depth'
@@ -1645,6 +1645,8 @@ class ModelGraph(Panel):
                     name=f"Site {self.highlighted}"
                 ), 
             )
+
+            fig.add_trace(go.Scatter(x=[0.1,1000],y=[df_highlighted['doi'].iloc[0],df_highlighted['doi'].iloc[0]],mode="lines",line=dict(color="black",width=2,dash="dash"),showlegend=False))
             # fig.add_trace(
             #     go.Scatter(
             #         x=df_layers_long["resistivity"],

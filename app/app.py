@@ -422,7 +422,7 @@ app.layout = html.Div([
             dbc.Button("2. Process",    id="process_layout",   disabled=True, color="secondary"),
             dbc.Button("3. Invert",     id="invert_layout",    disabled=True, color="secondary"),
             dbc.Button("4. QC",         id="review_layout",    disabled=True, color="secondary"),
-            dbc.Button("5. Interpret",  id="interpret_layout", disabled=False, color="secondary"),
+            dbc.Button("5. Interpret",  id="interpret_layout", disabled=True, color="secondary"),
         ], style={'width': '100%'})
     ], style={
         'position': 'fixed',
