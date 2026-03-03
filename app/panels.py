@@ -538,7 +538,7 @@ class dbdtSounding(Panel):
             # range_y=[self.settings.dbdt_min, self.settings.dbdt_max]
 
         )
-
+        fig2.update_traces(line_width=2)
 
 
         for trace in fig3.data:
@@ -609,7 +609,7 @@ class dbdtSounding(Panel):
             custom_data=["system_id", "data_id", "site_id"],
             range_y=[self.settings.dbdt_min, self.settings.dbdt_max]
         )
-        
+        fig3.update_traces(line_width=2)
         for trace in fig2.data:
             fig.add_trace(trace)
 
@@ -754,6 +754,7 @@ class rhoaSounding(dbdtSounding):
             title="rhoa vs time",
             custom_data=["system_id", "data_id", "site_id"],
         )
+        fig2.update_traces(line_width=2)
 
         for trace in fig3.data:
             fig.add_trace(trace)
@@ -982,6 +983,7 @@ class dbdtSection(Panel):
             title="field data versus simulated data",
             custom_data=["system_id", "data_id", "site_id"],
         )
+        fig2.update_traces(line_width=1.5)
         # ---- Add ENABLED markers (black scatter) as ONE legend entry ----
         enabled_seen = False
         for tr in fig3.data:
@@ -1114,6 +1116,7 @@ class dbdtSection(Panel):
             title="dbdt vs time by site_id",
             custom_data=["system_id", "data_id", "site_id"],
         )
+        fig2.update_traces(line_width=1.5)
 
         for trace in fig3.data:
             fig.add_trace(trace)
@@ -2182,7 +2185,7 @@ class HotKeyReminder(Panel):
                     dbc.Button("enable  [ctrl+e]", id='enableButton'),
                     ]),
                     dbc.ButtonGroup([
-                        dbc.Button("Beggining [<<]", id='beginning-buffer', style={"marginRight": "6px"}),
+                        dbc.Button("Beginning [<<]", id='beginning-buffer', style={"marginRight": "6px"}),
                         dbc.Button("Previous buffer [<<-]", id='prev-buffer', style={"marginRight": "6px"}),
                         dbc.Button("Previous [<-]", id='highlight_prev', style={"marginRight": "6px"}),
                         dbc.Button("Next [->]", id='highlight_next', style={"marginRight": "6px"}),
@@ -2259,4 +2262,3 @@ class HotKeyReminder(Panel):
             percent = (end / total_sites) * 100
 
             return percent, f"{start}–{end} of {total_sites} sites"
-

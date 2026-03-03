@@ -1356,18 +1356,6 @@ def toggle_borehole_upload(use_borehole):
     return {'display': 'none', 'marginTop': '10px'}, m1.render()
 
 
-# # --------------------- DEM ---------------------
-@app.callback(
-    Output('dem-upload-container', 'style'),
-    Input('use-dem', 'value'),
-    prevent_initial_call=False
-)
-def toggle_dem_upload(use_dem):
-    if use_dem:
-        return {'display': 'block', 'marginTop': '10px'}
-    sesh.dem_path = None
-    sesh.dem_name = None
-    return {'display': 'none', 'marginTop': '10px'}
 
 @app.callback(
     Output('dem-options-container', 'style'),
@@ -2189,77 +2177,6 @@ def trigger_export(n_clicks, fig_data, current_idx):
         print(f"Export Error: {e}")
         return dbc.Alert(f"Export Failed: {str(e)}", color="danger")
 
-
-
-
-@app.callback(
-    Output('output-dem-load', 'children'),
-    Output('output-data-summary', 'children', allow_duplicate=True),
-    Output('dem-applied', 'data'),
-    Input('load-dem-vs-gps', 'n_clicks'),
-    State('use-dem', 'value'),
-    prevent_initial_call=True
-)
-def load_dem_vs_gps(n_clicks, use_dem):
-    if not n_clicks:
-        raise PreventUpdate
-    if not use_dem:
-        return html.Div("Enable 'Use DEM' first."), build_data_summary(), False
-    if not sesh.dem_path or not os.path.exists(sesh.dem_path):
-        return html.Div("No DEM found. Please download or upload a DEM first."), build_data_summary(), False
-
-    stats = build_gps_dem_summary()
-    replace_error = None
-    try:
-        df = sesh.data
-        if df is not None:
-            if 'elevation_gps' not in df.columns:
-                df['elevation_gps'] = df['elevation']
-            if 'site_id' in df.columns:
-                df_sites = df.loc[df['site_id'] != -1].drop_duplicates(subset=['site_id'])[['site_id', 'longitude', 'latitude', 'elevation']]
-                lons = df_sites['longitude'].astype(float).to_numpy()
-                lats = df_sites['latitude'].astype(float).to_numpy()
-                valid_coords = np.isfinite(lons) & np.isfinite(lats)
-                df_sites = df_sites.loc[valid_coords].reset_index(drop=True)
-                lons = lons[valid_coords]
-                lats = lats[valid_coords]
-
-                if len(df_sites) > 0:
-                    dem_vals = _sample_dem_at_points(lons, lats, sesh.dem_path)
-                    valid_dem = np.isfinite(dem_vals)
-                    if valid_dem.any():
-                        dem_map = pd.Series(dem_vals[valid_dem], index=df_sites.loc[valid_dem, 'site_id']).to_dict()
-                        dem_series = df['site_id'].map(dem_map)
-                        df.loc[dem_series.notna(), 'elevation'] = dem_series
-            else:
-                lons = df['longitude'].astype(float).to_numpy()
-                lats = df['latitude'].astype(float).to_numpy()
-                valid_coords = np.isfinite(lons) & np.isfinite(lats)
-                if valid_coords.any():
-                    dem_vals = _sample_dem_at_points(lons[valid_coords], lats[valid_coords], sesh.dem_path)
-                    valid_dem = np.isfinite(dem_vals)
-                    idx = df.index[valid_coords]
-                    df.loc[idx[valid_dem], 'elevation'] = dem_vals[valid_dem]
-
-            sesh.data = df
-            if dbdt1.dataframe is not None and 'site_id' in df.columns:
-                dbdt1.dataframe = df[df['site_id'].isin(dbdt1.dataframe['site_id'].unique())]
-            if dbdt2.dataframe is not None and 'site_id' in df.columns:
-                dbdt2.dataframe = df[df['site_id'].isin(dbdt2.dataframe['site_id'].unique())]
-    except Exception as exc:
-        replace_error = exc
-
-    message_children = [
-        html.Div("DEM loaded. GPS vs DEM updated."),
-        stats
-    ]
-    if replace_error is not None:
-        message_children.append(html.Div(f"DEM elevation replace failed: {replace_error}"))
-
-    dem_applied = replace_error is None
-    return html.Div(message_children), build_data_summary(), dem_applied
-
-# --------------------- Warning for when map not zoomed in and view is None ---------------------
 @app.callback(
     Output('zoom-toast', 'is_open'),
     Input('map', 'relayoutData'),
@@ -2386,45 +2303,6 @@ def master_line_controller(relayout, clear_sel_n, clear_all_n, prev_n, next_n, v
     return rows, current_idx, prev_disabled, next_disabled, updated_map#, False
 
 
-
-@app.callback(
-    Output('output-dem-load', 'children', allow_duplicate=True),
-    Output('output-data-summary', 'children', allow_duplicate=True),
-    Output('dem-applied', 'data', allow_duplicate=True),
-    Input('restore-gps-elevation', 'n_clicks'),
-    prevent_initial_call=True
-)
-def restore_gps_elevation(n_clicks):
-    if not n_clicks:
-        raise PreventUpdate
-    if sesh.data is None:
-        return html.Div("No data loaded."), build_data_summary(), False
-    df = sesh.data
-    if 'elevation_gps' not in df.columns:
-        return html.Div("No GPS elevation backup found."), build_data_summary(), False
-
-    df['elevation'] = df['elevation_gps']
-    sesh.data = df
-
-    if dbdt1.dataframe is not None and 'site_id' in df.columns:
-        dbdt1.dataframe = df[df['site_id'].isin(dbdt1.dataframe['site_id'].unique())]
-    if dbdt2.dataframe is not None and 'site_id' in df.columns:
-        dbdt2.dataframe = df[df['site_id'].isin(dbdt2.dataframe['site_id'].unique())]
-
-    return html.Div("GPS elevation restored."), build_data_summary(), False
-
-
-@app.callback(
-    Output('restore-gps-elevation', 'disabled'),
-    Input('dem-applied', 'data'),
-    Input('use-dem', 'value'),
-    prevent_initial_call=False
-)
-def toggle_restore_button(dem_applied, use_dem):
-    return not bool(dem_applied and use_dem)
-
-
-
 # --------------------- draw lines and/or multilines ---------------------
 @app.callback(
     Output('dem-upload-container', 'style'),
@@ -2438,69 +2316,6 @@ def toggle_dem_upload(use_dem):
     sesh.dem_name = None
     return {'display': 'none', 'marginTop': '10px'}
 
-
-@app.callback(
-    Output('borehole-upload-container', 'style'),
-    m1.output,
-    Input('use-borehole', 'value'),
-    prevent_initial_call=True
-)
-def toggle_borehole_upload(use_borehole):
-    if use_borehole:
-        return {'display': 'block', 'marginTop': '10px'}, no_update
-    # Clear borehole data when unchecked
-    m1.boreholes = None
-    m1.rock_color_map = None
-    mod2.boreholes = None
-    mod2.rock_color_map = None
-    mod1.boreholes = None
-    mod1.rock_color_map = None
-    return {'display': 'none', 'marginTop': '10px'}, m1.render()
-
-@app.callback(
-    Output('dem-options-container', 'style'),
-    Output('borehole-options-container', 'style'),
-    Input('upload-data', 'contents'),
-    Input('url', 'hash'),
-    prevent_initial_call=False
-)
-def toggle_dem_options(contents, url_hash):
-    if sesh.data is None:
-        return {'display': 'none'}, {'display': 'none'}
-    return {'display': 'block'}, {'display': 'block'}
-
-
-@app.callback(
-    Output('dem-api-key-container', 'style'),
-    Output('dem-resolution-container', 'style'),
-    Output('dem-resolution', 'options'),
-    Output('dem-resolution', 'value'),
-    Input('dem-source', 'value'),
-    State('dem-resolution', 'value'),
-    prevent_initial_call=False
-)
-def toggle_dem_inputs(source, current_value):
-    resolution_options_map = {
-        'opentopo': [
-            {'label': 'Global Copernicus GLO-30 (~30 m)', 'value': 'opentopo_cop30'},
-            {'label': 'Global SRTMGL1 (~30 m)', 'value': 'opentopo_srtmgl1'},
-            {'label': 'Global SRTMGL3 (~90 m)', 'value': 'opentopo_srtmgl3'},
-            {'label': 'Global ALOS (~30 m)', 'value': 'opentopo_alos'},
-        ],
-        'etopo': [
-            {'label': 'ETOPO2022 30 arc-second (surface, global)', 'value': 'etopo_30s'},
-            {'label': 'ETOPO2022 60 arc-second (surface, global)', 'value': 'etopo_60s'},
-        ],
-    }
-
-    options = resolution_options_map.get(source, [])
-    valid_values = {opt['value'] for opt in options}
-    default_value = options[0]['value'] if options else None
-    value = current_value if current_value in valid_values else default_value
-
-    if source == 'opentopo':
-        return {'marginBottom': '8px'}, {'display': 'flex', 'gap': '10px'}, options, value
-    return {'display': 'none'}, {'display': 'flex', 'gap': '10px'}, options, value
 
 
 @app.callback(
