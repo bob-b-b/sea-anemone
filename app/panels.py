@@ -2227,6 +2227,8 @@ class HotKeyReminder(Panel):
                                         "fontSize": "13px"
                                     }
                                 ),
+                            dbc.Progress(id="buffer-progress",value=0,max=100,style={"height": "18px", "marginTop": "10px", "marginLeft": "12px", "marginRight": "6px"}),
+                            html.Div(id="buffer-progress-text", style={"fontSize": "14px"}),
                             ],
                             style={
                                 "display": "flex",
@@ -2234,6 +2236,7 @@ class HotKeyReminder(Panel):
                             }
                         )
                     ]),
+                    
                     dbc.ButtonGroup([
                         dbc.Button("save [ctrl+s]", id='saveButton'),
                     ])
@@ -2245,6 +2248,34 @@ class HotKeyReminder(Panel):
         return x
     
     def add_callbacks(self, app):
+        super().add_callbacks(app)
+        @app.callback(
+            Output("buffer-progress", "value"),
+            Output("buffer-progress-text", "children"),
+            Input("data-buffer", "data"),
+            Input("map", "figure"),   # ← triggers when upload completes
+            prevent_initial_call=False
+        )
+        def update_buffer_progress(buffer_data, _):
+            from __main__ import sesh
+
+            if sesh.data is None or "site_id" not in sesh.data.columns:
+                return 0, "No data loaded"
+
+            total_sites = sesh.data.loc[
+                sesh.data["site_id"] != -1, "site_id"
+            ].nunique()
+
+            if total_sites == 0:
+                return 0, "No sites"
+
+            start = buffer_data.get("start_site", 0)
+            length = buffer_data.get("length", 0)
+
+            end = min(start + length, total_sites)
+            percent = (end / total_sites) * 100
+
+            return percent, f"{start}–{end} of {total_sites} sites"
         pass
         # return super().add_callbacks(app)
 

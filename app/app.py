@@ -770,15 +770,11 @@ app.clientside_callback(
     """
         function(n_clicks) {
             if (n_clicks) {
-                if (window.pywebview && window.pywebview.api) {
-                    window.pywebview.api.open_help();
-                } else {
-                    window.open(
-                        '/help/index.html',
-                        '_blank',
-                        'width=1100,height=800,menubar=no,toolbar=no,location=no,status=no,scrollbars=yes,resizable=yes'
-                    );
-                }
+                window.open(
+                    '/help/index.html',
+                    '_blank',
+                    'width=1100,height=800,menubar=no,toolbar=no,location=no,status=no,scrollbars=yes,resizable=yes'
+                );
             }
             return window.dash_clientside.no_update;
         }
@@ -1117,7 +1113,6 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color,re
         cd = pt.get('customdata')
         if cd and isinstance(cd, list) and len(cd) >= 3 and cd[2] == 'borehole':
             raise PreventUpdate
-        site_id = int(pt['pointNumber'])
         if review_layout_color != 'primary':
             site_id = sesh.data['site_id'].iloc[click_data['points'][0]['pointNumber']]
         else:
@@ -1229,7 +1224,7 @@ def upload_file(contents, current_process_clicks):
         sesh_str = base64.b64decode(info).decode().replace('null', 'None')
         sesh_dict = dict(eval(sesh_str))
         filepath = sesh_dict['save_dir'].replace(' ', '%20')
-        return [no_update]*5 + [html.Div(f"File: {sesh_dict['save_dir']}"), f"#load={filepath}"]
+        return [no_update]*5 + [html.Div(f'File: {sesh_dict['save_dir']}'), f"#load={filepath}"]
     
     warning_msg = None
     if sesh.save_dir is None:
@@ -1288,57 +1283,8 @@ def upload_file(contents, current_process_clicks):
     if warning_msg:
         upload_msg = f"{upload_msg} {warning_msg}"
 
-    return html.Div(upload_msg), m1.render(), dbdt1.render(), dbdt2.render(), rhoa.render(), summary, True, toast_msg, False, False, new_process_clicks, *bbox_vals, {'display': 'block'}, {'display': 'block'}#, t1.render()
+        return html.Div(upload_msg), m1.render(), dbdt1.render(), dbdt2.render(), rhoa.render(), summary, True, toast_msg, False, False, new_process_clicks, *bbox_vals, {'display': 'block'}, {'display': 'block'}
 
-
-@app.callback(
-    Output('output-borehole-upload', 'children'),
-    Output('borehole-loaded', 'data'),
-    m1.output,
-    Output('upload-toast', 'is_open', allow_duplicate=True),
-    Output('upload-toast', 'children', allow_duplicate=True),
-    Input('upload-borehole', 'contents'),
-    State('upload-borehole', 'filename'),
-    running=[(Output('upload-borehole', 'disabled'), True, False)],
-    prevent_initial_call=True
-)
-def upload_borehole(contents, filename):
-    if contents is None:
-        raise PreventUpdate
-
-    import tempfile
-    from borehole_utils import load_borehole_file, get_borehole_projections
-
-    # Decode base64 content and write to temp file
-    content_type, content_string = contents.split(',', 1)
-    decoded = base64.b64decode(content_string)
-    text = decoded.decode('utf-8', errors='replace')
-
-    # Parse borehole data
-    try:
-        bh_data, rock_color_map = load_borehole_file(text, from_string=True)
-    except Exception as e:
-        return html.Div(f"Error parsing borehole file: {e}"), False, no_update, True, f"Borehole upload failed: {e}"
-
-    if not bh_data:
-        return html.Div("No boreholes found in file."), False, no_update, True, "No boreholes found."
-
-    # Project UTM -> lat/lon
-    bh_projections = get_borehole_projections(bh_data)
-
-    # Store on panels
-    m1.boreholes = bh_projections
-    m1.rock_color_map = rock_color_map
-    mod2.boreholes = bh_projections
-    mod2.rock_color_map = rock_color_map
-    mod1.boreholes = bh_projections
-    mod1.rock_color_map = rock_color_map
-
-    n_bh = len(bh_data)
-    bh_ids = ', '.join(b['id'] for b in bh_data)
-    msg = f"Loaded {n_bh} borehole(s): {bh_ids}"
-
-    return html.Div(msg), True, m1.render(), True, f"Loaded {n_bh} borehole(s)"
 
 @app.callback(
     Output('output-borehole-upload', 'children'),
@@ -2793,84 +2739,13 @@ def update_map_hover(hoverData, active_idx):
         return no_update
 
 if __name__ == "__main__":
-    import threading
-    import time as _time
-    import webview
-    import urllib.request
-
-    PORT = 8050
-    APP_URL = f'http://127.0.0.1:{PORT}/'
-
-    # --- JS API exposed to webview windows ---
-    class Api:
-        def open_help(self):
-            """Open the help docs in a new webview window."""
-            webview.create_window(
-                'Sea Anemone - Help',
-                f'{APP_URL}help/index.html',
-                width=1100,
-                height=800,
-            )
-
-    # --- Loading splash shown while server boots ---
-    _SPLASH_HTML = """
-    <!DOCTYPE html>
-    <html>
-    <head><meta charset="utf-8">
-    <style>
-        body { margin:0; height:100vh; display:flex; align-items:center;
-               justify-content:center; background:#1a1a2e; font-family:Segoe UI,sans-serif; }
-        .loader { text-align:center; color:#e0e0e0; }
-        .loader h1 { font-size:28px; margin-bottom:18px; letter-spacing:1px; }
-        .spinner { width:48px; height:48px; border:4px solid rgba(255,255,255,.15);
-                   border-top-color:#4fc3f7; border-radius:50%; animation:spin .8s linear infinite;
-                   margin:0 auto 16px; }
-        @keyframes spin { to { transform:rotate(360deg); } }
-        .loader p { font-size:14px; color:#90a4ae; }
-    </style></head>
-    <body><div class="loader">
-        <h1>Sea Anemone</h1>
-        <div class="spinner"></div>
-        <p>Loading application…</p>
-    </div></body></html>
-    """
-
-    def _wait_and_navigate(window):
-        """Poll the server until it responds, then navigate the window."""
-        for _ in range(120):  # up to 60 seconds
-            try:
-                urllib.request.urlopen(APP_URL, timeout=1)
-                window.load_url(APP_URL)
-                return
-            except Exception:
-                _time.sleep(0.5)
-        # Timeout fallback
-        window.load_url(APP_URL)
-
     try:
-        api = Api()
-
-        # Start Dash/Flask server in a daemon background thread
-        server_thread = threading.Thread(
-            target=lambda: app.run(port=PORT, debug=False, use_reloader=False),
-            daemon=True
-        )
-        server_thread.start()
-
-        # Show splash window immediately (no server wait)
-        window = webview.create_window(
-            'Sea Anemone',
-            html=_SPLASH_HTML,
-            width=1400,
-            height=900,
-            min_size=(1024, 700),
-            js_api=api,
-        )
-
-        # Once the window is shown, navigate to app as soon as server is up
-        webview.start(func=_wait_and_navigate, args=[window])
+        is_frozen = getattr(sys, "frozen", False)
+        app.run(port=8050, debug=not is_frozen, use_reloader=not is_frozen)
     except Exception as e:
         print(f"Error running app: {e}")
-    finally:
-        # Force-kill the process immediately when the window is closed
-        os._exit(0)
+# finally:
+#     print('closing app, saving data to zip...')
+#     sesh.save()
+
+#start msedge --app=http://127.0.0.1:8050/
