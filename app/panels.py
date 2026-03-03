@@ -77,7 +77,7 @@ class Map(Panel):
         super().__init__(id='map', settings=settings)
         self.dataframe = data
 
-    def render(self, current_idx=None):
+    def render(self, current_idx=None, is_last_tab = False):
         if self.dataframe is None: return self.empty_render()
         df_plot = self.dataframe
         # if 'site_id' in df_plot.columns:
@@ -239,15 +239,22 @@ class Map(Panel):
             fig = add_boreholes_to_map_fig(fig, self.boreholes)
 
 
-        fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, #uirevision='keep',
-                        modebar=dict(add=['drawline', 'drawopenpath'], remove=['select2d','lasso2d','zoomIn', 'zoomOut']),
-                        newshape=dict(line_color='cyan', line_width=4, line_dash='dash'),
-                        dragmode='pan', showlegend=False,
-                        map=dict(
-        bearing=0,
-        pitch=0,)
-                        )
-        
+        tools_to_add = ['drawline', 'drawopenpath'] if is_last_tab else []
+        tools_to_remove = ['select2d','lasso2d','zoomIn', 'zoomOut'] if is_last_tab else []
+
+        # 2. Update the layout dynamically
+        fig.update_layout(
+            margin={"r":0,"t":0,"l":0,"b":0},
+            # uirevision=str(is_last_tab),
+            uirevision=f"mode-{is_last_tab}",
+            modebar=dict(add=tools_to_add, remove=tools_to_remove),
+            newshape=dict(line_color='cyan', line_width=4, line_dash='dash'),
+            dragmode='pan', 
+            showlegend=False,
+            map=dict(bearing=0, pitch=0)
+        )
+        # print("is last tab", is_last_tab)
+
         return fig    
     
     @property

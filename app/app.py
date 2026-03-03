@@ -880,7 +880,7 @@ def update_model_section_from_buffer(buffer_data):
     rhoa.dataframe = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
     # dbdt1.buffer_sites = buffer_sites
 
-    return mod2.render(), dbdt2.render(), dbdt1.render(), m1.render(), mod1.render(), rhoa.render()
+    return mod2.render(), dbdt2.render(), dbdt1.render(), m1.render(is_last_tab=False), mod1.render(), rhoa.render()
 
 @app.callback(
     Output('data-buffer', 'data'),
@@ -1050,7 +1050,7 @@ def highlight_change(n1, n2, invert_layout_color,model):
     
     
 
-    return ctx.triggered_id, m1.render(), mod1.render(), dbdt1.render(), Multi_inv.render(), mod2.render(), dbdt2.render(), rhoa.render()
+    return ctx.triggered_id, m1.render(is_last_tab=False), mod1.render(), dbdt1.render(), Multi_inv.render(), mod2.render(), dbdt2.render(), rhoa.render()
 
 
 @app.callback(
@@ -1101,7 +1101,7 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color,bu
     #     #     df_layers = pd.concat([mod1.dataframe[df_data['site_id'] != site_id], df_layers], ignore_index=True)
     #     mod1.dataframe = df_layers
     #     dbdt1.dataframe = df_site
-    return m1.render(), mod1.render(), dbdt1.render(), mod2.render(), dbdt2.render(), rhoa.render()
+    return m1.render(is_last_tab=False), mod1.render(), dbdt1.render(), mod2.render(), dbdt2.render(), rhoa.render()
 
 @app.callback(
     Output("starting-model", "data", allow_duplicate=True),
@@ -1241,7 +1241,7 @@ def upload_file(contents, current_process_clicks):
         upload_msg = f"{upload_msg} {warning_msg}"
 
     # return html.Div(upload_msg), m1.render(), dbdt1.render(), dbdt2.render(), rhoa.render(), summary, True, toast_msg,  False, False, new_process_clicks, *bbox_vals, {'display': 'block'}#, t1.render() gis.render(),
-    return html.Div(upload_msg), m1.render(), dbdt1.render(), dbdt2.render(), rhoa.render(), summary, True, toast_msg, False, False, new_process_clicks, *bbox_vals, {'display': 'block'}, {'display': 'block'}
+    return html.Div(upload_msg), m1.render(is_last_tab=False), dbdt1.render(), dbdt2.render(), rhoa.render(), summary, True, toast_msg, False, False, new_process_clicks, *bbox_vals, {'display': 'block'}, {'display': 'block'}
 
 @app.callback(
     Output('output-borehole-upload', 'children'),
@@ -1295,7 +1295,7 @@ def upload_borehole(contents, filename):
     bh_ids = ', '.join(b['id'] for b in bh_data)
     msg = f"Loaded {n_bh} borehole(s): {bh_ids}"
 
-    return html.Div(msg), True, m1.render(), True, f"Loaded {n_bh} borehole(s)"
+    return html.Div(msg), True, m1.render(is_last_tab=False), True, f"Loaded {n_bh} borehole(s)"
 
 
 @app.callback(
@@ -1314,7 +1314,7 @@ def toggle_borehole_upload(use_borehole):
     mod2.rock_color_map = None
     mod1.boreholes = None
     mod1.rock_color_map = None
-    return {'display': 'none', 'marginTop': '10px'}, m1.render()
+    return {'display': 'none', 'marginTop': '10px'}, m1.render(is_last_tab=False)
 
 
 # # --------------------- DEM ---------------------
@@ -1858,14 +1858,6 @@ def remember_api_key_on_download(dem_downloaded, api_key, api_keys):
     keys.insert(0, api_key)
     return keys[:20]
 
-@app.callback(
-    Output('map', 'figure', allow_duplicate=True),
-    Input('flex-layout', 'model'),
-    prevent_initial_call=True
-)
-def print_flex_layout_model(model):
-    # print(f"Flex layout model: {model}")
-    return m1.render()
 
 @app.callback(
     [
@@ -1875,9 +1867,11 @@ def print_flex_layout_model(model):
         Output('invert_layout', 'color'),
         Output('review_layout', 'color'),
         Output('interpret_layout', 'color'),
+        Output('map', 'figure', allow_duplicate=True),
     ],
     [
         State('flex-layout', 'model'),
+        State('selected-line-index', 'data'),
         Input("upload_layout", 'n_clicks'),
         Input("process_layout", 'n_clicks'),
         Input("invert_layout", 'n_clicks'),
@@ -1886,25 +1880,47 @@ def print_flex_layout_model(model):
     ],
     prevent_initial_call=True
 )
-def update_layout(model, load_clicks, process_clicks, invert_clicks, review_clicks, interpret_clicks):
+def update_layout(model, active_idx,
+                  load_clicks, process_clicks,
+                  invert_clicks, review_clicks, interpret_clicks):
+
     ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
-    
-    # Get the ID of the button that was clicked
+
     button_id = ctx.triggered[0]['prop_id'].split('.')[0]
-    
+    is_interpret = (button_id == 'interpret_layout')
+
+    colors = {
+        "upload_layout": 'secondary',
+        "process_layout": 'secondary',
+        "invert_layout": 'secondary',
+        "review_layout": 'secondary',
+        "interpret_layout": 'secondary'
+    }
+    colors[button_id] = 'primary'
+
+    # 🔥 ONE render only
+    map_fig = m1.render(
+        current_idx=active_idx,
+        is_last_tab=is_interpret
+    )
+
     if button_id == "upload_layout":
-        return layouts.upload, 'primary', 'secondary', 'secondary', 'secondary', 'secondary'
+        return layouts.upload, *colors.values(), map_fig
+
     elif button_id == "process_layout":
-        return layouts.data, 'secondary', 'primary', 'secondary', 'secondary', 'secondary'
+        return layouts.data, *colors.values(), map_fig
+
     elif button_id == "invert_layout":
-        return layouts.invert, 'secondary', 'secondary', 'primary', 'secondary', 'secondary'
+        return layouts.invert, *colors.values(), map_fig
+
     elif button_id == "review_layout":
-        return layouts.review, 'secondary', 'secondary', 'secondary', 'primary', 'secondary'
-    elif button_id == 'interpret_layout':
-        return layouts.interpret, 'secondary', 'secondary', 'secondary', 'secondary', 'primary'
-    # return model, 'secondary', 'secondary', 'secondary', 'secondary', 'secondary'
+        return layouts.review, *colors.values(), map_fig
+
+    elif button_id == "interpret_layout":
+        return layouts.interpret, *colors.values(), map_fig
+
 
 layout_output_list = [
         m1.output, dbdt1.output, dbdt2.output, rhoa.output, mod2.output,
@@ -1970,7 +1986,7 @@ def handle_url_hash(url_hash, model):
         if folder_path:
             sesh.save_dir = folder_path + '/' if not folder_path.endswith('/') else folder_path
             print(f'Working directory changed to: {sesh.save_dir}')
-            res[-2] = sesh.save_dir
+            res[-5] = sesh.save_dir
 
     if url_hash.startswith('#load'):
         folder = url_hash.split('=')[1].replace('%20', ' ').replace('%22', '')
@@ -2001,7 +2017,7 @@ def handle_url_hash(url_hash, model):
                     html.Small("Upload a new .bor file below to overwrite existing data.", style={'color': '#6c757d', 'fontStyle': 'italic', 'fontSize': '0.85rem'})])
             res[-2] = {'display': 'block', 'marginTop': '10px'} # container style
             
-            res[0] = m1.render()
+            res[0] = m1.render(is_last_tab=False)
         else:
             # If no boreholes, ensure UI reflects that
             res[-4] = False
@@ -2019,7 +2035,7 @@ def handle_url_hash(url_hash, model):
             Multi_inv.dataframe = sesh.data.copy()
             Sing_inv.dataframe = sesh.data.copy()
             profile.dataframe= sesh.models.copy()  if sesh.models is not None else None
-            res[0] = m1.render()
+            res[0] = m1.render(is_last_tab=False)
             res[1] = dbdt1.render()
             res[2] = dbdt2.render()
             res[3] = rhoa.render()
@@ -2190,6 +2206,7 @@ def manage_windows(click_data, n_closes, current_windows, combined_state,all_lin
                 ], style={"height": "100%"})
                 
                 title = f"Comparison: {len(tem_ids)} Sites"
+                width_step = "900px"
 
             # Scenario: Only Boreholes selected -> Side-by-Side Logs
             elif len(tem_ids) == 0:
@@ -2239,7 +2256,7 @@ def manage_windows(click_data, n_closes, current_windows, combined_state,all_lin
                 ], style={"height": "100%"})
 
                 title = "TEM vs. Borehole Correlation"
-                width_step = "1100px" # Widened slightly for better side-by-side visibility
+                width_step = "900px" # Widened slightly for better side-by-side visibility
 
             # Update Window list
             comp_id = combined_state["window_id"]
@@ -2277,7 +2294,7 @@ def manage_windows(click_data, n_closes, current_windows, combined_state,all_lin
 def update_map_hover(hoverData, active_idx):
     if not hoverData or 'points' not in hoverData or not hoverData['points']:
         m1.hover_marker = None
-        return m1.render()
+        return m1.render(is_last_tab=True)
 
     try:
         point = hoverData['points'][0]
@@ -2325,10 +2342,9 @@ def update_map_hover(hoverData, active_idx):
         # Update the class marker and render
         m1.hover_marker = {
             "latitude": lat,
-            "longitude": lon
-        }
+            "longitude": lon}
         
-        return m1.render()
+        return m1.render(is_last_tab=True)
 
     except Exception as e:
         print(f"Hover Sync Error: {e}")
@@ -2432,7 +2448,7 @@ def trigger_export(n_clicks, fig_data, current_idx):
         
         # Convert to list of dicts or whatever GIS_helpers expects
         current_coords = current_line_df.to_dict('records')
-        print("CURRENT COORDS",current_coords)
+        # print("CURRENT COORDS",current_coords)
 
         # 4. Execute Save logic
         # Passing fig_data, coords, and the ID to your helper
@@ -2532,7 +2548,7 @@ def master_line_controller(url_hash,relayout, clear_sel_n, clear_all_n, prev_n, 
     elif "btn-clear-all" in trigger_id:
         m1.lines = pd.DataFrame(columns=['latitude', 'longitude', 'line'])
         sesh.lines = m1.lines.copy()
-        updated_map = m1.render(current_idx=0)
+        updated_map = m1.render(current_idx=0, is_last_tab=True)
         updated_map.update_layout(shapes=[])
         return [], 0, True, True, updated_map #, False
 
@@ -2546,13 +2562,13 @@ def master_line_controller(url_hash,relayout, clear_sel_n, clear_all_n, prev_n, 
         # current_idx = max(0, min((current_idx or 0), num_profiles - 1))
         if num_profiles == 0:
             current_idx = 0
-            updated_map = m1.render()
+            updated_map = m1.render(is_last_tab=True)
             updated_map.update_layout(shapes=[])
             return [], 0, True, True, updated_map
         else:
             current_idx = max(0, min((current_idx or 0), num_profiles - 1))
             # Fallback to the last available profile if current one was deleted
-            updated_map = m1.render(current_idx=current_idx)
+            updated_map = m1.render(current_idx=current_idx, is_last_tab=True)
 
     # --- ACTION: CHANGE VIEW (EYE ICON) ---
     elif "view-line-btn" in trigger_id:
@@ -2565,7 +2581,7 @@ def master_line_controller(url_hash,relayout, clear_sel_n, clear_all_n, prev_n, 
     next_disabled = (current_idx >= num_profiles - 1) or (num_profiles == 0)
     
 
-    updated_map = m1.render(current_idx=current_idx)
+    updated_map = m1.render(current_idx=current_idx,is_last_tab=True)
     updated_map.update_layout(shapes=[])
 
     rows = []
