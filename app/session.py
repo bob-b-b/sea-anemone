@@ -25,6 +25,8 @@ class Session:
     models:   DataFrame = None
     site:     DataFrame = None
     lines:    DataFrame = None
+    boreholes: DataFrame = None
+    rock_map : dict      = None
     forwards: List[Forward] = None
     settings: SessionSettings = None
     save_dir: str = None
@@ -55,6 +57,15 @@ class Session:
         if other.lines is not None:
             other.lines.to_csv(folder+'lines.csv', index=False)
             other.lines = 'lines.csv'
+        if other.boreholes is not None:
+            print("boreholes to dataframe here")
+            other.boreholes.to_csv(folder+'boreholes.csv', index=False)
+            other.boreholes = 'boreholes.csv'
+        if other.rock_map is not None:
+            # Convert dict {"Clay": "#hex"} to DataFrame for saving
+            df_rock = pd.DataFrame(list(other.rock_map.items()), columns=['RockType', 'Color'])
+            df_rock.to_csv(folder + 'rock_map.csv', index=False)
+            other.rock_map = 'rock_map.csv'
 
         if other.forwards is not None:
             for i in range(len(other.forwards)):
@@ -64,7 +75,9 @@ class Session:
         other.__annotations__['data']   = str            
         other.__annotations__['site']   = str            
         other.__annotations__['models'] = str
-        other.__annotations__['lines']   = str            
+        other.__annotations__['lines']   = str
+        other.__annotations__['boreholes'] = str
+        other.__annotations__['rock_map'] = str            
         other.__annotations__['forwards'] = List[str]
         res = json_numpy.dumps(other._to_nosj(binary_threshold=binary_threshold), indent=4)
         with open(folder+'session.json', 'wt') as f:
@@ -87,6 +100,15 @@ class Session:
             self.models = pd.read_csv(self.save_dir+self.models)
         if self.site is not None and isinstance(self.site, str):
             self.site = pd.read_csv(self.save_dir+self.site)
+        if self.boreholes is not None and isinstance(self.boreholes, str):
+            df_flat = pd.read_csv(self.save_dir + self.boreholes)            
+            from Sections_plotting import dataframe_to_boreholes
+            self.borehole_list = dataframe_to_boreholes(df_flat)
+            self.boreholes = df_flat
+        if self.rock_map is not None and isinstance(self.rock_map, str):
+            # This is the actual conversion step
+            rock_df = pd.read_csv(self.save_dir + self.rock_map)
+            self.rock_map = dict(zip(rock_df['RockType'], rock_df['Color']))
         else:
             self.site = self.data.overview()
         if self.lines is not None and isinstance(self.lines, str):

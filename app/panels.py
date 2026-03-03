@@ -69,6 +69,8 @@ class Map(Panel):
     view  = None
     lines = None
     hover_marker: dict = None
+    boreholes : dict = None
+    rock_color_map = None
 
     def __init__(self, data, **kwargs):
         settings = MapSettings(id='map', **kwargs)
@@ -232,11 +234,19 @@ class Map(Panel):
                     fig.add_trace(trace)
             
         # fig.update_traces(marker=dict(size=7))
+        if self.boreholes:
+            from Sections_plotting import add_boreholes_to_map_fig
+            fig = add_boreholes_to_map_fig(fig, self.boreholes)
+
 
         fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0}, #uirevision='keep',
                         modebar=dict(add=['drawline', 'drawopenpath'], remove=['select2d','lasso2d','zoomIn', 'zoomOut']),
                         newshape=dict(line_color='cyan', line_width=4, line_dash='dash'),
-                        dragmode='pan', showlegend=False)
+                        dragmode='pan', showlegend=False,
+                        map=dict(
+        bearing=0,
+        pitch=0,)
+                        )
         
         return fig    
     
@@ -1269,6 +1279,43 @@ class Upload(Panel):
                     id='dem-options-container',
                     style={'display': 'none'}
                 ),
+            html.Br(),
+                html.Div(
+                    [
+                        dbc.Checkbox(
+                            id='use-borehole',
+                            value=False,
+                            label='Use Borehole Data (optional)',
+                            style={'marginLeft': '5px'}
+                        ),
+                        html.Div(
+                            [
+                                dcc.Upload(
+                                    id='upload-borehole',
+                                    children=html.Div([
+                                        'Borehole: Drag and Drop .bor file or ',
+                                        html.A('Select File')
+                                    ], style={'height': '80px', 'lineHeight': '70px', 'textAlign': 'center'}),
+                                    style={
+                                        'borderWidth': '2px',
+                                        'borderStyle': 'dashed',
+                                        'borderRadius': '5px',
+                                        'textAlign': 'center',
+                                    },
+                                    multiple=False,
+                                    accept='.bor',
+                                ),
+                                html.Div(id='output-borehole-upload', style={'marginTop': '6px'}),
+                            ],
+                            id='borehole-upload-container',
+                            style={'display': 'none', 'marginTop': '10px'}
+                        ),
+                    ],
+                    id='borehole-options-container',
+                    style={'display': 'none'}
+                ),
+
+
         ],
         )
     

@@ -22,6 +22,8 @@ from pydantic import Field
 from Map_external_layers import GIS_helpers
 from Sections_plotting import *
 
+# from borehole_utils import *
+
 
 @nosj
 class ProfileSettings(PanelSettings):
@@ -35,7 +37,8 @@ class ProfileSettings(PanelSettings):
     radius: int = 50 
     num_labels_colorbar: int = 4
 
-    column_width: int = 6 
+    column_width: int = 6
+    borehole_width : int = 6
 
     @classmethod
     def _create_schema(cls):
@@ -55,6 +58,9 @@ class ProfileSettings(PanelSettings):
 
 
 class Profile(Panel):
+    rock_color_map = None
+    boreholes = None
+
     def __init__(self, dataframe, **kwargs):
                     
         settings = kwargs.pop('settings', ProfileSettings(id='profile_plot_main'))       
@@ -95,7 +101,7 @@ class Profile(Panel):
         else: return "W - E"
 
 
-    def get_figure(self, lines, mode, selected_idx, view, title='Profile'):
+    def get_figure(self, lines, mode, selected_idx, view,  title='Profile'):
         if lines is None or (isinstance(lines, pd.DataFrame) and lines.empty):
             return self.empty_render()
 
@@ -132,8 +138,11 @@ class Profile(Panel):
         stations_on_line = get_station_projections(current_line, df_up_map, search_radius_m=self.settings.radius)
         
         bh_projections = []
-        if bh_data is not None:
-            bh_projections = get_borehole_projections(current_line, bh_data, view, search_radius_m=self.settings.radius)
+        # if bh_data is not None:
+        #     bh_projections = get_borehole_projections(current_line, bh_data, view, search_radius_m=self.settings.radius)
+
+        if hasattr(self, "boreholes") and self.boreholes:
+            bh_projections = get_boreholes_on_line(current_line,self.boreholes,search_radius_m=self.settings.radius)
 
         # 6. Check for Data Availability
         if not stations_on_line and not bh_projections:
@@ -166,9 +175,8 @@ class Profile(Panel):
 
         # 9. Add Boreholes if they exist
         if bh_projections:
-            rock_map = rock_color_map
-            fig = add_boreholes_to_fig(fig, bh_projections, rock_map)
-
+            fig = add_boreholes_to_section_fig(fig, bh_projections, self.rock_color_map, self.settings.borehole_width)
+        
         # 10. Final Layout Adjustments
         all_x_vals = list(all_x)
         if stations_on_line:
@@ -195,6 +203,7 @@ class Profile(Panel):
         vmin = self.settings.vmin
         vmax = self.settings.vmax
 
+        
         log_vmin = np.log10(vmin)
         log_vmax = np.log10(vmax)
         
@@ -208,7 +217,7 @@ class Profile(Panel):
                 lines = pd.DataFrame(lines)
                 
             # 3. Call your core figure generation logic
-            fig = self.get_figure(lines, mode, selected_idx, view)            
+            fig = self.get_figure(lines, mode, selected_idx, view, )            
             
             # 4. Colorbar Setup
             tick_vals = np.linspace(log_vmin, log_vmax, self.settings.nticks)

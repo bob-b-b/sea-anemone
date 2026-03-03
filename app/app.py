@@ -16,7 +16,8 @@ sesh = session.Session()
 session_tracker = fpath+'/recent_projects.txt'
 
 from panels import *
-
+from inversion_panels import *
+import json
 from dash import dcc
 from dash import Dash, callback_context, ALL
 from dash.exceptions import PreventUpdate
@@ -25,9 +26,16 @@ from dash_bootstrap_components import themes
 import dash_bootstrap_components as dbc
 from dash.dash import no_update
 from flask import send_from_directory
+import requests
+import re
+import shutil
+import pandas as pd
+import numpy as np
 
 from temframe import TEMframe
 from Map_external_layers import GIS_helpers
+from GIS_profile_only import *
+from Sections_plotting import *
 
 external_stylesheets = [themes.BOOTSTRAP]
 app = Dash(__name__, suppress_callback_exceptions=True, assets_folder='assets',  external_stylesheets=external_stylesheets)
@@ -40,15 +48,7 @@ def serve_help_docs(filename):
     return send_from_directory(docs_root, filename)
 
 
-import os
-import requests
-import re
-import shutil
-import pandas as pd
-import numpy as np
-from GIS_profile_only import *
-# from gis import GIS
-import json
+
 
 # df_overview = pd.DataFrame(columns=['date', 'daytime', 'latitude', 'longitude', 'elevation', 'utm_x', 'utm_y', 'distance'])
 
@@ -382,13 +382,14 @@ flex_layout = dfl.FlexLayout(
 app.layout = html.Div([
     dcc.Location(id='url', refresh='callback-nav'),
     dcc.Interval(id= "inv-log-poll", interval=1000, n_intervals=0, disabled=True),  # Poll every 2 seconds
-    # dcc.Store(id="selected-site-id", data=None), 
+
     dcc.Store(id="starting-model", data={"rho": 10.0,"depth": np.cumsum(np.logspace(0, 1.3, 31)).tolist()}),
     dcc.Store(id='starting-model-selected',data=[]),
     dcc.Store(id='data-buffer',data={"length": 50, "start_site":0}),
     dcc.Store(id="dem-applied", data=False),
     dcc.Store(id="dem-downloaded", data=False),
     dcc.Store(id="dem-api-keys", data=[], storage_type="local"),
+    dcc.Store(id="borehole-loaded", data=False),
     html.Div([dbc.Toast(
                     "⛔ Please Zoom or Pan in the map.",
                     id="zoom-toast",
@@ -1075,8 +1076,15 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color,bu
     elif trigger_id == 'model_section':
         x_value = click_data['points'][0]['x']
         site_id = mod2.dataframe.query(f'{mod2.settings.x_axis} == @x_value')['site_id'].iloc[0]
+    # elif trigger_id == 'map':
+    #     site_id = sesh.data['site_id'].iloc[click_data['points'][0]['pointNumber']]
     elif trigger_id == 'map':
-        site_id = sesh.data['site_id'].iloc[click_data['points'][0]['pointNumber']]
+        # Skip borehole marker clicks — handled by manage_windows
+        pt = click_data['points'][0]
+        cd = pt.get('customdata')
+        if cd and isinstance(cd, list) and len(cd) >= 3 and cd[2] == 'borehole':
+            raise PreventUpdate
+        site_id = int(pt['pointNumber'])
     else:
         site_id = None
     df_data = sesh.data
@@ -1161,7 +1169,7 @@ def reset_polling(n):
      Output('dem-bbox-maxlon', 'value', allow_duplicate=True),
      Output('dem-bbox-maxlat', 'value', allow_duplicate=True),
      Output('dem-options-container', 'style', allow_duplicate=True),
-    #  Output(t1.id, 'children', allow_duplicate=True),
+     Output('borehole-options-container', 'style', allow_duplicate=True),
     ],
     Input('upload-data', 'contents'),
     State('process_layout', 'n_clicks'),
@@ -1232,141 +1240,81 @@ def upload_file(contents, current_process_clicks):
     if warning_msg:
         upload_msg = f"{upload_msg} {warning_msg}"
 
-    return html.Div(upload_msg), m1.render(), dbdt1.render(), dbdt2.render(), rhoa.render(), summary, True, toast_msg,  False, False, new_process_clicks, *bbox_vals, {'display': 'block'}#, t1.render() gis.render(),
+    # return html.Div(upload_msg), m1.render(), dbdt1.render(), dbdt2.render(), rhoa.render(), summary, True, toast_msg,  False, False, new_process_clicks, *bbox_vals, {'display': 'block'}#, t1.render() gis.render(),
+    return html.Div(upload_msg), m1.render(), dbdt1.render(), dbdt2.render(), rhoa.render(), summary, True, toast_msg, False, False, new_process_clicks, *bbox_vals, {'display': 'block'}, {'display': 'block'}
+
+@app.callback(
+    Output('output-borehole-upload', 'children'),
+    Output('borehole-loaded', 'data'),
+    m1.output,
+    Output('upload-toast', 'is_open', allow_duplicate=True),
+    Output('upload-toast', 'children', allow_duplicate=True),
+    Input('upload-borehole', 'contents'),
+    State('upload-borehole', 'filename'),
+    running=[(Output('upload-borehole', 'disabled'), True, False)],
+    prevent_initial_call=True
+)
+def upload_borehole(contents, filename):
+    if contents is None:
+        raise PreventUpdate
+
+    # Decode base64 content and write to temp file
+    content_type, content_string = contents.split(',', 1)
+    decoded = base64.b64decode(content_string)
+    text = decoded.decode('utf-8', errors='replace')
+
+    # Parse borehole data
+    try:
+        bh_data, rock_color_map = load_borehole_file(text, from_string=True)
+    except Exception as e:
+        return html.Div(f"Error parsing borehole file: {e}"), False, no_update, True, f"Borehole upload failed: {e}"
+
+    if not bh_data:
+        return html.Div("No boreholes found in file."), False, no_update, True, "No boreholes found."
+
+    # Project UTM -> lat/lon
+    boreholes = get_borehole_projections(bh_data)
+    # print("BOREHOLES HERE",boreholes)
+
+    # 1. Update Session
+    sesh.borehole_list = boreholes
+    sesh.rock_map = rock_color_map
+    sesh.boreholes = boreholes_to_dataframe(bh_data)
+
+    # Store on panels
+    m1.boreholes = boreholes
+    m1.rock_color_map = rock_color_map
+    mod2.boreholes = boreholes
+    mod2.rock_color_map = rock_color_map
+    mod1.boreholes = boreholes
+    mod1.rock_color_map = rock_color_map
+    profile.boreholes = boreholes
+    profile.rock_color_map = rock_color_map
+
+    n_bh = len(bh_data)
+    bh_ids = ', '.join(b['id'] for b in bh_data)
+    msg = f"Loaded {n_bh} borehole(s): {bh_ids}"
+
+    return html.Div(msg), True, m1.render(), True, f"Loaded {n_bh} borehole(s)"
 
 
-
-
-
-# --------------------- auto-close callback for layers ---------------------
-# @app.callback(
-#     Output("layers-panel", "style", allow_duplicate=True),
-#     Input({"type": "layer-check", "layer": ALL}, "value"),   # checkboxes
-#     Input({"type": "layer-opacity", "layer": ALL}, "value"),    # opacity sliders
-#     Input({"type": "layer-menu-btn", "layer": ALL}, "n_clicks"),# 3-dot menus
-#     State("layers-panel", "style"),
-#     prevent_initial_call=True,
-# )
-# def auto_close_layers(layer_values, opacity_values, menu_clicks, style):
-
-#     # Check for ANY triggered change:
-#     changed = False
-
-#     # Layer checkbox values (lists)
-#     if layer_values and any(v is not None for v in layer_values):
-#         changed = True
-
-#     # Opacity slider values (floats)
-#     if opacity_values and any(v is not None for v in opacity_values):
-#         changed = True
-
-#     # 3-dot menu clicks (ints)
-#     if menu_clicks and any((x or 0) > 0 for x in menu_clicks):
-#         changed = True
-
-#     if not changed:
-#         return no_update
-
-#     # Close panel
-#     new = style.copy()
-#     new["display"] = "none"
-#     # print(">> Layers panel auto-closed")
-
-#     return new
-
-# @app.callback(
-#     Output("points-attr", "options"),
-#     Output("points-attr", "value"),
-#     Output("points-filter", "options"),
-#     Output("points-filter", "value"),
-#     Output("points-color-map-store", "data"),
-#     Output("points-filters-by-attr-store", "data"),
-#     Input("interpret_layout", 'n_clicks'),
-#     Input("map-settings-store", "data"),     # so it can initialize from settings
-#     Input("points-attr", "value"),           # user changes attribute
-#     Input("points-filter", "value"),         # user changes checklist
- 
-#     State("points-attr", "options"),
-#     State("points-filters-by-attr-store", "data"),
-#     State("points-available-attrs-store", "data"),
-#     prevent_initial_call=False,)
-# def sync_points_ui(trig, settings, attr_value, filter_value,
-#                    existing_attr_options, filters_by_attr, 
-#                    existing_attrs):
-#     gis.dataframe = sesh.models
-#     local_df, color_master_map, existing_attrs = preprocess_new_df(gis.dataframe)
-#     if gis.dataframe is None:
-#         return [], no_update, [], [], {}, (filters_by_attr or {})
- 
-       
-#     filters_by_attr = filters_by_attr or {}
- 
-#     # ---- available attributes come ONLY from existing_attrs ----
-#     # existing_attrs = []
-#     # existing_attrs = existing_attrs or []
-#     available_attrs = [a for a in existing_attrs if a in local_df.columns]
- 
-#     attr_options = [{"label": a, "value": a} for a in available_attrs]
- 
-#     # ---- decide default attribute ----
-#     default_attr = None
-#     if settings and isinstance(settings, dict):
-#         default_attr = settings.get("plot_attribute")
- 
-#     if not default_attr or default_attr not in available_attrs:
-#         default_attr = "date" if "date" in available_attrs else (available_attrs[0] if available_attrs else None)
- 
-#     # what triggered?
-#     trig = ctx.triggered_id
- 
-#     # ---- choose current attribute ----
-#     current_attr = attr_value if attr_value in available_attrs else default_attr
- 
-#     if not current_attr:
-#         return attr_options, no_update, [], [], {}, filters_by_attr
- 
-#     # ---- compute unique cleaned values (must match renderer cleaning) ----
-#     series_cleaned = (local_df[current_attr].astype(str)
-#                       .str.replace(r"\.0$", "", regex=True)
-#                       .str.strip())
-#     unique_vals = sorted(series_cleaned.unique().tolist())
- 
-#     filter_options = [{"label": str(v), "value": str(v)} for v in unique_vals]
-#     all_values = [str(v) for v in unique_vals]
- 
-#     # ---- numeric vs categorical ----
-#     is_numeric = pd.api.types.is_numeric_dtype(local_df[current_attr]) and current_attr != "date"
-#     if is_numeric:
-#         color_map = {}  # numeric uses colorscale in renderer
-#     else:
-#         palette = px.colors.qualitative.Light24
-#         color_map = {val: palette[i % len(palette)] for i, val in enumerate(unique_vals)}
- 
-#     # ---- decide checklist value & persist memory ----
-#     if trig == "points-filter":
-#         # print("POINT FILTER SYNC FUN", filter_value)
-#         selected = filter_value or []
-#         filters_by_attr[current_attr] = selected
-#         checklist_value = selected
-#     else:
-#         restored = filters_by_attr.get(current_attr)
-#         if restored is None:
-#             checklist_value = all_values
-#         else:
-#             restored = [v for v in restored if v in set(all_values)]
-#             checklist_value = restored if restored else all_values
- 
-#         filters_by_attr[current_attr] = checklist_value
- 
-#     return attr_options,current_attr,filter_options,checklist_value,color_map,filters_by_attr
-
-
-
-
-
-
-
-
+@app.callback(
+    Output('borehole-upload-container', 'style'),
+    m1.output,
+    Input('use-borehole', 'value'),
+    prevent_initial_call=True
+)
+def toggle_borehole_upload(use_borehole):
+    if use_borehole:
+        return {'display': 'block', 'marginTop': '10px'}, no_update
+    # Clear borehole data when unchecked
+    m1.boreholes = None
+    m1.rock_color_map = None
+    mod2.boreholes = None
+    mod2.rock_color_map = None
+    mod1.boreholes = None
+    mod1.rock_color_map = None
+    return {'display': 'none', 'marginTop': '10px'}, m1.render()
 
 
 # # --------------------- DEM ---------------------
@@ -1384,14 +1332,15 @@ def toggle_dem_upload(use_dem):
 
 @app.callback(
     Output('dem-options-container', 'style'),
+    Output('borehole-options-container', 'style'),
     Input('upload-data', 'contents'),
     Input('url', 'hash'),
     prevent_initial_call=False
 )
 def toggle_dem_options(contents, url_hash):
     if sesh.data is None:
-        return {'display': 'none'}
-    return {'display': 'block'}
+        return {'display': 'none'}, {'display': 'none'}
+    return {'display': 'block'}, {'display': 'block'}
 
 @app.callback(
     Output('dem-api-key-container', 'style'),
@@ -1972,6 +1921,12 @@ layout_output_list = [
         Output('invert_layout',  'disabled', allow_duplicate=True),
         Output('review_layout',  'disabled', allow_duplicate=True), #Output
         Output("current-working-directory", "children", allow_duplicate=True),
+
+        Output('use-borehole', 'value', allow_duplicate=True),
+        Output('use-borehole', 'label', allow_duplicate=True),
+        Output('borehole-options-container', 'style', allow_duplicate=True),
+
+
         Output('url', 'hash', allow_duplicate=True),
 ]
 
@@ -2021,7 +1976,37 @@ def handle_url_hash(url_hash, model):
         folder = url_hash.split('=')[1].replace('%20', ' ').replace('%22', '')
         print(f'loading session from folder: {folder}')
         sesh = session.Session.from_folder(folder)
-        res[-2] = sesh.save_dir
+        # res[-2] = sesh.save_dir
+        res[-5] = sesh.save_dir
+
+
+        if hasattr(sesh, 'borehole_list') and sesh.borehole_list is not None:
+            # Transfer data to the display models
+            m1.boreholes = get_borehole_projections(sesh.borehole_list)
+            mod1.boreholes = get_borehole_projections(sesh.borehole_list)
+            mod2.boreholes = get_borehole_projections(sesh.borehole_list)
+            profile.boreholes = get_borehole_projections(sesh.borehole_list)
+            
+            # Transfer the color map
+            if hasattr(sesh, 'rock_map') and sesh.rock_map is not None:
+                m1.rock_color_map = sesh.rock_map
+                mod1.rock_color_map = sesh.rock_map
+                mod2.rock_color_map = sesh.rock_map
+                profile.rock_color_map = sesh.rock_map
+            
+            res[-4] = True  # use-borehole value
+            res[-3] = html.Span(["Use Borehole Data ", 
+                    html.B("(Loaded from Session)", style={'color': '#28a745'}),
+                    html.Br(), # Adds a line break to keep it tidy
+                    html.Small("Upload a new .bor file below to overwrite existing data.", style={'color': '#6c757d', 'fontStyle': 'italic', 'fontSize': '0.85rem'})])
+            res[-2] = {'display': 'block', 'marginTop': '10px'} # container style
+            
+            res[0] = m1.render()
+        else:
+            # If no boreholes, ensure UI reflects that
+            res[-4] = False
+            res[-3] = "Use Borehole Data (optional)"
+            res[-2] = {'display': 'none'}
 
         if sesh.lines is not None:
             m1.lines = sesh.lines.copy()
@@ -2099,17 +2084,20 @@ def manage_windows(click_data, n_closes, current_windows, combined_state,all_lin
     combined_state = combined_state or {"window_id": None, "items": []}
     width_step = "550px"
     height_step ="900px"
-    bh_projections = []
+ 
+
+    all_bhs = m1.boreholes or []
+    line_bhs = []
+
     if all_lines and selected_idx is not None:
         try:
             current_line = all_lines[selected_idx]
-            # bh_data is your global dataframe/list of all boreholes
-            if bh_data is not None:
-                # view='profile' usually, search_radius from your Settings
-                bh_projections = get_borehole_projections(current_line, bh_data, view='profile', search_radius_m=Settings.radius)
+            if all_bhs:
+                line_bhs = get_boreholes_on_line(current_line,all_bhs,search_radius_m=Settings.radius)
         except Exception as e:
-            print(f"⚠️ Borehole Projection Error: {e}")    
-    
+            print(f"⚠️ Borehole Projection Error: {e}")
+
+
     # --- 1. HANDLE NEW CLICKS (ALT or CTRL+ALT) ---
     if "right-click-index-store" in trigger:
         if not click_data:
@@ -2127,9 +2115,12 @@ def manage_windows(click_data, n_closes, current_windows, combined_state,all_lin
             
             new_id = f"win-{idx}-{ts}"
             if item_type == "borehole":
-                # Use your existing borehole logic
-                fig = build_combined_borehole_figure([idx], bh_projections, rock_color_map)
+                fig = build_combined_borehole_figure([idx], all_bhs, m1.rock_color_map)
                 title = f"Borehole Log: {idx}"
+                content = html.Div([dcc.Graph(figure=fig, 
+                                    style={"height": "750px"},
+                                    config={'displayModeBar': False})]
+                            , style={"height": "100%", "padding": "10px"})                    
             else:
                 try:
                     row_data = None
@@ -2202,14 +2193,14 @@ def manage_windows(click_data, n_closes, current_windows, combined_state,all_lin
 
             # Scenario: Only Boreholes selected -> Side-by-Side Logs
             elif len(tem_ids) == 0:
-                fig = build_combined_borehole_figure(bh_ids, bh_projections, rock_color_map)
+                fig = build_combined_borehole_figure(bh_ids, all_bhs, m1.rock_color_map)
                 content = dcc.Graph(figure=fig, style={"height": "100%"})
                 title = f"Borehole Comparison ({len(bh_ids)})"
 
             else:
                 # 1. Generate all three figures
                 tem_fig = build_combined_step_figure(df_up_map, tem_ids, use_elevation=True)
-                bh_fig = build_combined_borehole_figure(bh_ids, bh_projections, rock_color_map)
+                bh_fig = build_combined_borehole_figure(bh_ids, all_bhs, m1.rock_color_map)
                 dbdt_fig = build_combined_dbdt_figure(sesh.data, tem_ids) # The new combined function
                 
                 # 2. Align Y-Axes for TEM and Borehole (Correlation Tab)
@@ -2218,7 +2209,7 @@ def manage_windows(click_data, n_closes, current_windows, combined_state,all_lin
                     row = df_up_map.loc[idx]
                     all_z.extend(row['elevation'] - row['bottom_depth'])
                     all_z.append(row['elevation'])
-                for bh in bh_projections:
+                for bh in all_bhs:
                     if bh['id'] in bh_ids:
                         all_z.append(bh['elev'])
                         all_z.append(bh['elev'] - max([l['Bottom'] for l in bh['layers']]))
@@ -2402,7 +2393,7 @@ def update_profile_callback(relayout, mode, selected_idx, global_cbar_data, view
         lines=m1.lines, 
         mode=mode, 
         selected_idx=selected_idx, 
-        view=view
+        view=view,
     )
     
     return fig

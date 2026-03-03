@@ -60,6 +60,7 @@ class Settings(PanelSettings):
 
     radius: int = 50 
     column_width: int = 6
+    borehole_width : int = 50
     num_labels_colorbar: int = 4
 
 settings = Settings('tmp_scattermap')
@@ -81,240 +82,212 @@ def value_to_color(val, vmin, vmax, log=False, cmap="turbo"):
     color = pc.sample_colorscale(cmap, [t])[0]
     return color
 
-# ----------- BOREHOLES ----------------
-def load_borehole_file(file_path):
-    with open(file_path, 'r') as f:
-        content = f.read()
+# ------------------------ BOREHOLES-----------------------
+def load_borehole_file(file_path_or_content, from_string=False):
 
-    blocks = re.split(r'(?=BoreholeNo=)', content)
+    if from_string:
+        content = file_path_or_content
+    else:
+        with open(file_path_or_content, "r") as f:
+            content = f.read()
+
+    blocks = re.split(r"(?=BoreholeNo=)", content)
     blocks = [b.strip() for b in blocks if "BoreholeNo=" in b]
-    
+
     all_boreholes = []
 
     for i, block in enumerate(blocks):
-        def get_meta(field, text):
-            match = re.search(f"{field}=(.*)", text)
-            return match.group(1).strip() if match else None
+        def _get(field, text=block):
+            m = re.search(f"{field}=(.*)", text)
+            return m.group(1).strip() if m else None
 
         try:
-            bh_id = get_meta("BoreholeNo", block)
-            elev = float(get_meta("Elevation", block))
-            
+            bh_id = _get("BoreholeNo")
+            elev  = float(_get("Elevation"))
+            utm_zone_raw = _get("UTMZone")
+            datum_raw    = _get("Datum")
+
+            # Auto-detect EPSG from UTMZone + Datum
+            utm_zone = int(utm_zone_raw) if utm_zone_raw else 37
+            datum    = (datum_raw or "WGS84").upper()
+            if "WGS" in datum or "84" in datum:
+                epsg = 32600 + utm_zone          # WGS-84 northern hemisphere
+            else:
+                epsg = 32600 + utm_zone          # fallback to WGS-84
+
             bh_metadata = {
                 "bh_index": i,
                 "id": bh_id,
-                "x": float(get_meta("XUTM", block)),
-                "y": float(get_meta("YUTM", block)),
+                "x": float(_get("XUTM")),
+                "y": float(_get("YUTM")),
                 "elevation": elev,
+                "utm_zone": utm_zone,
+                "epsg": epsg,
             }
+            print(bh_metadata)
 
-            table_start_index = block.find("Top")
-            if table_start_index == -1: continue
+            table_start = block.find("Top")
+            if table_start == -1:
+                continue
 
-            # Get the lines of the table
-            table_lines = block[table_start_index:].strip().split('\n')
-            if len(table_lines) < 2: continue # Only header, no data
+            table_lines = block[table_start:].strip().split("\n")
+            if len(table_lines) < 2:
+                continue
 
-            # --- PARSING LOGIC ---
             data_rows = []
-            # Start from index 1 to skip the header "Top Bottom..."
             for line in table_lines[1:]:
-                # This Regex finds numbers and quoted strings or single words
-                # It handles: 0.00  16.00  "Some Description"  SS2
                 parts = re.findall(r'(".*?"|\S+)', line)
-                
                 if len(parts) >= 2:
-                    # Pad parts if RockType or Description are missing
                     while len(parts) < 4:
                         parts.append("")
-                    
                     data_rows.append({
                         "Top": float(parts[0]),
                         "Bottom": float(parts[1]),
-                        "LayerDescription": parts[2].replace('"', ''), # Remove quotes
-                        "RockType": parts[3]
+                        "LayerDescription": parts[2].replace('"', ''),
+                        "RockType": parts[3],
                     })
 
             df_layers = pd.DataFrame(data_rows)
-
-            # Clean up the data
             if not df_layers.empty:
-                df_layers['RockType'] = df_layers['RockType'].replace('Nan', 'Unspecified')
-                df_layers['RockType'] = df_layers['RockType'].replace('', 'Unspecified')
-                
-                bh_metadata["layers"] = df_layers.to_dict('records')
+                df_layers["RockType"] = df_layers["RockType"].replace(
+                    {"Nan": "Unspecified", "": "Unspecified"}
+                )
+                bh_metadata["layers"] = df_layers.to_dict("records")
                 all_boreholes.append(bh_metadata)
-                # print(f"✔️ Loaded Borehole: {bh_id} ({len(bh_metadata['layers'])} layers)")
 
         except Exception as e:
-            print(f"❌ Error parsing borehole {bh_id if 'bh_id' in locals() else 'unknown'}: {e}")
+            print(f"Error parsing borehole {i}: {e}")
 
-    # --- Global Color Map ---
+    # --- Global colour map ---
     all_rock_types = set()
     for bh in all_boreholes:
-        for layer in bh['layers']:
-            rt = layer['LayerDescription']
-            if rt: all_rock_types.add(rt)
-    
-    sorted_rocks = sorted(list(all_rock_types))
-    cmap = plt.get_cmap('tab20b')
+        for layer in bh["layers"]:
+            rt = layer["LayerDescription"]
+            if rt:
+                all_rock_types.add(rt)
+
+    sorted_rocks = sorted(all_rock_types)
+    cmap = plt.get_cmap("tab20b")
     rock_color_map = {}
     if sorted_rocks:
-        colors = np.linspace(0.1, 0.9, len(sorted_rocks))
-        for i, rock in enumerate(sorted_rocks):
-            rock_color_map[rock] = mcolors.to_hex(cmap(colors[i]))
+        positions = np.linspace(0.1, 0.9, len(sorted_rocks))
+        for idx, rock in enumerate(sorted_rocks):
+            rock_color_map[rock] = mcolors.to_hex(cmap(positions[idx]))
 
-    # print(f"🚀 TOTAL LOADED: {len(all_boreholes)} boreholes.")
     return all_boreholes, rock_color_map
 
-def get_borehole_projections(line_coords, boreholes, view, search_radius_m=settings.radius):
-    """
-    If line_coords exists: Returns boreholes within radius + projection data.
-    If line_coords is None: Returns all boreholes with map coordinates only.
-    """
+def get_borehole_projections(boreholes, src_epsg=None):
+
     if isinstance(boreholes, dict):
         boreholes = [boreholes]
-    
-    if isinstance(boreholes, list) and len(boreholes) > 0 and isinstance(boreholes[0], list):
-        boreholes = boreholes[0]
-    
-    # Check if we have a valid line to project onto
-    has_line = line_coords is not None and len(line_coords) >= 2
+
     projections = []
-    transformer = Transformer.from_crs(settings.png_crs, "EPSG:4326", always_xy=True)
-    
-    for bh in boreholes:    
-        # 1. Always convert UTM -> Paper -> Geo for the Map
-        lon, lat = transformer.transform(bh['x'], bh['y'])
-        s_pt = (lon, lat)
+    _cache = {}                       # transformer cache keyed by epsg
 
-        if s_pt is None: continue
-                # Create the base data that the map needs
-        bh_entry = {
-                    "id": bh['id'],
-                    "map_lon": s_pt[0], 
-                    "map_lat": s_pt[1],
-                    "elev": bh['elevation'],
-                    "layers": bh['layers'],
-                    "geo_pt": s_pt,
-                    "dist_x": 0,       # Default
-                    "is_on_section": False # Flag to tell the section plotter to ignore it
-                    }
-        
-        if has_line:
-            # 2. If line exists, do the projection math
-            dist_along, dist_from = project_station_onto_polyline(s_pt, line_coords)
-            
-            # Only add to list if it's within the buffer
-            if dist_from <= search_radius_m:
-                projections.append({
-                    "id": bh['id'],
-                    "dist_x": dist_along,
-                    "map_lon": lon,# s_pt[0], 
-                    "map_lat": lat, #s_pt[1],
-                    "elev": bh['elevation'],
-                    "layers": bh['layers'],
-                    "geo_pt": s_pt,
-                    "is_on_section": True # Flag to know it's on the section
-                })
-        else:
-            # 3. No line drawn: just return coordinates so they show on map
-            projections.append({
-                "id": bh['id'],
-                "dist_x": 0, # No distance along line available
-                "map_lon": lon,# s_pt[0], 
-                "map_lat": lat, #s_pt[1],
-                "elev": bh['elevation'],
-                "layers": bh['layers'],
-                "geo_pt": s_pt,
-                "is_on_section": False
-            })
+    for bh in boreholes:
+        epsg = src_epsg or bh.get("epsg", 32637)
+        if epsg not in _cache:
+            _cache[epsg] = Transformer.from_crs(
+                f"EPSG:{epsg}", "EPSG:4326", always_xy=True
+            )
+        transformer = _cache[epsg]
+        lon, lat = transformer.transform(bh["x"], bh["y"])
 
-    # 3. ALWAYS add the borehole to the list so it shows on the map
-        projections.append(bh_entry)
+        projections.append({
+            "id": bh["id"],
+            "map_lon": lon,
+            "map_lat": lat,
+            "elev": bh["elevation"],
+            "layers": bh["layers"],
+        })
 
     return projections
 
-def add_boreholes_to_fig(fig, bh_projections,rock_color_map):
-    added_to_legend = set()
+def add_boreholes_to_map_fig(fig, bh_projections, bh_color="orange"):
+
+    if not bh_projections:
+        return fig
+
+    lons  = [b["map_lon"] for b in bh_projections]
+    lats  = [b["map_lat"] for b in bh_projections]
+    names = [b["id"]      for b in bh_projections]
+
+    # customdata carries [bh_id, 0, "borehole"] so Alt+click can identify type
+    cdata = [[b["id"], 0, "borehole"] for b in bh_projections]
+
+    fig.add_trace(go.Scattermap(
+        lat=lats,
+        lon=lons,
+        mode="markers+text",
+        marker=dict(size=14, color=bh_color, symbol="circle"),
+        text=names,
+        textposition="top right",
+        customdata=cdata,
+        name="Boreholes",
+        showlegend=False,
+        below="",
+    ))
+    return fig
+
+def add_boreholes_to_section_fig(fig, bh_projections,rock_color_map, bar_width=settings.borehole_width):
+    width_factor = float(bar_width) / 10.0 
+    x_coords = [s['dist_x'] for s in bh_projections]
+
+    # 2. Calculate the width based on spacing
+    if len(bh_projections) > 1:
+        avg_spacing = (max(x_coords) - min(x_coords)) / (len(bh_projections) )
+        bar_width = avg_spacing * width_factor
+    else:
+        bar_width = 50.0 # Fallback for single borehole
+    
+    # print("bar width", bar_width)
+
+    if not bh_projections:
+        return fig
+
     for bh in bh_projections:
-
-        # ONLY draw the borehole on the section if it's near the line
-        if not bh.get("is_on_section", False):
+        bh_id = bh["id"]
+        bh_x = bh.get("dist_x")
+        if bh_x is None:
             continue
-        
-        bh_id = bh.get('id')
-        
-        for layer in bh['layers']:
 
-            z_bottom = bh['elev'] - float(layer['Top'])
-            z_top = bh['elev'] - float(layer['Bottom']) 
+        for layer in bh["layers"]:
+            z_top    = bh["elev"] - float(layer["Top"])
+            z_bottom = bh["elev"] - float(layer["Bottom"])
+            hw = bar_width / 2.0
 
-            x_box = [bh['dist_x'] - settings.column_width/2, bh['dist_x'] + settings.column_width/2, 
-                     bh['dist_x'] + settings.column_width/2, bh['dist_x'] - settings.column_width/2, bh['dist_x'] - settings.column_width/2]
+            x_box = [bh_x - hw, bh_x + hw, bh_x + hw, bh_x - hw, bh_x - hw]
             y_box = [z_top, z_top, z_bottom, z_bottom, z_top]
 
+            click_data = [bh['id'], bh_x,  "borehole"] * 5,
 
-            rock = layer.get('LayerDescription', '').strip()
-            # Get color from our global map
-            color = rock_color_map.get(rock)
-            
-            # Check if we should show this rock type in the legend
-            show_in_legend = False
-            if rock not in added_to_legend:
-                # show_in_legend = True
-                show_in_legend = False
-                added_to_legend.add(rock)
+            rock  = layer.get("LayerDescription", "").strip()
 
-            # Draw each layer as a thicker vertical line or rectangle
+            color = rock_color_map.get(rock, "lightgray")
+
             fig.add_trace(go.Scatter(
-                x=x_box, y=y_box,
+                x=x_box,
+                y=y_box,
                 fill="toself",
                 fillcolor=color,
-                mode='lines',
-                line=dict(width=0.5,color='black'),
-                # --- LEGEND SETTINGS ---
-                name=rock,
-                showlegend=show_in_legend,
-                legendgroup=rock, 
-                customdata=[[bh_id, bh['dist_x'] , "borehole"]] * len(x_box),
-                # --- HOVER SETTINGS ---
-                hovertext=f"{layer.get('LayerDescription', '')}",
-                hoveron='points',
+                mode="lines",
+                line=dict(width=0.5, color="black"),
+                name = rock,
+                customdata=click_data,
+                showlegend=False,
+                hovertext=f"{bh['id']}: {rock}",
+                hoverinfo="text",
             ))
-            
-            # fig.update_layout(hovermode='closest', # Shows only the data point your mouse is touching
-            #         )
-        # # Add a label at the top
-        fig.add_annotation(
-            x=bh['dist_x'], 
-            y=bh['elev'],
-            text=f"<b>{bh['id']}</b>", # Bold text
-            showarrow=False,           # Removing arrow for a cleaner look
-            yshift=10,                 # Offset it slightly upwards from the top
-            xanchor='center',          # Horizontal center
-            yanchor='bottom',          # Anchors the bottom of text to the elevation point
-            font=dict(size=12, color="black"),)
-        
 
-        fig.update_layout(
-            template="plotly_white", # Sets initial white theme
-            plot_bgcolor="white",
-            paper_bgcolor="white",
-            xaxis_title="Distance along path (m)",
-            yaxis_title="Elevation (m)",
-            hovermode="x",
-            # Set the buffer space here
-            xaxis=dict(
-                showgrid=True,gridcolor="lightgray",gridwidth=0.5,
-                zeroline=False,showline=True,linecolor="black",
-                mirror=True
-            ),
-            yaxis=dict(showgrid=True,gridcolor="lightgray",
-                gridwidth=0.5,zeroline=False,showline=True,linecolor="black",
-                mirror=True,autorange=True # Ensures topography is fully visible
-            ),
-            margin=dict(l=60, r=40, t=50, b=60),height=500
+        fig.add_annotation(
+            x=bh_x,
+            y=bh["elev"],
+            text=f"<b>{bh['id']}</b>",
+            showarrow=False,
+            yshift=10,
+            xanchor="center",
+            yanchor="bottom",
+            font=dict(size=10, color="black"),
         )
 
     return fig
@@ -322,56 +295,52 @@ def add_boreholes_to_fig(fig, bh_projections,rock_color_map):
 def build_combined_borehole_figure(bh_ids, bh_projections, rock_color_map):
     fig = go.Figure()
     valid_indices = []
-    # space boreholes out along the x-axis by index (0, 1, 2...) rather than their actual profile distance
-    for x_pos, target_id in enumerate(bh_ids):
-        # Find the specific borehole data from your projections list
-        bh = next((b for b in bh_projections if str(b.get('id')) == str(target_id) or str(b.get('bh_index')) == str(target_id)), None)
-        
-        if not bh: continue
-        
-        valid_indices.append(x_pos)
-        
-        # for layer in bh['layers']:
-        for layer in bh.get('layers', []):
-            # Use Elevation (as in your original code)
-            z_bottom = bh['elev'] - float(layer['Top'])
-            z_top = bh['elev'] - float(layer['Bottom']) 
 
-            # Center the box around x_pos (0, 1, 2...)
-            width = 0.4 
-            x_box = [x_pos - width, x_pos + width, x_pos + width, x_pos - width, x_pos - width]
+    for x_pos, target_id in enumerate(bh_ids):
+        bh = next(
+            (b for b in bh_projections
+             if str(b.get("id")) == str(target_id)),
+            None,
+        )
+        if not bh:
+            continue
+        valid_indices.append(x_pos)
+
+        for layer in bh.get("layers", []):
+            z_top    = bh["elev"] - float(layer["Top"])
+            z_bottom = bh["elev"] - float(layer["Bottom"])
+            w = 0.4
+            x_box = [x_pos - w, x_pos + w, x_pos + w, x_pos - w, x_pos - w]
             y_box = [z_top, z_top, z_bottom, z_bottom, z_top]
 
-            rock = layer.get('LayerDescription', '').strip()
+            rock  = layer.get("LayerDescription", "").strip()
             color = rock_color_map.get(rock, "lightgray")
 
             fig.add_trace(go.Scatter(
                 x=x_box, y=y_box,
                 fill="toself",
                 fillcolor=color,
-                mode='lines',
-                line=dict(width=0.8, color='black'),
+                mode="lines",
+                line=dict(width=0.8, color="black"),
                 name=rock,
                 showlegend=False,
-                hovertext=f"<b>{bh['id']}</b><br>{rock}<br>Elev: {z_top:.1f} to {z_bottom:.1f}m",
-                hoverinfo="text"
+                hovertext=(
+                    f"<b>{bh['id']}</b><br>{rock}<br>"
+                    f"Elev: {z_top:.1f} to {z_bottom:.1f}m"
+                ),
+                hoverinfo="text",
             ))
 
-        # Add ID label at the top of each borehole column
         fig.add_annotation(
-            x=x_pos, y=bh['elev'],
+            x=x_pos, y=bh["elev"],
             text=f"<b>{bh['id']}</b>",
             showarrow=False, yshift=15,
-            font=dict(size=12)
+            font=dict(size=12),
         )
-    
-    if valid_indices:
-        x_min = min(valid_indices) - 1
-        x_max = max(valid_indices) + 1
-    else:
-        x_min, x_max = -1, 1
 
-    # Apply your preferred professional layout
+    x_min = (min(valid_indices) - 1) if valid_indices else -1
+    x_max = (max(valid_indices) + 1) if valid_indices else  1
+
     fig.update_layout(
         template="plotly_white",
         showlegend=False,
@@ -381,30 +350,132 @@ def build_combined_borehole_figure(bh_ids, bh_projections, rock_color_map):
             title="Borehole ID",
             range=[x_min, x_max],
             showgrid=False,
-            linecolor="black", mirror=True
+            linecolor="black", mirror=True,
         ),
         yaxis=dict(
             title="Elevation (m.a.s.l.)",
             gridcolor="lightgray",
-            linecolor="black", mirror=True
+            linecolor="black", mirror=True,
         ),
         margin=dict(l=60, r=40, t=50, b=60),
-        legend=dict(title="Lithology", bordercolor="black", borderwidth=1)
     )
-    
     return fig
 
-# ----------- BOREHOLES ----------------
-# bh_data, rock_color_map = load_borehole_file("C:/Users/au679476/Downloads/boreholes_Gende_Rige_test.bor")
-# bh_data, rock_color_map = load_borehole_file("C:/Users/au679476/Downloads/Boreholes_Dollow.bor")
-bh_data = None 
-rock_color_map = None
+def haversine_distance(p1, p2):
+    """Distance in metres between two [lon, lat] points."""
+    lon1, lat1 = np.radians(p1)
+    lon2, lat2 = np.radians(p2)
+    dlon = lon2 - lon1
+    dlat = lat2 - lat1
+    a = np.sin(dlat / 2) ** 2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon / 2) ** 2
+    return 6_371_000 * 2 * np.arcsin(np.sqrt(a))
+
+def project_point_onto_polyline(station_pt, polyline_coords):
+    """
+    Project a [lon, lat] point onto a polyline.
+
+    Returns (distance_along_line_m, perpendicular_distance_m).
+    """
+    best_x = 0
+    min_dist = float("inf")
+    cum_dist = 0
+    for i in range(len(polyline_coords) - 1):
+        A = np.array(polyline_coords[i])
+        B = np.array(polyline_coords[i + 1])
+        P = np.array(station_pt)
+        seg_len = haversine_distance(A, B)
+        if seg_len == 0:
+            continue
+        ab = B - A
+        t = np.clip(np.dot(P - A, ab) / np.dot(ab, ab), 0, 1)
+        closest = A + t * ab
+        d = haversine_distance(P, closest)
+        if d < min_dist:
+            min_dist = d
+            best_x = cum_dist + t * seg_len
+        cum_dist += seg_len
+    return best_x, min_dist
+
+def get_boreholes_on_line(line_coords, bh_projections, search_radius_m=settings.radius):
+    if not line_coords or len(line_coords) < 2:
+        return []
+    result = []
+    for bh in bh_projections:
+        pt = [bh["map_lon"], bh["map_lat"]]
+        
+        dist_along, dist_from = project_point_onto_polyline(pt, line_coords)
+        if dist_from <= search_radius_m:
+            entry = dict(bh)          # shallow copy
+            entry["dist_x"] = dist_along
+            result.append(entry)
+    return sorted(result, key=lambda x: x["dist_x"])
+
+def boreholes_to_dataframe(all_boreholes):
+    print("boreholes to df")
+    """
+    Converts the nested 'all_boreholes' list into a flat pandas DataFrame.
+    """
+    flat_data = []
+    for bh in all_boreholes:
+        # Extract metadata
+        meta = {
+            "bh_id": bh["id"],
+            "bh_x": bh["x"],
+            "bh_y": bh["y"],
+            "bh_elev": bh["elevation"],
+            "utm_zone": bh.get("utm_zone", 37),
+            "epsg": bh.get("epsg", 32637)
+        }
+        
+        # Add a row for every layer
+        for layer in bh.get("layers", []):
+            row = meta.copy()
+            row.update({
+                "layer_top": layer["Top"],
+                "layer_bottom": layer["Bottom"],
+                "layer_desc": layer["LayerDescription"],
+                "layer_rock": layer["RockType"]
+            })
+            flat_data.append(row)
+            
+    return pd.DataFrame(flat_data)
+
+def dataframe_to_boreholes(df):
+    print("df to boreholes")
+    """
+    Reconstructs the nested borehole list from a flat DataFrame.
+    """
+    if df is None or df.empty:
+        return []
+        
+    all_boreholes = []
+    # Group by borehole ID to reconstruct metadata
+    for bh_id, group in df.groupby("bh_id"):
+        first_row = group.iloc[0]
+        
+        layers = []
+        for _, row in group.iterrows():
+            layers.append({
+                "Top": row["layer_top"],
+                "Bottom": row["layer_bottom"],
+                "LayerDescription": row["layer_desc"],
+                "RockType": row["layer_rock"]
+            })
+            
+        all_boreholes.append({
+            "id": bh_id,
+            "x": first_row["bh_x"],
+            "y": first_row["bh_y"],
+            "elevation": first_row["bh_elev"],
+            "utm_zone": first_row["utm_zone"],
+            "epsg": first_row["epsg"],
+            "layers": layers
+        })
+    return all_boreholes
 
 
-# model_frame = TEMframe.from_pandas(pd.read_csv("models.csv"))
-# model_frame = TEMframe.from_pandas(pd.read_csv('test_models_Dollow.csv'))
 
-
+# -------------------------------------------------------------
 def preprocess_new_df(new_df):
     if new_df is None or not hasattr(new_df, 'columns'):
         # return pd.DataFrame(), {}, []
@@ -448,7 +519,6 @@ def preprocess_new_df(new_df):
                 color_master_map[attr] = {val: palette[i % len(palette)] for i, val in enumerate(unique_vals)}
 
     return df_wide, color_master_map, existing_attrs
-
    
 def get_numeric_colors(values, vmin, vmax, log=False, cmap_name='jet'): 
     """Maps numbers to Hex strings using GLOBAL min/max."""
@@ -468,75 +538,6 @@ def get_numeric_colors(values, vmin, vmax, log=False, cmap_name='jet'):
         return [mcolors.to_hex(cmap(norm(v))) for v in vals]
     except:
         return ['grey'] * len(values)
-
-# Apply it
-# model_frame = 
-# df, color_master_map, existing_attrs = preprocess_new_df(model_frame)
-
-# -------------------------------------------------------------
-def paper_to_geo(px, py, view):
-    if not view or "bbox" not in view or view["bbox"] is None:
-        print("❌ No bbox yet")
-        return None
-
-    bbox = view["bbox"]
-
-    # Extract all lon/lat pairs
-    try:
-        lons = [p[0] for p in bbox]
-        lats = [p[1] for p in bbox]
-    except Exception as e:
-        print("❌ Bad bbox format:", bbox)
-        return None
-
-    lon_min = min(lons)
-    lon_max = max(lons)
-    lat_min = min(lats)
-    lat_max = max(lats)
-
-    # 📌 IMPORTANT:
-    # paper y increases downward → geographic lat decreases
-    lon = lon_min + px * (lon_max - lon_min)
-    lat = lat_min + py * (lat_max - lat_min)
-
-    # print("BBOX received:", view.get("bbox"))
-    # print("px, py:", px, py)
-    # print("Computed lon/lat:", lon, lat)
-    # print("lon_min/max, lat_min/max:", lon_min, lon_max, lat_min, lat_max)
-
-    return [lon, lat]
-
-# ------------------------- double click line - calculate the distance between clicks in meters -------------------------
-def haversine_distance(p1, p2):
-    """Calculates distance between two [lon, lat] points in meters."""
-    lon1, lat1 = np.radians(p1)
-    lon2, lat2 = np.radians(p2)
-    
-    dlon = lon2 - lon1
-    dlat = lat2 - lat1
-    
-    a = np.sin(dlat/2)**2 + np.cos(lat1) * np.cos(lat2) * np.sin(dlon/2)**2
-    c = 2 * np.arcsin(np.sqrt(a))
-    r = 6371000  # Radius of earth in meters
-    return c * r
-
-# def parse_polyline_path(path_str, view):
-#     """Parses SVG path into geographic [lon, lat] pairs."""
-#     # Find all numbers in the string
-#     nums = re.findall(r"[-+]?\d*\.\d+|\d+", path_str)
-#     points = []
-    
-#     # Group numbers into pairs (x, y)
-#     for i in range(0, len(nums), 2):
-#         x_paper = float(nums[i])
-#         y_paper = float(nums[i+1])
-        
-#         # Convert paper (0-1) to Geo
-#         geo_pt = paper_to_geo(x_paper, y_paper, view)
-#         if geo_pt:
-#             points.append(geo_pt)
-            
-#     return points
 
 def parse_polyline_path(path_str):
     """Regex to find x,y pairs and convert to float list of lists"""
