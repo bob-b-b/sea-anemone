@@ -67,6 +67,74 @@ class TEMframe(DataFrame):
         # res._record_op()
         self.history = current_history
         return df
+    
+    def apply_slope_filter(self, threshold=1.0, min_points=5):
+        """
+        Disable datapoints after a large slope change in log-log space.
+
+        Parameters
+        ----------
+        threshold : float
+            Maximum allowed absolute change in slope between adjacent segments.
+            If exceeded, all subsequent gates are disabled.
+        min_points : int
+            Minimum number of valid points required before slope checking begins.
+        """
+
+        if 'inuse_auto' not in self.columns:
+            raise ValueError("Column 'inuse_auto' not found.")
+
+        # Work per site and system
+        grouped = self.groupby(['site_id', 'system_id'])
+
+        for (site, system), df_grp in (self[self['system_id'] == 1].groupby(['site_id', 'system_id'])):
+
+            df_grp = df_grp.sort_values('time')
+
+            # Remove invalid rows
+            df_valid = df_grp[
+                (df_grp['dbdt'] > 0) &
+                np.isfinite(df_grp['time']) &
+                np.isfinite(df_grp['dbdt'])
+            ]
+
+            if len(df_valid) < min_points:
+                continue
+
+            log_t = np.log10(df_valid['time'].values)
+            log_y = np.log10(np.abs(df_valid['dbdt'].values))
+
+            # Compute segment slopes
+            dt = np.diff(log_t)
+            dy = np.diff(log_y)
+
+            # Avoid divide-by-zero
+            valid = dt != 0
+            slopes = np.zeros_like(dy)
+            slopes[valid] = dy[valid] / dt[valid]
+
+            # Change in slope
+            dslopes = np.abs(np.diff(slopes))
+
+            # Find first large slope jump
+            bad_idx = np.where(dslopes > threshold)[0]
+
+            if len(bad_idx) == 0:
+                continue
+
+            # Index in original group where breakdown begins
+            cutoff_local = bad_idx[0] + 2  # +2 due to double diff
+
+            cutoff_index = df_valid.index[cutoff_local]
+
+            # Disable all later points
+            mask = (self.index >= cutoff_index) & \
+                (self['site_id'] == site) & \
+                (self['system_id'] == system)
+
+            self.loc[mask, 'inuse_manual'] = False
+
+        return self
 
     @classmethod
     def from_usfzip(cls, zip_path, track_history=True):
@@ -91,7 +159,7 @@ class TEMframe(DataFrame):
             for i, fname in enumerate(usf_files):
                 with z.open(fname, 'r') as f:
                     new_sweeps = usf.Sweep.from_buffer(f, combine=False)
-                    if set([x.points for x in new_sweeps]) == {6,22} or set([x.points for x in new_sweeps]) == {20,27}:
+                    if set([x.points for x in new_sweeps]) == {6,22}or set([x.points for x in new_sweeps]) == {20,27}:
                         sweeps += new_sweeps
                     else:
                         print(f'Ignoring {fname} because it does not contain both low and high moment data.')                    
@@ -115,7 +183,6 @@ class TEMframe(DataFrame):
     def from_sweeps(cls, sweeps, track_history=True, folder_path=None):
         points = sorted(set([x.points for x in sweeps]))
         mega_sweeps = []
-        print(f'Found sweeps with points: {points}')
         for pnts in points:
             mega_sweeps.append(usf.Sweep.combine_sweeps([swp for swp in sweeps if swp.points==pnts]))
         
@@ -128,7 +195,17 @@ class TEMframe(DataFrame):
             print(folder_path)
 
         n_sites,n_gates = lm.data.shape
-        print(f'Found {n_sites} sites and {n_gates} gates in low moment data.')
+        hm_initial_sign = np.nanmean(hm.data[:, :10], axis=1)
+
+        # 2. Create a mask for sites where the average of first 10 gates is negative
+        flip_mask = hm_initial_sign < 0
+
+        # 3. Apply the flip to both lm and hm 2D arrays
+        # This uses numpy broadcasting to flip all gates for the flagged sites
+        lm.data[flip_mask] *= -1
+        hm.data[flip_mask] *= -1
+
+        print(f"Flipped signs for {np.sum(flip_mask)} sites based on HM polarity.")
         n_gates += 1
         day_sort = np.argsort(lm.daytime)
         site_id = np.zeros(n_sites, dtype=int)
@@ -186,6 +263,7 @@ class TEMframe(DataFrame):
         data_avg['elevation']    = np.append(data_avg['elevation'], np.concatenate([np.ones(n_gates, dtype=float)*x for x in lm.location[:, 2]]))
         data_avg['daytime']      = np.append(data_avg['daytime'],   np.concatenate([np.ones(n_gates, dtype=float)*x for x in lm.daytime]))
 
+        data_avg['daytime'] = data_avg['date']*100 + data_avg['daytime']
         forward_operators = usf.sweep2fwr(sweeps)
         history = [f'place_holder = TEMframe.from_usf_folder(\"{folder_path}\")']
 
@@ -215,6 +293,7 @@ class TEMframe(DataFrame):
         ds = np.cumsum(np.sqrt(np.diff(utmx, prepend=utmx[0])**2 + np.diff(utmy, prepend=utmy[0])**2))
         df_data['distance'] = np.nan
         df_data.loc[ok, 'distance'] = np.round(ds, 1)
+        df_data.apply_slope_filter(threshold=1.2)
 
         # source_line = df_data._record_op()
         # output_name = source_line.split('=')[0].strip()
@@ -227,6 +306,22 @@ class TEMframe(DataFrame):
         df_data.forward_operators[0].filterfunc = df_data.forward_operators[1].filterfunc     
         df_data.dmfwr = df_data.forward_operators[0]+df_data.forward_operators[1]
 
+        if {'site_id','date','daytime'}.issubset(df_data.columns):
+
+            valid = df_data['site_id'] != -1
+
+            site_meta = (
+                df_data.loc[valid]
+                .groupby('site_id')[['date', 'daytime']]
+                .first()
+                .reset_index()
+                .sort_values(['date', 'daytime'])
+            )
+
+            site_meta['new_site_id'] = np.arange(1, len(site_meta) + 1)
+            mapping = dict(zip(site_meta['site_id'], site_meta['new_site_id']))
+
+            df_data.loc[valid, 'site_id'] = df_data.loc[valid, 'site_id'].map(mapping)
         return df_data
     
     def disable(self, data_ids):

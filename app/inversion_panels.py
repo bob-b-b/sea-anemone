@@ -137,17 +137,6 @@ class MultiInversion(Panel):
 
             )
 
-            fig.update_traces(name="Misfit", showlegend=True)
-            
-            
-            fig = px.line(
-                x=self.iterations,
-                y=self.misfit, labels={'x':'Iterations', 'y':'Misfit'},
-                markers=True,
-                color_discrete_sequence=[self.settings.line_color, self.settings.line_color],
-
-            )
-
             fig.update_traces(name="Total misfit", showlegend=True)
 
             fig.update_layout(title=self.title,xaxis_title='Iterations',yaxis_title='Misfit',xaxis_type='linear',yaxis_type='log',yaxis=dict(range=[-1,2]),
@@ -274,6 +263,7 @@ class MultiInversion(Panel):
         
         @app.callback(
                 [Output('review_layout', 'disabled', allow_duplicate=True),
+                Output('interpret_layout', 'disabled', allow_duplicate=True),
                 Output("multi_inv", "figure", allow_duplicate=True),
                 Output("review_layout","color", allow_duplicate=True),],
             Input('invert_all_button', 'n_clicks'),
@@ -305,26 +295,25 @@ class MultiInversion(Panel):
                 z   = tensor(depth[:-1])
 
                 if vc_level == "loose":
-                    Vert = 1.0
+                    Vert = 2.0
                 elif vc_level == "medium":
-                    Vert = 0.5
+                    Vert = 0.8
                 elif vc_level == "tight":
-                    Vert = 0.1
+                    Vert = 0.2
 
                 if hc_level == "loose":
-                    Horz = 1.0
-                elif hc_level == "medium":
                     Horz = 0.6
-                elif hc_level == "tight":
+                elif hc_level == "medium":
                     Horz = 0.3
+                elif hc_level == "tight":
+                    Horz = 0.1
                 res_start                        = LogResistivity.smooth(rho,z) 
-                # print(TABLES['data'])
                 sesh.models, sesh.data, self.site = sesh.data.invert(res_start,vc = Vert, hc = Horz)
                 # sesh.site = sesh.data.overview()
                 self.title = "Inversion Finished!!!"
                 new_review_clicks = (current_review_clicks or 0) + 1
                 # layouts.invert = layouts.invert_multi_first
-                return False, self.render(), "success" #,new_review_clicks,  0mod2.render(), dbdt1.render(), 
+                return False, False, self.render(), "success" #,new_review_clicks,  0mod2.render(), dbdt1.render(), 
             raise PreventUpdate
         
         @app.callback(
@@ -540,7 +529,6 @@ class Single_site(Panel):
 
                 err_plus  = d_obs * e
                 err_minus = d_obs * e / (1 + e)
-                # print(len(sesh.data[sesh.data['site_id']==1].time),len(dbdt))
                 time = sesh.data[sesh.data['site_id']==site_with_median_dbdt].time.dropna().values
                 fig.add_trace(go.Scatter(x=time,y=dbdt,mode="lines",line=dict(color=self.settings.line_color),name="Starting model"), row=1, col=2        )
                 fig.add_trace(go.Scatter(x=time,y=d_obs,mode="markers",name="Observed dB/dt",marker=dict(color="black",size=6,),
@@ -763,7 +751,7 @@ class Single_site(Panel):
 
             for vc in vc_levels:
                 
-                Vert = {"loose": 1.0, "medium": 0.5, "tight": 0.1}[vc]
+                Vert = {"loose": 2.0, "medium": 0.8, "tight": 0.2}[vc]
                 res_start = LogResistivity.smooth(rho, z)
                 df_layers, df_site, _ = sesh.data.invert_site(site_id=site_id,res_start=res_start,vc=Vert)
                 curves.append((vc, df_layers['resistivity'].values, df_layers['bottom_depth'].values,df_layers['misfit'].values[-1],df_layers, df_site['dbdt'].values, df_site['dbdt_syn'].values, df_site['time'].values, df_site['error'].values,df_site['include'].values, df_layers['doi'].values))
@@ -789,12 +777,6 @@ class Single_site(Panel):
     def build_depth_from_loop(self, gates=None, n_layers=31):
         import numpy as np
 
-        # scale maximum depth with sqrt(area)
-        # zmax = 0.5 * np.sqrt(loop_area)  # empirical factor
-
-        # log spacing
-        # thickness = np.logspace(-1, np.log10(zmax), n_layers)
-        print('gates:', gates)
         if gates <35:
             depth = np.cumsum(np.logspace(0, 1.3, 31)).tolist()
         elif gates > 35:

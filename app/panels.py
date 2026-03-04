@@ -56,9 +56,10 @@ def cdist(lat1,lon1,lat2,lon2):
 class MapSettings(PanelSettings):
     zoom: int = 14
     color: str = '#ff0000'
+    color_data: str = '#000000'
     highlight_color: str= '#ffff00'  # Default highlight color
     plot_by: str = 'misfit'
-    buffer_color: str= '#0000ff'  # Default buffer color
+    buffer_color: str= '#ffffff'  # Default buffer color
 
 
 
@@ -71,6 +72,7 @@ class Map(Panel):
     hover_marker: dict = None
     boreholes : dict = None
     rock_color_map = None
+    hover_marker: dict = None
 
     def __init__(self, data, **kwargs):
         settings = MapSettings(id='map', **kwargs)
@@ -101,8 +103,9 @@ class Map(Panel):
                 center=center,
                 color=self.settings.plot_by,
                 color_continuous_scale='turbo',
-                custom_data=["site_id"],   # <-- ADD THIS
-                )
+                custom_data=["site_id"]
+            )
+            
             fig.update_layout(
                 coloraxis_colorbar=dict(
                     orientation="h", 
@@ -116,6 +119,22 @@ class Map(Panel):
                 text='',
                 side="bottom"))
             )
+            if self.settings.plot_by == 'misfit':
+                fig.update_coloraxes(cmin=0, cmax=3)
+            elif self.settings.plot_by == 'doi':
+                fig.update_coloraxes(cmin=10, cmax=sesh.models['doi'].max())
+            data_trace = px.scatter_map(
+                df_plot,
+                lat="latitude",
+                lon="longitude",
+                zoom=zoom,
+                center=center,
+                color_discrete_sequence=[self.settings.color_data],
+                custom_data=["site_id"]   # <-- ADD THIS
+            )
+            data_trace.update_traces(marker={'size': 8})
+            for trace in data_trace.data:
+                fig.add_trace(trace)
         else:
             # fig = px.scatter_map(df_plot, lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.color])
             fig = px.scatter_map(
@@ -127,8 +146,8 @@ class Map(Panel):
                 color_discrete_sequence=[self.settings.color],
                 custom_data=["site_id"]   
             )
-        fig.update_traces(marker=dict(size=7))
-
+        
+        fig.update_traces(marker={'size': 12})
         if self.buffer_sites is not None and len(self.buffer_sites) > 0 and self.dataframe is not None and 'site_id' in self.dataframe.columns:
             df_buffer = self.dataframe[self.dataframe["site_id"].isin(self.buffer_sites)]
 
@@ -138,18 +157,19 @@ class Map(Panel):
                     lat="latitude",
                     lon="longitude",
                     zoom=zoom, center=center, 
-                    # color_discrete_sequence=["#00cc96"],  # soft green
+                    custom_data=["site_id"],
                 )
 
                 buffer_trace.update_traces(
-                    marker=dict(size=12, color=self.settings.buffer_color),
+                    marker=dict(size=15, color=self.settings.buffer_color),
                     name="Buffer window"
                 )
 
                 for trace in buffer_trace.data:
                     fig.add_trace(trace)
                 fig.data = (fig.data[1], fig.data[0])
-        
+
+
         fig.update_layout(map_style="white-bg",
             map_layers=[
                 {
@@ -159,7 +179,6 @@ class Map(Panel):
                     "source": ['https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}']
                 }])
         if self.highlighted is not None:
-            print('in panels', self.highlighted)
             # highlight_trace = px.scatter_map(df_plot[df_plot.index == self.highlighted], lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.highlight_color])
             
             highlight_trace = px.scatter_map(
@@ -189,6 +208,11 @@ class Map(Panel):
         # if self.lines is not None:
         #     fig2 = px.line_map(self.lines, lat='latitude', lon='longitude', line_group='line', color='line',  zoom=zoom, center=center, hover_name='line')
         #     fig = go.Figure(data=fig2.data+fig.data, layout=fig.layout)
+
+        # --- Borehole overlay ---
+        if self.boreholes:
+            from borehole_utils import add_boreholes_to_map_fig
+            fig = add_boreholes_to_map_fig(fig, self.boreholes)
 
         if self.lines is not None and not self.lines.empty:
             unique_ids = sorted(self.lines['line'].unique())
@@ -515,13 +539,13 @@ class dbdtSounding(Panel):
             x=self.settings.x_axis,
             y='dbdt_syn',
             color="system_id",
-            color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
+            color_discrete_sequence=[self.settings.lm_color, self.settings.hm_color],
             title="dbdt vs time by site_id",
             custom_data=["system_id", "data_id", "site_id"],
             # range_y=[self.settings.dbdt_min, self.settings.dbdt_max]
 
         )
-
+        fig2.update_traces(line_width=2)
 
 
         for trace in fig3.data:
@@ -592,7 +616,7 @@ class dbdtSounding(Panel):
             custom_data=["system_id", "data_id", "site_id"],
             range_y=[self.settings.dbdt_min, self.settings.dbdt_max]
         )
-        
+        fig3.update_traces(line_width=2)
         for trace in fig2.data:
             fig.add_trace(trace)
 
@@ -621,7 +645,39 @@ class dbdtSounding(Panel):
             margin={"l": 50, "r": 50, "t": 50, "b": 50},
             dragmode='select'
         )
+        shown_groups = set()
 
+        for trace in fig.data:
+
+            # ----- LINES -----
+            if trace.mode == "lines":
+                if trace.name == "lm":
+                    trace.name = "LM lines"
+                    trace.legendgroup = "lm_lines"
+                elif trace.name == "hm":
+                    trace.name = "HM lines"
+                    trace.legendgroup = "hm_lines"
+
+            # ----- MARKERS -----
+            elif trace.mode == "markers":
+
+                if trace.marker.color == "black":
+                    trace.name = "Enabled"
+                    trace.legendgroup = "enabled_points"
+
+                elif trace.marker.color == "gray":
+                    trace.name = "Disabled"
+                    trace.legendgroup = "disabled_points"
+
+            # ---- SHOW LEGEND ONLY ONCE PER GROUP ----
+            if trace.legendgroup not in shown_groups:
+                trace.showlegend = True
+                shown_groups.add(trace.legendgroup)
+            else:
+                trace.showlegend = False
+
+        # ---- REMOVE LEGEND TITLE ----
+        fig.update_layout(legend_title_text=None)
         return fig
    
 
@@ -705,6 +761,7 @@ class rhoaSounding(dbdtSounding):
             title="rhoa vs time",
             custom_data=["system_id", "data_id", "site_id"],
         )
+        fig2.update_traces(line_width=2)
 
         for trace in fig3.data:
             fig.add_trace(trace)
@@ -790,6 +847,40 @@ class rhoaSounding(dbdtSounding):
             margin={"l": 50, "r": 50, "t": 50, "b": 50},
             dragmode='select'
         )
+
+        shown_groups = set()
+
+        for trace in fig.data:
+
+            # ----- LINES -----
+            if trace.mode == "lines":
+                if trace.name == "lm":
+                    trace.name = "LM lines"
+                    trace.legendgroup = "lm_lines"
+                elif trace.name == "hm":
+                    trace.name = "HM lines"
+                    trace.legendgroup = "hm_lines"
+
+            # ----- MARKERS -----
+            elif trace.mode == "markers":
+
+                if trace.marker.color == "black":
+                    trace.name = "Enabled"
+                    trace.legendgroup = "enabled_points"
+
+                elif trace.marker.color == "gray":
+                    trace.name = "Disabled"
+                    trace.legendgroup = "disabled_points"
+
+            # ---- SHOW LEGEND ONLY ONCE PER GROUP ----
+            if trace.legendgroup not in shown_groups:
+                trace.showlegend = True
+                shown_groups.add(trace.legendgroup)
+            else:
+                trace.showlegend = False
+
+        # ---- REMOVE LEGEND TITLE ----
+        fig.update_layout(legend_title_text=None)
         return fig
 
 @nosj
@@ -899,12 +990,49 @@ class dbdtSection(Panel):
             title="field data versus simulated data",
             custom_data=["system_id", "data_id", "site_id"],
         )
+        fig2.update_traces(line_width=1.5)
 
         for trace in fig3.data:
             fig.add_trace(trace)
 
         for trace in fig2.data:
             fig.add_trace(trace)
+
+        shown_groups = set()
+
+        for trace in fig.data:
+
+            # ----- LINES -----
+            if trace.mode == "lines":
+                if trace.name == "lm":
+                    trace.name = "LM lines"
+                    trace.legendgroup = "lm_lines"
+                elif trace.name == "hm":
+                    trace.name = "HM lines"
+                    trace.legendgroup = "hm_lines"
+
+            # ----- MARKERS -----
+            elif trace.mode == "markers":
+
+                if trace.marker.color == "black":
+                    trace.name = "Enabled"
+                    trace.legendgroup = "enabled_points"
+
+                elif trace.marker.color == "gray":
+                    trace.name = "Disabled"
+                    trace.legendgroup = "disabled_points"
+
+            # ---- SHOW LEGEND ONLY ONCE PER GROUP ----
+            if trace.legendgroup not in shown_groups:
+                trace.showlegend = True
+                shown_groups.add(trace.legendgroup)
+            else:
+                trace.showlegend = False
+        dx = xmax - xmin
+        fig.update_layout(legend_title_text=None)
+        fig.update_xaxes(range=[xmin-0.01*dx, xmax+0.01*dx])
+
+
         dx = xmax - xmin
         fig.update_xaxes(range=[xmin-0.01*dx, xmax+0.01*dx])
         return fig    
@@ -995,14 +1123,46 @@ class dbdtSection(Panel):
             title="dbdt vs time by site_id",
             custom_data=["system_id", "data_id", "site_id"],
         )
+        fig2.update_traces(line_width=1.5)
 
         for trace in fig3.data:
             fig.add_trace(trace)
 
         for trace in fig2.data:
             fig.add_trace(trace)
+
+        shown_groups = set()
+
+        for trace in fig.data:
+
+            # ----- LINES -----
+            if trace.mode == "lines":
+                if trace.name == "lm":
+                    trace.name = "LM lines"
+                    trace.legendgroup = "lm_lines"
+                elif trace.name == "hm":
+                    trace.name = "HM lines"
+                    trace.legendgroup = "hm_lines"
+
+            # ----- MARKERS -----
+            elif trace.mode == "markers":
+
+                if trace.marker.color == "black":
+                    trace.name = "Enabled"
+                    trace.legendgroup = "enabled_points"
+
+                elif trace.marker.color == "gray":
+                    trace.name = "Disabled"
+                    trace.legendgroup = "disabled_points"
+
+            # ---- SHOW LEGEND ONLY ONCE PER GROUP ----
+            if trace.legendgroup not in shown_groups:
+                trace.showlegend = True
+                shown_groups.add(trace.legendgroup)
+            else:
+                trace.showlegend = False
         dx = xmax - xmin
-        
+        fig.update_layout(legend_title_text=None)
         fig.update_xaxes(range=[xmin-0.01*dx, xmax+0.01*dx])
         
         return fig  
@@ -1447,7 +1607,7 @@ class ModelGraph(Panel):
         # ...existing code...
         df_layers_long = pd.melt(
             self.dataframe,
-            id_vars=['site_id', 'daytime', 'longitude', 'latitude', 'date', 'elevation', 'layer', 'resistivity'],
+            id_vars=['site_id', 'daytime', 'longitude', 'latitude', 'date', 'elevation', 'layer', 'resistivity','doi'],
             value_vars=['top_depth', 'bottom_depth'],
             var_name='depth_type',
             value_name='depth'
@@ -1492,6 +1652,8 @@ class ModelGraph(Panel):
                     name=f"Site {self.highlighted}"
                 ), 
             )
+
+            fig.add_trace(go.Scatter(x=[0.1,1000],y=[df_highlighted['doi'].iloc[0],df_highlighted['doi'].iloc[0]],mode="lines",line=dict(color="black",width=2,dash="dash"),showlegend=False))
             # fig.add_trace(
             #     go.Scatter(
             #         x=df_layers_long["resistivity"],
@@ -1588,19 +1750,12 @@ class ModelSection(Panel):
             if isinstance(trigger, dict):
                 trigger = f"{trigger.get('type')}[{trigger.get('key')}]"
 
-        # print("--- RENDER DEBUG ---")
-        # print(f"TRIGGERED BY: {trigger}")
-        # print("VMAX RENDER MODEL SECTION", vmax_ms)
-        # print("SETTINGS OBJECT ID:", id(self.settings))
 
         log_vmin = np.log10(vmin_ms)
         log_vmax = np.log10(vmax_ms)
 
         tick_vals = np.linspace(log_vmin, log_vmax, self.settings.nticks)
         tick_text = [f"{10**v:.0f}" for v in tick_vals]
-        
-        # print(tick_vals)
-
 
         vmin_ms = self.settings.__dict__.get('vmin', self.settings.vmin)
         vmax_ms = self.settings.__dict__.get('vmax', self.settings.vmax)
@@ -2039,6 +2194,7 @@ class HotKeyReminder(Panel):
                     dbc.Button("enable  [ctrl+e]", id='enableButton'),
                     ]),
                     dbc.ButtonGroup([
+                        dbc.Button("Beginning [<<]", id='beginning-buffer', style={"marginRight": "6px"}),
                         dbc.Button("Previous buffer [<<-]", id='prev-buffer', style={"marginRight": "6px"}),
                         dbc.Button("Previous [<-]", id='highlight_prev', style={"marginRight": "6px"}),
                         dbc.Button("Next [->]", id='highlight_next', style={"marginRight": "6px"}),
@@ -2066,6 +2222,8 @@ class HotKeyReminder(Panel):
                                         "fontSize": "13px"
                                     }
                                 ),
+                            dbc.Progress(id="buffer-progress",value=0,max=100,style={"height": "18px", "marginTop": "10px", "marginLeft": "12px", "marginRight": "6px"}),
+                            html.Div(id="buffer-progress-text", style={"fontSize": "14px"}),
                             ],
                             style={
                                 "display": "flex",
@@ -2073,6 +2231,7 @@ class HotKeyReminder(Panel):
                             }
                         )
                     ]),
+                    
                     dbc.ButtonGroup([
                         dbc.Button("save [ctrl+s]", id='saveButton'),
                     ])
@@ -2084,4 +2243,31 @@ class HotKeyReminder(Panel):
         return x
     
     def add_callbacks(self, app):
-        pass
+        super().add_callbacks(app)
+        @app.callback(
+            Output("buffer-progress", "value"),
+            Output("buffer-progress-text", "children"),
+            Input("data-buffer", "data"),
+            Input("map", "figure"),   # ← triggers when upload completes
+            prevent_initial_call=False
+        )
+        def update_buffer_progress(buffer_data, _):
+            from __main__ import sesh
+
+            if sesh.data is None or "site_id" not in sesh.data.columns:
+                return 0, "No data loaded"
+
+            total_sites = sesh.data.loc[
+                sesh.data["site_id"] != -1, "site_id"
+            ].nunique()
+
+            if total_sites == 0:
+                return 0, "No sites"
+
+            start = buffer_data.get("start_site", 0)
+            length = buffer_data.get("length", 0)
+
+            end = min(start + length, total_sites)
+            percent = (end / total_sites) * 100
+
+            return percent, f"{start}–{end} of {total_sites} sites"

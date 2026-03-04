@@ -1,0 +1,6 @@
+BUGS in sea-anemone
+
+Make a flipped sign message
+Site ID should be able to handle different days for buffer. So should daytime, it has to include date
+Make map respond to change of axis in buffer
+Make dots larger to show DOI and misfit

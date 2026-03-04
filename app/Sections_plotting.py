@@ -361,6 +361,9 @@ def build_combined_borehole_figure(bh_ids, bh_projections, rock_color_map):
     )
     return fig
 
+bh_data = None 
+rock_color_map = None
+
 def haversine_distance(p1, p2):
     """Distance in metres between two [lon, lat] points."""
     lon1, lat1 = np.radians(p1)
