@@ -506,8 +506,6 @@ def preprocess_new_df(new_df):
 
     # 4. Create the 'Depths' column
     def extract_depth_interfaces(row):
-        # print("DEPTH PROCESS NEW DF TOP", row['top_depth'] )
-        # print("DEPTH PROCESS NEW DF BOTTOM", [row['bottom_depth']])
         return row['top_depth'] + [row['bottom_depth'][-1]]
     
     df_wide['Depths'] = df_wide.apply(extract_depth_interfaces, axis=1)
@@ -518,7 +516,7 @@ def preprocess_new_df(new_df):
                 palette = px.colors.qualitative.Light24
                 color_master_map[attr] = {val: palette[i % len(palette)] for i, val in enumerate(unique_vals)}
 
-    return df_wide, color_master_map, existing_attrs
+    return [df_wide]#, color_master_map, existing_attrs
    
 def get_numeric_colors(values, vmin, vmax, log=False, cmap_name='jet'): 
     """Maps numbers to Hex strings using GLOBAL min/max."""
@@ -738,7 +736,8 @@ def create_blocky_polygons(stations_on_line, depths, vmin, vmax, log,show_misfit
                         x_center + bar_width/2, x_center - bar_width/2, x_center - bar_width/2]
                 y_box = [y_top, y_top, y_bot, y_bot, y_top]
                 
-                sounding_idx = s.get('df_index')
+                # sounding_idx = s.get('df_index')
+                sounding_idx = s.get('id')
                 
                 traces.append(go.Scatter(
                     x=x_box, y=y_box, 
@@ -750,7 +749,7 @@ def create_blocky_polygons(stations_on_line, depths, vmin, vmax, log,show_misfit
                     customdata=[[sounding_idx, x_center]]* len(x_box),
                     name="", 
                     hoveron='fills',
-                    text=f"Res {val:.1f} Ωm \nStation: {sounding_idx}",
+                    text=f"Res {val:.1f} Ωm \nModel: {sounding_idx}",
                 ))
 
             # LOGIC: Splitting the block based on DOI

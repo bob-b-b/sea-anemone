@@ -1053,16 +1053,67 @@ def highlight_change(n1, n2, invert_layout_color,model):
     return ctx.triggered_id, m1.render(is_last_tab=False), mod1.render(), dbdt1.render(), Multi_inv.render(), mod2.render(), dbdt2.render(), rhoa.render()
 
 
+# @app.callback(
+#     m1.output, mod1.output, dbdt1.output, mod2.output, dbdt2.output, rhoa.output,
+#     Input('model_section', 'clickData'),
+#     Input('tTEM', 'clickData'),
+#     Input('map', 'clickData'),
+#     State('invert_layout',  'color'),
+#     State('data-buffer', 'data'),
+#     prevent_initial_call=True
+# )
+# def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color,buffer_data):
+#     # ctx = callback_context
+#     if not ctx.triggered:
+#         raise PreventUpdate
+#     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+#     click_data = ctx.triggered[0]['value']
+#     if not click_data or 'points' not in click_data:
+#         raise PreventUpdate
+#     if trigger_id == 'tTEM':
+#         x_value = click_data['points'][0]['x']
+#         site_id = dbdt2.dataframe.query(f'{dbdt2.settings.x_axis} == @x_value')['site_id'].iloc[0]
+#     elif trigger_id == 'model_section':
+#         x_value = click_data['points'][0]['x']
+#         site_id = mod2.dataframe.query(f'{mod2.settings.x_axis} == @x_value')['site_id'].iloc[0]
+#     # elif trigger_id == 'map':
+#     #     site_id = sesh.data['site_id'].iloc[click_data['points'][0]['pointNumber']]
+#     elif trigger_id == 'map':
+#         # Skip borehole marker clicks — handled by manage_windows
+#         pt = click_data['points'][0]
+#         cd = pt.get('customdata')
+#         if cd and isinstance(cd, list) and len(cd) >= 3 and cd[2] == 'borehole':
+#             raise PreventUpdate
+#         site_id = int(pt['pointNumber'])
+#     else:
+#         site_id = None
+#     df_data = sesh.data
+#     # Sing_inv.dataframe = df_data[df_data['site_id'] == site_id]
+#     m1.highlighted = site_id
+#     mod1.highlighted = site_id
+#     mod2.highlighted = site_id
+#     dbdt2.highlighted = site_id
+#     dbdt1.dataframe = df_data[df_data['site_id'] == site_id]
+#     rhoa.dataframe  = df_data[df_data['site_id'] == site_id]
+#     # if invert_layout_color == 'primary':
+#     #     # df_layers, df_site, _ = df_data.invert_site(site_id)
+#     #     # if mod1.dataframe is not None:
+#     #     #     df_layers = pd.concat([mod1.dataframe[df_data['site_id'] != site_id], df_layers], ignore_index=True)
+#     #     mod1.dataframe = df_layers
+#     #     dbdt1.dataframe = df_site
+#     return m1.render(is_last_tab=False), mod1.render(), dbdt1.render(), mod2.render(), dbdt2.render(), rhoa.render()
+
 @app.callback(
     m1.output, mod1.output, dbdt1.output, mod2.output, dbdt2.output, rhoa.output,
     Input('model_section', 'clickData'),
     Input('tTEM', 'clickData'),
     Input('map', 'clickData'),
     State('invert_layout',  'color'),
+    State('review_layout', 'color'),
     State('data-buffer', 'data'),
     prevent_initial_call=True
 )
-def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color,buffer_data):
+def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color,review_layout_color, buffer_data):
     # ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
@@ -1079,12 +1130,15 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color,bu
     # elif trigger_id == 'map':
     #     site_id = sesh.data['site_id'].iloc[click_data['points'][0]['pointNumber']]
     elif trigger_id == 'map':
-        # Skip borehole marker clicks — handled by manage_windows
         pt = click_data['points'][0]
         cd = pt.get('customdata')
         if cd and isinstance(cd, list) and len(cd) >= 3 and cd[2] == 'borehole':
             raise PreventUpdate
-        site_id = int(pt['pointNumber'])
+        if review_layout_color != 'primary':
+            site_id = sesh.data['site_id'].iloc[click_data['points'][0]['pointNumber']]
+        else:
+            site_id = sesh.models['site_id'].iloc[click_data['points'][0]['pointNumber']]
+
     else:
         site_id = None
     df_data = sesh.data
@@ -1102,6 +1156,9 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color,bu
     #     mod1.dataframe = df_layers
     #     dbdt1.dataframe = df_site
     return m1.render(is_last_tab=False), mod1.render(), dbdt1.render(), mod2.render(), dbdt2.render(), rhoa.render()
+
+
+
 
 @app.callback(
     Output("starting-model", "data", allow_duplicate=True),
@@ -2621,7 +2678,7 @@ def master_line_controller(url_hash,relayout, clear_sel_n, clear_all_n, prev_n, 
 
 
 
-if __name__ == "__main__":
+if __name__ == "__main__": 
     try:
         is_frozen = getattr(sys, "frozen", False)
         app.run(port=8050, debug=not is_frozen, use_reloader=not is_frozen)
