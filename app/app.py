@@ -895,7 +895,7 @@ def update_model_section_from_buffer(buffer_data):
     rhoa.dataframe = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
     # dbdt1.buffer_sites = buffer_sites
 
-    return mod2.render(), dbdt2.render(), dbdt1.render(), m1.render(), mod1.render(), rhoa.render()
+    return mod2.render(), dbdt2.render(), dbdt1.render(), m1.render(is_last_tab=False), mod1.render(), rhoa.render()
 
 @app.callback(
     Output('data-buffer', 'data'),
@@ -1080,7 +1080,7 @@ def highlight_change(n1, n2, invert_layout_color,model):
     
     
 
-    return ctx.triggered_id, m1.render(), mod1.render(), dbdt1.render(), Multi_inv.render(), mod2.render(), dbdt2.render(), rhoa.render()
+    return ctx.triggered_id, m1.render(is_last_tab=False), mod1.render(), dbdt1.render(), Multi_inv.render(), mod2.render(), dbdt2.render(), rhoa.render()
 
 
 @app.callback(
@@ -1135,7 +1135,7 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color,re
     #     #     df_layers = pd.concat([mod1.dataframe[df_data['site_id'] != site_id], df_layers], ignore_index=True)
     #     mod1.dataframe = df_layers
     #     dbdt1.dataframe = df_site
-    return m1.render(), mod1.render(), dbdt1.render(), mod2.render(), dbdt2.render(), rhoa.render()
+    return m1.render(is_last_tab=False), mod1.render(), dbdt1.render(), mod2.render(), dbdt2.render(), rhoa.render()
 
 @app.callback(
     Output("starting-model", "data", allow_duplicate=True),
@@ -1334,7 +1334,7 @@ def upload_borehole(contents, filename):
     bh_ids = ', '.join(b['id'] for b in bh_data)
     msg = f"Loaded {n_bh} borehole(s): {bh_ids}"
 
-    return html.Div(msg), True, m1.render(), True, f"Loaded {n_bh} borehole(s)"
+    return html.Div(msg), True, m1.render(is_last_tab=False), True, f"Loaded {n_bh} borehole(s)"
 
 
 @app.callback(
@@ -2326,9 +2326,11 @@ def toggle_dem_upload(use_dem):
         Output('invert_layout', 'color'),
         Output('review_layout', 'color'),
         Output('interpret_layout', 'color'),
+        Output('map', 'figure', allow_duplicate=True),
     ],
     [
         State('flex-layout', 'model'),
+        State('selected-line-index', 'data'),
         Input("upload_layout", 'n_clicks'),
         Input("process_layout", 'n_clicks'),
         Input("invert_layout", 'n_clicks'),
@@ -2337,25 +2339,47 @@ def toggle_dem_upload(use_dem):
     ],
     prevent_initial_call=True
 )
-def update_layout(model, load_clicks, process_clicks, invert_clicks, review_clicks, interpret_clicks):
+def update_layout(model, active_idx,
+                  load_clicks, process_clicks,
+                  invert_clicks, review_clicks, interpret_clicks):
+
     ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
-    
-    # Get the ID of the button that was clicked
+
     button_id = ctx.triggered[0]['prop_id'].split('.')[0]
-    
+    is_interpret = (button_id == 'interpret_layout')
+
+    colors = {
+        "upload_layout": 'secondary',
+        "process_layout": 'secondary',
+        "invert_layout": 'secondary',
+        "review_layout": 'secondary',
+        "interpret_layout": 'secondary'
+    }
+    colors[button_id] = 'primary'
+
+    # 🔥 ONE render only
+    map_fig = m1.render(
+        current_idx=active_idx,
+        is_last_tab=is_interpret
+    )
+
     if button_id == "upload_layout":
-        return layouts.upload, 'primary', 'secondary', 'secondary', 'secondary', 'secondary'
+        return layouts.upload, *colors.values(), map_fig
+
     elif button_id == "process_layout":
-        return layouts.data, 'secondary', 'primary', 'secondary', 'secondary', 'secondary'
+        return layouts.data, *colors.values(), map_fig
+
     elif button_id == "invert_layout":
-        return layouts.invert, 'secondary', 'secondary', 'primary', 'secondary', 'secondary'
+        return layouts.invert, *colors.values(), map_fig
+
     elif button_id == "review_layout":
-        return layouts.review, 'secondary', 'secondary', 'secondary', 'primary', 'secondary'
-    elif button_id == 'interpret_layout':
-        return layouts.interpret, 'secondary', 'secondary', 'secondary', 'secondary', 'primary'
-    # return model, 'secondary', 'secondary', 'secondary', 'secondary', 'secondary'
+        return layouts.review, *colors.values(), map_fig
+
+    elif button_id == "interpret_layout":
+        return layouts.interpret, *colors.values(), map_fig
+
 
 layout_output_list = [
         m1.output, dbdt1.output, dbdt2.output, rhoa.output, mod2.output,
@@ -2421,7 +2445,7 @@ def handle_url_hash(url_hash, model):
         if folder_path:
             sesh.save_dir = folder_path + '/' if not folder_path.endswith('/') else folder_path
             print(f'Working directory changed to: {sesh.save_dir}')
-            res[-2] = sesh.save_dir
+            res[-5] = sesh.save_dir
 
     if url_hash.startswith('#load'):
         folder = url_hash.split('=')[1].replace('%20', ' ').replace('%22', '')
@@ -2452,7 +2476,7 @@ def handle_url_hash(url_hash, model):
                     html.Small("Upload a new .bor file below to overwrite existing data.", style={'color': '#6c757d', 'fontStyle': 'italic', 'fontSize': '0.85rem'})])
             res[-2] = {'display': 'block', 'marginTop': '10px'} # container style
             
-            res[0] = m1.render()
+            res[0] = m1.render(is_last_tab=False)
         else:
             # If no boreholes, ensure UI reflects that
             res[-4] = False
@@ -2470,7 +2494,7 @@ def handle_url_hash(url_hash, model):
             Multi_inv.dataframe = sesh.data.copy()
             Sing_inv.dataframe = sesh.data.copy()
             profile.dataframe= sesh.models.copy()  if sesh.models is not None else None
-            res[0] = m1.render()
+            res[0] = m1.render(is_last_tab=False)
             res[1] = dbdt1.render()
             res[2] = dbdt2.render()
             res[3] = rhoa.render()
@@ -2641,6 +2665,7 @@ def manage_windows(click_data, n_closes, current_windows, combined_state,all_lin
                 ], style={"height": "100%"})
                 
                 title = f"Comparison: {len(tem_ids)} Sites"
+                width_step = "900px"
 
             # Scenario: Only Boreholes selected -> Side-by-Side Logs
             elif len(tem_ids) == 0:
@@ -2690,7 +2715,7 @@ def manage_windows(click_data, n_closes, current_windows, combined_state,all_lin
                 ], style={"height": "100%"})
 
                 title = "TEM vs. Borehole Correlation"
-                width_step = "1100px" # Widened slightly for better side-by-side visibility
+                width_step = "900px" # Widened slightly for better side-by-side visibility
 
             # Update Window list
             comp_id = combined_state["window_id"]
@@ -2728,7 +2753,7 @@ def manage_windows(click_data, n_closes, current_windows, combined_state,all_lin
 def update_map_hover(hoverData, active_idx):
     if not hoverData or 'points' not in hoverData or not hoverData['points']:
         m1.hover_marker = None
-        return m1.render()
+        return m1.render(is_last_tab=True)
 
     try:
         point = hoverData['points'][0]
@@ -2776,14 +2801,284 @@ def update_map_hover(hoverData, active_idx):
         # Update the class marker and render
         m1.hover_marker = {
             "latitude": lat,
-            "longitude": lon
-        }
+            "longitude": lon}
         
-        return m1.render()
+        return m1.render(is_last_tab=True)
 
     except Exception as e:
         print(f"Hover Sync Error: {e}")
         return no_update
+
+# --------------------- SECTION BUTTON ---------------------
+@app.callback(
+    Output("section-panel", "style"),
+    Output("section-mode-store", "data"),
+    Input("section-toggle", "n_clicks"),
+    Input({"type": "section-option", "mode": ALL}, "n_clicks"),
+    State("section-panel", "style"),
+    State("section-mode-store", "data"),
+    prevent_initial_call=True
+)
+def manage_section_mode(toggle_n, option_clicks, current_style, current_mode):
+    ctx = callback_context
+    if not ctx.triggered:
+        return no_update, no_update
+
+    trigger_id = ctx.triggered[0]["prop_id"]
+    
+    # Logic to show/hide the dropdown panel
+    if "section-toggle" in trigger_id:
+        is_visible = current_style.get("display") == "block"
+        current_style["display"] = "none" if is_visible else "block"
+        return current_style, no_update
+
+    # Logic to handle picking a mode
+    if "section-option" in trigger_id:
+        # Extract the mode from the triggered ID dictionary
+        triggered_dict = json.loads(trigger_id.split(".")[0])
+        new_mode = triggered_dict["mode"]
+        
+        # Close the panel after selection
+        current_style["display"] = "none"
+        return current_style, new_mode
+
+    return current_style, no_update
+
+# --------------------- UPDATE PROFILE PLOT ---------------------
+@app.callback(
+    Output("profile_plot_main", "figure", allow_duplicate=True),
+    Input("map", "relayoutData"), 
+    Input("section-mode-store", "data"),
+    Input("selected-line-index", "data"),
+    Input('global-colorbar-store', 'data'),
+    State("map-view-store", "data"),
+    prevent_initial_call=True
+)
+def update_profile_callback(relayout, mode, selected_idx, global_cbar_data, view):
+    ctx = callback_context
+    if not ctx.triggered:
+        raise PreventUpdate
+
+    # Sync colorbars as before
+    if global_cbar_data and 'resistivity' in global_cbar_data:
+        res_config = global_cbar_data['resistivity']
+        profile.settings.update_attributes(res_config)
+    
+    fig = profile.render(
+        lines=m1.lines, 
+        mode=mode, 
+        selected_idx=selected_idx, 
+        view=view,
+    )
+    
+    return fig
+
+# --------------------- SAVE PROFILE AS PNG AND KMZ ---------------------
+@app.callback(
+    Output("export-message-container", "children"),
+    Input("btn-export-profile", "n_clicks"),
+    State("profile_plot_main", "figure"), 
+    State("selected-line-index", "data"),
+    prevent_initial_call=True
+)
+def trigger_export(n_clicks, fig_data, current_idx):
+    # 1. Validation
+    if not n_clicks:
+        return no_update
+
+    # Access the lines from your m1 instance (Map class)
+    if m1.lines is None or m1.lines.empty:
+        return dbc.Alert("Error: No profile lines found to export!", color="warning")
+
+    # 2. Setup Directory
+    target_dir = getattr(sesh, 'save_dir', None)
+    if target_dir is None:
+        target_dir = os.getcwd()
+
+    try:
+        # 3. Get specific line data
+        unique_ids = sorted(m1.lines['line'].unique())
+        if current_idx >= len(unique_ids):
+            return dbc.Alert("Error: Selected line index out of range.", color="danger")
+            
+        line_id = unique_ids[current_idx]
+        # Filter the dataframe for just the coordinates of the current profile
+        current_line_df = m1.lines[m1.lines['line'] == line_id]
+        
+        # Convert to list of dicts or whatever GIS_helpers expects
+        current_coords = current_line_df.to_dict('records')
+        # print("CURRENT COORDS",current_coords)
+
+        # 4. Execute Save logic
+        # Passing fig_data, coords, and the ID to your helper
+        kmz_full_path, png_full_path = GIS_helpers.save_profile_data(
+            fig_data, 
+            current_coords, 
+            line_id, 
+            target_dir
+        )
+        
+        kmz_name = os.path.basename(kmz_full_path)
+        png_name = os.path.basename(png_full_path)
+
+        return dbc.Alert(
+            f"✅ Successfully saved {kmz_name} and {png_name} to {target_dir}",
+            color="success",
+            duration=4000, 
+            dismissable=True
+        )
+                    
+    except Exception as e:
+        print(f"Export Error: {e}")
+        return dbc.Alert(f"Export Failed: {str(e)}", color="danger")
+
+# --------------------- Warning for when map not zoomed in and view is None ---------------------
+@app.callback(
+    Output('zoom-toast', 'is_open'),
+    Input('map', 'relayoutData'),
+    prevent_initial_call=True
+)
+def show_zoom_warning(relayout_data):
+    # If the user tries to draw a shape
+    if relayout_data and 'shapes' in relayout_data:
+        # Check if the coordinate system is missing
+        if m1.view is None:
+            return True            
+    return False
+
+# --------------------- MULTI LINE select profile dropdown and clear all or selected --------------------
+@app.callback(
+    Output("profile-list-container", "children"),
+    Output("selected-line-index", "data"),
+    Output("btn-prev-line", "disabled"), 
+    Output("btn-next-line", "disabled"),
+    Output("map", "figure", allow_duplicate=True),
+    Input("url", "hash"),
+    Input("map", "relayoutData"),           
+    Input("btn-clear-sel", "n_clicks"),  
+    Input("btn-clear-all", "n_clicks"),  
+    Input("btn-prev-line", "n_clicks"), 
+    Input("btn-next-line", "n_clicks"), 
+    Input({"type": "view-line-btn", "index": ALL}, "n_clicks"), 
+    State({"type": "del-check", "index": ALL}, "value"),        
+    State("selected-line-index", "data"),
+    prevent_initial_call=True
+)
+def master_line_controller(url_hash,relayout, clear_sel_n, clear_all_n, prev_n, next_n, view_clicks, check_states, current_idx):
+    ctx = callback_context
+    if not ctx.triggered:
+        return no_update
+    
+    if url_hash and '#load' in url_hash:
+        # from __main__ import sesh
+        # If the session has lines, make sure m1 has them
+        if sesh.lines is not None and not sesh.lines.empty:
+            m1.lines = sesh.lines.copy()
+            # print("Lines loaded into Controller via URL Trigger ")
+        
+    if m1.lines is None:
+        m1.lines = pd.DataFrame(columns=['latitude', 'longitude', 'line'])
+
+    unique_ids = sorted(m1.lines['line'].unique()) if not m1.lines.empty else []
+    num_lines = len(unique_ids)
+    if current_idx is None or current_idx >= num_lines:
+        current_idx = num_lines - 1 if num_lines > 0 else 0
+
+    trigger_id = ctx.triggered[0]["prop_id"]
+    
+    if "map.relayoutData" in trigger_id:
+        if relayout and 'shapes' not in relayout:
+            return no_update, no_update, no_update, no_update, no_update#, False
+        unique_ids = sorted(m1.lines['line'].unique())
+        num_lines = len(unique_ids)
+        current_idx = num_lines - 1
+
+    # --- ACTION: PREVIOUS ---
+    if "btn-prev-line" in trigger_id:
+        current_idx = max(0, current_idx - 1) 
+        print ("PREVIOUS BUTTON",current_idx)
+
+    # --- ACTION: NEXT ---
+    elif "btn-next-line" in trigger_id:
+        current_idx = min(num_lines - 1, current_idx + 1)
+        print ("NEXT BUTTON",current_idx)
+
+    # --- ACTION: CLEAR ALL ---
+    elif "btn-clear-all" in trigger_id:
+        m1.lines = pd.DataFrame(columns=['latitude', 'longitude', 'line'])
+        sesh.lines = m1.lines.copy()
+        updated_map = m1.render(current_idx=0, is_last_tab=True)
+        updated_map.update_layout(shapes=[])
+        return [], 0, True, True, updated_map #, False
+
+    # --- ACTION: CLEAR SELECTED ---
+    elif "btn-clear-sel" in trigger_id:
+        ids_to_remove = [unique_ids[i] for i, val in enumerate(check_states) if val and len(val) > 0]
+        m1.lines = m1.lines[~m1.lines['line'].isin(ids_to_remove)]
+        sesh.lines = m1.lines.copy()
+        unique_ids = sorted(m1.lines['line'].unique())
+        num_profiles = len(unique_ids)
+        # current_idx = max(0, min((current_idx or 0), num_profiles - 1))
+        if num_profiles == 0:
+            current_idx = 0
+            updated_map = m1.render(is_last_tab=True)
+            updated_map.update_layout(shapes=[])
+            return [], 0, True, True, updated_map
+        else:
+            current_idx = max(0, min((current_idx or 0), num_profiles - 1))
+            # Fallback to the last available profile if current one was deleted
+            updated_map = m1.render(current_idx=current_idx, is_last_tab=True)
+
+    # --- ACTION: CHANGE VIEW (EYE ICON) ---
+    elif "view-line-btn" in trigger_id:
+        btn_index = json.loads(trigger_id.split(".")[0])["index"]
+        current_idx = btn_index
+
+    num_profiles = len(unique_ids)
+    
+    prev_disabled = (current_idx <= 0) or (num_profiles == 0)
+    next_disabled = (current_idx >= num_profiles - 1) or (num_profiles == 0)
+    
+
+    updated_map = m1.render(current_idx=current_idx,is_last_tab=True)
+    updated_map.update_layout(shapes=[])
+
+    rows = []
+    for i, l_id in enumerate(unique_ids):
+        is_active = (i == current_idx)
+        rows.append(html.Div(
+            style={
+                "display": "flex", "alignItems": "center", "padding": "8px",
+                "borderBottom": "1px solid #ddd",
+                "backgroundColor": "#D1ECF1" if is_active else "transparent",
+                "borderRadius": "4px", "marginBottom": "2px"
+            },
+            children=[
+                html.Span(f"Profile {int(l_id)}", style={
+                    "flex": 1, "fontSize": "13px", 
+                    "fontWeight": "bold" if is_active else "normal"
+                }),
+                html.Button(
+                    "👁️", 
+                    id={"type": "view-line-btn", "index": i},
+                    style={
+                        "border": "none", "background": "none", "cursor": "pointer", 
+                        "fontSize": "16px", "marginRight": "10px",
+                        "opacity": "1" if is_active else "0.3"
+                    }
+                ),
+                dcc.Checklist(
+                    id={"type": "del-check", "index": i},
+                    options=[{"label": "", "value": 1}],
+                    value=[],
+                )
+            ]
+        ))
+
+    return rows, current_idx, prev_disabled, next_disabled, updated_map
+
+
+
 
 if __name__ == "__main__":
     try:
