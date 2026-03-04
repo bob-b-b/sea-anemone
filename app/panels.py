@@ -61,8 +61,6 @@ class MapSettings(PanelSettings):
     plot_by: str = 'misfit'
     buffer_color: str= '#ffffff'  # Default buffer color
 
-
-
 class Map(Panel):
     dataframe: None
     highlighted: int = None
@@ -92,9 +90,7 @@ class Map(Panel):
         from __main__ import sesh
         # if sesh.models is not None:
         if sesh.models is not None and self.settings.plot_by in sesh.models.columns:
-            # fig = px.scatter_map(sesh.models, lat="latitude", lon="longitude", zoom=zoom, center=center, 
-            #                      color=self.settings.plot_by, color_continuous_scale='turbo'
-            #                      )
+
             fig = px.scatter_map(
                 sesh.models,
                 lat="latitude",
@@ -211,7 +207,7 @@ class Map(Panel):
 
         # --- Borehole overlay ---
         if self.boreholes:
-            from borehole_utils import add_boreholes_to_map_fig
+            from Sections_plotting import add_boreholes_to_map_fig
             fig = add_boreholes_to_map_fig(fig, self.boreholes)
 
         if self.lines is not None and not self.lines.empty:
@@ -308,20 +304,7 @@ class Map(Panel):
             lon = self.lon0 + (self.lon1-self.lon0)*x
             return lat,lon
 
-    # def initialize(self):
-    #     return  html.Div([
-    #                 html.Div([
-    #                     dcc.Graph(figure=self.render(), id=self.id, mathjax=True,
-    #                                 style={'height': '75vh', 'width': '100%','margin':'1%'}),
-    #                     dbc.Select(
-    #                         options=['misfit', 'doi', 'date'],
-    #                         id=self.id+'_plot_by',
-    #                         value='misfit',
-    #                         style={'margin-left':'45%', 'justify': 'center','width':'10%'}),
-    #                 ]),
-    #                 gear_maker(self.id)],
-    #                 style={'height': '100%'} 
-                # )
+
     def initialize(self):
         return html.Div(
             [
@@ -452,7 +435,6 @@ class Map(Panel):
                     del relayout_data['shapes']
                     fig = self.render()
             return relayout_data, fig
-
 
 
 @nosj
@@ -680,7 +662,6 @@ class dbdtSounding(Panel):
         fig.update_layout(legend_title_text=None)
         return fig
    
-
 
 class rhoaSounding(dbdtSounding):
     @staticmethod
@@ -1654,21 +1635,7 @@ class ModelGraph(Panel):
             )
 
             fig.add_trace(go.Scatter(x=[0.1,1000],y=[df_highlighted['doi'].iloc[0],df_highlighted['doi'].iloc[0]],mode="lines",line=dict(color="black",width=2,dash="dash"),showlegend=False))
-            # fig.add_trace(
-            #     go.Scatter(
-            #         x=df_layers_long["resistivity"],
-            #         y=df_layers_long["depth"],
-            #         mode="lines",
-            #         line=dict(color='gray'),
-            #         name='All Sites'
-            #     ), 
-            # )
 
-
-
-        # Reverse y-axis so depth increases downward
-        # fig.update_yaxes(autorange="reversed")
-        # fig.update_xaxes(type="log", range=[np.log10(self.settings.rho_min), np.log10(self.settings.rho_max)])
         fig.update_xaxes(title_text='Resistivity [Ω⋅m]',type='log',range=[0, 2.7],showline=True,mirror=True           )
 
         fig.update_yaxes(
@@ -1849,23 +1816,6 @@ class ModelSection(Panel):
             showlegend=False,
             yaxis='y2'
         ))
-
-
-        # misfit_trace.update(
-        #     yaxis='y2',
-        #     line=dict(color='black', width=2),
-        #     name='Misfit',showlegend=True
-        # )
-        # fig.update_layout(yaxis2=dict(range=[0, 8]))
-        # fig.add_trace(go.Scatter(
-        #     x=x,
-        #     y=y_dashed,
-        #     mode="lines",
-        #     line=dict(color="rgb(0,0,0,0.7)", dash="dash"),
-        #     # hoverinfo="skip",
-        #     showlegend=False, yaxis='y2'
-        # ))
-
 
 
         fig.add_trace(misfit_trace)

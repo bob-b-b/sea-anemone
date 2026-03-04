@@ -57,14 +57,10 @@ class TEMframe(DataFrame):
             values=['date', 'daytime', 'latitude', 'longitude', 'elevation', 'utm_x', 'utm_y', 'distance'],
             aggfunc='first'
         )
-        # df['site_id'] = df.index
+        df['site_id'] = df.index
         if 'misfit' in self.columns:
             df['misfit'] = self.groupby('site_id')['misfit'].mean()
 
-        # with self._skip_tracking():
-        #     res = TEMframe(df, history=current_history.copy())
-        # res.track_history = self.track_history
-        # res._record_op()
         self.history = current_history
         return df
     

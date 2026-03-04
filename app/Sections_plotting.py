@@ -519,7 +519,7 @@ def preprocess_new_df(new_df):
                 palette = px.colors.qualitative.Light24
                 color_master_map[attr] = {val: palette[i % len(palette)] for i, val in enumerate(unique_vals)}
 
-    return [df_wide]#, color_master_map, existing_attrs
+    return df_wide, color_master_map, existing_attrs
    
 def get_numeric_colors(values, vmin, vmax, log=False, cmap_name='jet'): 
     """Maps numbers to Hex strings using GLOBAL min/max."""

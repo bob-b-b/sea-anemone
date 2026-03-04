@@ -126,8 +126,8 @@ class Profile(Panel):
 
         # 3. Pre-process Dataframe
         # Note: self.dataframe is passed during __init__
-        # df_up_map, color_master_map, existing_attrs = preprocess_new_df(self.dataframe)
-        df_up_map = preprocess_new_df(self.dataframe)
+        df_up_map, color_master_map, existing_attrs = preprocess_new_df(self.dataframe)
+        
         
         # 4. Gather Geometry Data
         y_depth = np.array(df_up_map["Depths"].iloc[0])[:-1]
