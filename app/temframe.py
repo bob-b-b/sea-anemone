@@ -68,7 +68,7 @@ class TEMframe(DataFrame):
         self.history = current_history
         return df
     
-    def apply_slope_filter(self, threshold=1.0, min_points=5):
+    def apply_slope_filter(self, threshold=1.0, min_points=8):
         """
         Disable datapoints after a large slope change in log-log space.
 
@@ -117,14 +117,22 @@ class TEMframe(DataFrame):
             dslopes = np.abs(np.diff(slopes))
 
             # Find first large slope jump
-            bad_idx = np.where(dslopes > threshold)[0]
+            start_points = 9  # start checking after this many points
+
+            # Index in dslopes corresponding to start_points
+            start_idx = max(0, start_points - 2)
+
+            # Only evaluate slope changes after enough points exist
+            bad_idx = np.where(dslopes[start_idx:] > threshold)[0]
 
             if len(bad_idx) == 0:
                 continue
 
-            # Index in original group where breakdown begins
-            cutoff_local = bad_idx[0] + 2  # +2 due to double diff
+            # Convert back to full index
+            bad_idx = bad_idx[0] + start_idx
 
+            # Index in original group where breakdown begins
+            cutoff_local = bad_idx + 2  # +2 due to double diff
             cutoff_index = df_valid.index[cutoff_local]
 
             # Disable all later points
@@ -268,6 +276,8 @@ class TEMframe(DataFrame):
         history = [f'place_holder = TEMframe.from_usf_folder(\"{folder_path}\")']
 
         df_data = cls(data_avg, forward_operators=forward_operators, history=history, track_history=track_history)
+        neg_mask = df_data['dbdt'] <= 0
+        df_data.loc[neg_mask, 'inuse_manual'] = False
         # with df_data._skip_tracking():
         df_data.sort_values(by=['site_id','system_id', 'gate_id'], inplace=True)
         df_data.reset_index(drop=True, inplace=True)

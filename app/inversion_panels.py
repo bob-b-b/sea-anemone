@@ -91,6 +91,25 @@ class MultiInversion(Panel):
             fig.add_trace(go.Scatter(x=time,y=dbdt,mode="lines",line=dict(color=self.settings.line_color),name="Starting model"), row=1, col=2        )
             fig.add_trace(go.Scatter(x=time,y=d_obs,mode="markers",name="Observed dB/dt",marker=dict(color="black",size=6,),
             error_y=dict(type="data",array=err_plus,arrayminus=err_minus,visible=True,thickness=1,width=0),),row=1,col=2)
+            vals = np.concatenate([d_obs, dbdt])
+            vals = vals[np.isfinite(vals) & (vals > 0)]
+
+            if len(vals) > 0:
+                logvals = np.log10(vals)
+                ymin = np.floor(logvals.min()) - 1
+                ymax = np.ceil(logvals.max()) + 1
+            else:
+                ymin, ymax = -12, -5
+
+            fig.update_yaxes(
+                title_text='dB/dt [V / m²]',
+                type='log',
+                range=[ymin, ymax],
+                showline=True,
+                mirror=True,
+                row=1,
+                col=2
+            )
             
 
         # -------- Axes & layout formatting --------
@@ -265,7 +284,7 @@ class MultiInversion(Panel):
                 [Output('review_layout', 'disabled', allow_duplicate=True),
                 Output('interpret_layout', 'disabled', allow_duplicate=True),
                 Output("multi_inv", "figure", allow_duplicate=True),
-                Output("review_layout","color", allow_duplicate=True),],
+                Output("review_layout","color", allow_duplicate=True)],
             Input('invert_all_button', 'n_clicks'),
             State('review_layout', 'n_clicks'),  # Add this state to get current value
             State("vc-level", "data"),
@@ -313,7 +332,7 @@ class MultiInversion(Panel):
                 self.title = "Inversion Finished!!!"
                 new_review_clicks = (current_review_clicks or 0) + 1
                 # layouts.invert = layouts.invert_multi_first
-                return False, False, self.render(), "success" #,new_review_clicks,  0mod2.render(), dbdt1.render(), 
+                return False, False, self.render(), "success"#,new_review_clicks,  0mod2.render(), dbdt1.render(), 
             raise PreventUpdate
         
         @app.callback(
@@ -533,6 +552,25 @@ class Single_site(Panel):
                 fig.add_trace(go.Scatter(x=time,y=dbdt,mode="lines",line=dict(color=self.settings.line_color),name="Starting model"), row=1, col=2        )
                 fig.add_trace(go.Scatter(x=time,y=d_obs,mode="markers",name="Observed dB/dt",marker=dict(color="black",size=6,),
                 error_y=dict(type="data",array=err_plus,arrayminus=err_minus,visible=True,thickness=1,width=0),),row=1,col=2)
+                vals = np.concatenate([d_obs, dbdt])
+                vals = vals[np.isfinite(vals) & (vals > 0)]
+
+                if len(vals) > 0:
+                    logvals = np.log10(vals)
+                    ymin = np.floor(logvals.min()) - 1
+                    ymax = np.ceil(logvals.max()) + 1
+                else:
+                    ymin, ymax = -12, -5
+
+                fig.update_yaxes(
+                    title_text='dB/dt [V / m²]',
+                    type='log',
+                    range=[ymin, ymax],
+                    showline=True,
+                    mirror=True,
+                    row=1,
+                    col=2
+                )
             return fig
 
         

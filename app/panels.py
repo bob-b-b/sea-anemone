@@ -11,7 +11,32 @@ import numpy as np
 import os
 import re
 
+def compute_lm_scaling(dataframe, base_factor=20.0, gate_threshold=27):
+    """
+    Determine LM scaling factor depending on number of gates per site.
+    """
 
+    if dataframe is None or len(dataframe) == 0:
+        return base_factor
+
+    if "gate_id" not in dataframe.columns:
+        return base_factor
+
+    gates_per_site = (
+        dataframe[dataframe["site_id"] > -1]
+        .groupby("site_id")["gate_id"]
+        .nunique()
+    )
+
+    if len(gates_per_site) == 0:
+        return base_factor
+
+    max_gates = gates_per_site.max()
+
+    if max_gates > gate_threshold:
+        return base_factor * 70
+
+    return base_factor
 
 # Define a custom template
 custom_template = {
@@ -130,7 +155,7 @@ class Map(Panel):
                 zoom=zoom,
                 center=center,
                 color_discrete_sequence=[self.settings.color_data],
-                custom_data=["site_id"]   # <-- ADD THIS
+                # custom_data=["site_id"]   # <-- ADD THIS
             )
             data_trace.update_traces(marker={'size': 8})
             for trace in data_trace.data:
@@ -144,7 +169,7 @@ class Map(Panel):
                 zoom=zoom,
                 center=center,
                 color_discrete_sequence=[self.settings.color],
-                custom_data=["site_id"]   
+                # custom_data=["site_id"]   
             )
         
         fig.update_traces(marker={'size': 12})
@@ -167,7 +192,10 @@ class Map(Panel):
 
                 for trace in buffer_trace.data:
                     fig.add_trace(trace)
-                fig.data = (fig.data[1], fig.data[0])
+                if sesh.models is not None and self.settings.plot_by in sesh.models.columns:
+                    fig.data = (fig.data[2], fig.data[1], fig.data[0])
+                else:
+                    fig.data = (fig.data[1], fig.data[0])
 
 
         fig.update_layout(map_style="white-bg",
@@ -486,10 +514,12 @@ class dbdtSounding(Panel):
 
         df_tmp                                             = self.dataframe.sort_values(['site_id', 'system_id',  self.settings.x_axis])
         df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto'])
-        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt_syn']  *= self.settings.lm_factor
-        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
-        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt_syn']  *= self.settings.hm_factor
-        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
+        lm_factor = compute_lm_scaling(self.dataframe, self.settings.lm_factor)
+        hm_factor = self.settings.hm_factor
+        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt_syn']  *= lm_factor
+        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= lm_factor
+        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt_syn']  *= hm_factor
+        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= hm_factor
         df_tmp.loc[df_tmp['site_id'] == -1, 'include']  = False
         df_tmp.loc[df_tmp['dbdt']<=0, 'dbdt'] = np.nan
 
@@ -499,14 +529,16 @@ class dbdtSounding(Panel):
         # if True:
         #     error_ub = None
         #     error_lb = None
-        
+        title = "Sounding curve"
+        if df_tmp['site_id'].nunique()==1:
+            title += f" site {df_tmp['site_id'].iloc[0]}"
         fig = px.scatter(
             df_tmp,
             x=self.settings.x_axis,
             y='dbdt',
             color_discrete_sequence=["gray", "gray"],
             color="system_id",
-            title="Sounding curve",
+            title=title,
             custom_data=["system_id", "data_id", "site_id"],
             error_y=error_ub,
             error_y_minus=error_lb,
@@ -564,8 +596,10 @@ class dbdtSounding(Panel):
         y_axis                                             = 'dbdt_syn'
         df_tmp                                             = self.dataframe.sort_values(['site_id', 'system_id',  self.settings.x_axis])
         df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto']).astype(bool)
-        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
-        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
+        lm_factor = compute_lm_scaling(self.dataframe, self.settings.lm_factor)
+        hm_factor = self.settings.hm_factor
+        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= lm_factor
+        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= hm_factor
         df_tmp.loc[df_tmp['site_id'] == -1, 'include']  = False
 
         df_tmp['system_id']                                = df_tmp['system_id'].map({1: 'hm', 0: 'lm'})
@@ -574,14 +608,16 @@ class dbdtSounding(Panel):
         # if True:
         #     error_ub = None
         #     error_lb = None
-        
+        title = "Sounding curve"
+        if df_tmp['site_id'].nunique()==1:
+            title += f" site {df_tmp['site_id'].iloc[0]}"
         fig = px.scatter(
             df_tmp,
             x=self.settings.x_axis,
             y='dbdt',
             color_discrete_sequence=["gray", "gray"],
             color="system_id",
-            title="Sounding curve",
+            title=title,
             custom_data=["system_id", "data_id", "site_id"],
             error_y=error_ub,
             error_y_minus=error_lb,
@@ -635,7 +671,18 @@ class dbdtSounding(Panel):
             fig = self.compare_synthetic()
         else:
             fig = self.observed_only()
+        
+        vals = np.abs(self.dataframe["dbdt"].values)
+        vals = vals[np.isfinite(vals) & (vals > 0)]
 
+        if len(vals) > 0:
+            logvals = np.log10(vals)
+            ymin = np.floor(logvals.min()) - 1
+            ymax = np.ceil(logvals.max()) + 1 + np.log10(self.settings.lm_factor)
+        else:
+            ymin, ymax = -12, -3
+        self.settings.dbdt_min = ymin
+        self.settings.dbdt_max = ymax
         fig.update_layout(
             yaxis_type="log",
             yaxis_range=[self.settings.dbdt_min, self.settings.dbdt_max],
@@ -683,6 +730,7 @@ class dbdtSounding(Panel):
 
 
 class rhoaSounding(dbdtSounding):
+
     @staticmethod
     def to_rhoa(time, dbdt, area=1., current=1.):
         from numpy import pi
@@ -715,20 +763,22 @@ class rhoaSounding(dbdtSounding):
         df_tmp.loc[df_tmp['site_id'] == -1, 'include']  = False
 
 
-        df_tmp['system_id']                                = df_tmp['system_id'].map({1: 'hm', 0: 'lm'})
+        df_tmp['system_id']                                = df_tmp['system_id'].map({0: 'hm', 1: 'lm'})
 
         error_ub,error_lb = 'error_ub', 'error_lb'
         # if True:
         #     error_ub = None
         #     error_lb = None
-        
+        title = "Apparent Resistivity"
+        if df_tmp['site_id'].nunique()==1:
+            title += f" site {df_tmp['site_id'].iloc[0]}"
         fig = px.scatter(
             df_tmp,
             x=self.settings.x_axis,
             y='rhoa',
             color_discrete_sequence=["gray", "gray"],
             color="system_id",
-            title="Apparent Resistivity",
+            title=title,
             custom_data=["system_id", "data_id", "site_id"],
             error_y=error_ub,
             error_y_minus=error_lb
@@ -779,20 +829,22 @@ class rhoaSounding(dbdtSounding):
         df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto']).astype(bool)
         df_tmp.loc[df_tmp['site_id'] == -1, 'include']  = False
 
-        df_tmp['system_id']                                = df_tmp['system_id'].map({1: 'hm', 0: 'lm'})
+        df_tmp['system_id']                                = df_tmp['system_id'].map({0: 'hm', 1: 'lm'})
 
         error_ub,error_lb = 'error_ub', 'error_lb'
         # if True:
         #     error_ub = None
         #     error_lb = None
-        
+        title = "Apparent Resistivity"
+        if df_tmp['site_id'].nunique()==1:
+            title += f" site {df_tmp['site_id'].iloc[0]}"
         fig = px.scatter(
             df_tmp,
             x=self.settings.x_axis,
             y='rhoa',
             color_discrete_sequence=["gray", "gray"],
             color="system_id",
-            title="Apparent Resistivity",
+            title=title,
             custom_data=["system_id", "data_id", "site_id"],
             error_y=error_ub,
             error_y_minus=error_lb
@@ -840,7 +892,7 @@ class rhoaSounding(dbdtSounding):
 
         fig.update_layout(
             yaxis_type="log",
-            yaxis_range=[self.settings.dbdt_min, self.settings.dbdt_max],
+            yaxis_range=[-1, 2.7],
             xaxis_type="log" if self.settings.x_axis == 'time' else "linear",
             xaxis_title=self.settings.x_axis,
             yaxis_title="$\\rho_a$ \\[ $\\Omega$-m\\]",
@@ -913,10 +965,12 @@ class dbdtSection(Panel):
         df_tmp                                             = df_tmp.sort_values(['gate_id', self.settings.x_axis])
         df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto'])
 
-        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt_syn']  *= self.settings.lm_factor
-        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
-        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt_syn']  *= self.settings.hm_factor
-        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
+        lm_factor = compute_lm_scaling(self.dataframe, self.settings.lm_factor)
+        hm_factor = self.settings.hm_factor
+        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt_syn']  *= lm_factor
+        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= lm_factor
+        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt_syn']  *= hm_factor
+        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= hm_factor
         df_tmp.loc[df_tmp['site_id'] ==  -1, 'include']  = False
         df_tmp['system_id']                                = df_tmp['system_id'].map({1: 'hm', 0: 'lm'})
 
@@ -931,7 +985,7 @@ class dbdtSection(Panel):
             x_vals = x_vals[x_vals > -1]
 
         n_sites = len(x_vals)
-
+        self.buffer_start +=1
         plot_start = max(0, self.buffer_start)
         plot_end   = min(n_sites, self.buffer_start + self.buffer_len)
 
@@ -986,7 +1040,7 @@ class dbdtSection(Panel):
             x=self.settings.x_axis,
             y='dbdt_syn',
             color="system_id",
-            color_discrete_sequence=[self.settings.lm_color, self.settings.hm_color],
+            color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
             title="field data versus simulated data",
             custom_data=["system_id", "data_id", "site_id"],
         )
@@ -1042,8 +1096,10 @@ class dbdtSection(Panel):
         df_tmp = self.dataframe[self.dataframe['gate_id']>-1]
         df_tmp                                             = df_tmp.sort_values(['gate_id', self.settings.x_axis])
         df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto']).astype(bool)
-        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
-        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
+        lm_factor = compute_lm_scaling(self.dataframe, self.settings.lm_factor)
+        hm_factor = self.settings.hm_factor
+        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= lm_factor
+        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= hm_factor
         df_tmp.loc[df_tmp['site_id'] ==  -1, 'include']  = False
         df_tmp['system_id']                                = df_tmp['system_id'].map({1: 'hm', 0: 'lm'})
 
@@ -1222,6 +1278,19 @@ class dbdtSection(Panel):
                     line=dict(color="rgba(0,0,0,0.8)", width=1.5),
                     fillcolor="rgba(0,0,0,0.0)",
                 )
+        vals = np.abs(self.dataframe["dbdt"].values)
+        vals = vals[np.isfinite(vals) & (vals > 0)]
+
+        if len(vals) > 0:
+            logvals = np.log10(vals)
+            ymin = np.floor(logvals.min()) - 1
+            ymax = np.ceil(logvals.max()) + 1 + np.log10(self.settings.lm_factor)
+        else:
+            ymin, ymax = -12, -3
+
+        self.settings.dbdt_min = ymin
+        self.settings.dbdt_max = ymax
+
         fig.update_layout(
             yaxis_type="log",
             yaxis_range=[self.settings.dbdt_min, self.settings.dbdt_max],
@@ -1653,7 +1722,15 @@ class ModelGraph(Panel):
                 ), 
             )
 
-            fig.add_trace(go.Scatter(x=[0.1,1000],y=[df_highlighted['doi'].iloc[0],df_highlighted['doi'].iloc[0]],mode="lines",line=dict(color="black",width=2,dash="dash"),showlegend=False))
+            if not df_highlighted.empty:
+                doi_val = df_highlighted['doi'].iloc[0]
+                fig.add_trace(go.Scatter(
+                    x=[0.1,1000],
+                    y=[doi_val, doi_val],
+                    mode="lines",
+                    line=dict(color="black",width=2,dash="dash"),
+                    showlegend=False
+                ))
             # fig.add_trace(
             #     go.Scatter(
             #         x=df_layers_long["resistivity"],
@@ -2270,4 +2347,4 @@ class HotKeyReminder(Panel):
             end = min(start + length, total_sites)
             percent = (end / total_sites) * 100
 
-            return percent, f"{start}–{end} of {total_sites} sites"
+            return percent, f"{start+1}–{end} of {total_sites} sites"

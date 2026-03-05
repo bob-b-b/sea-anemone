@@ -885,9 +885,11 @@ def update_model_section_from_buffer(buffer_data):
     )
 
 
-    dbdt1.dataframe = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
+    if buffer_data.get("source") == "buffer_button":
+        dbdt1.dataframe = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
+        rhoa.dataframe  = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
     m1.buffer_sites = buffer_sites
-    rhoa.dataframe = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
+    # rhoa.dataframe = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
     # dbdt1.buffer_sites = buffer_sites
 
     return mod2.render(), dbdt2.render(), dbdt1.render(), m1.render(is_last_tab=False), mod1.render(), rhoa.render()
@@ -925,6 +927,7 @@ def update_buffer(next_clicks, prev_clicks, buffer_data):
     start = max(0, min(start, max(0, n_sites - length)))
 
     buffer_data["start_site"] = start
+    buffer_data['source'] = "buffer_button"
     return buffer_data
 
 @app.callback(
@@ -1015,67 +1018,153 @@ def save_session(n1,n2):
         return f"Session saved to {sesh.save_dir}. {kml_msg}"
     return f'Session saved to {sesh.save_dir}'
 
+# @app.callback(
+#     Output("output-click", "children", allow_duplicate=True),
+#     # Output("selected-site-id", "data", allow_duplicate=True),
+#     m1.output, mod1.output, dbdt1.output, Multi_inv.output, mod2.output, dbdt2.output, rhoa.output,
+#     Input('highlight_prev', 'n_clicks'),
+#     Input('highlight_next', 'n_clicks'),
+#     State('invert_layout',  'color'),
+#     State('flex-layout', 'model'),
+#     prevent_initial_call=True,
+# )
+# def highlight_change(n1, n2, invert_layout_color,model):
+#     # ctx = callback_context
+#     if not ctx.triggered:
+#         raise PreventUpdate
+#     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
+
+#     highlighted = m1.highlighted
+#     if trigger_id == 'highlight_prev':
+#         highlight_change = -1
+#     elif trigger_id == 'highlight_next':
+#         highlight_change = 1
+
+#     if highlighted is None:
+#         PreventUpdate
+#     else:
+#         highlighted += highlight_change
+#     df_data = sesh.data
+#     m1.highlighted = highlighted
+#     mod1.highlighted = highlighted
+#     mod2.highlighted = highlighted
+#     dbdt2.highlighted = highlighted
+#     dbdt1.dataframe = df_data[df_data['site_id'] == highlighted]
+#     rhoa.dataframe = df_data[df_data['site_id'] == highlighted]
+#     print('invert layout color:', invert_layout_color)
+#     def get_active_tab_id(model):
+#         if model is None:
+#             return None
+
+#         def search(node):
+#             if node.get("type") == "tabset":
+#                 return node.get("selected")
+#             for child in node.get("children", []):
+#                 result = search(child)
+#                 if result:
+#                     return result
+#             return None
+
+#         return search(model.get("layout", {}))
+
+#     active_tab = get_active_tab_id(model)
+#     # print()
+#     # if active_tab == 1:
+#         # Sing_inv.invert_single_site(df_data[df_data['site_id'] == highlighted])
+#         # print('here?')
+#     # if invert_layout_color == 'primary':
+#     #     print('will launch an inversion next time')
+        
+    
+    
+
+#     return ctx.triggered_id, m1.render(is_last_tab=False), mod1.render(), dbdt1.render(), Multi_inv.render(), mod2.render(), dbdt2.render(), rhoa.render()
+from dash.dash import no_update
+
 @app.callback(
     Output("output-click", "children", allow_duplicate=True),
-    # Output("selected-site-id", "data", allow_duplicate=True),
     m1.output, mod1.output, dbdt1.output, Multi_inv.output, mod2.output, dbdt2.output, rhoa.output,
+    Output("data-buffer", "data", allow_duplicate=True),   # <-- ADD
     Input('highlight_prev', 'n_clicks'),
     Input('highlight_next', 'n_clicks'),
     State('invert_layout',  'color'),
     State('flex-layout', 'model'),
+    State("data-buffer", "data"),                          # <-- ADD
     prevent_initial_call=True,
 )
-def highlight_change(n1, n2, invert_layout_color,model):
-    # ctx = callback_context
+def highlight_change(n1, n2, invert_layout_color, model, buffer_data):
     if not ctx.triggered:
         raise PreventUpdate
     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
     highlighted = m1.highlighted
     if trigger_id == 'highlight_prev':
-        highlight_change = -1
+        step = -1
     elif trigger_id == 'highlight_next':
-        highlight_change = 1
+        step = 1
+    else:
+        raise PreventUpdate
 
     if highlighted is None:
-        PreventUpdate
-    else:
-        highlighted += highlight_change
+        raise PreventUpdate
+
+    highlighted = highlighted + step
+
+    # --- your existing updates ---
     df_data = sesh.data
     m1.highlighted = highlighted
     mod1.highlighted = highlighted
     mod2.highlighted = highlighted
     dbdt2.highlighted = highlighted
     dbdt1.dataframe = df_data[df_data['site_id'] == highlighted]
-    rhoa.dataframe = df_data[df_data['site_id'] == highlighted]
-    print('invert layout color:', invert_layout_color)
-    def get_active_tab_id(model):
-        if model is None:
-            return None
+    rhoa.dataframe  = df_data[df_data['site_id'] == highlighted]
 
-        def search(node):
-            if node.get("type") == "tabset":
-                return node.get("selected")
-            for child in node.get("children", []):
-                result = search(child)
-                if result:
-                    return result
-            return None
+    # --- NEW: slide buffer only if highlight exits current buffer window ---
+    new_buffer = no_update
+    if buffer_data is not None and dbdt2.dataframe is not None:
+        start  = buffer_data["start_site"]
+        length = buffer_data["length"]
 
-        return search(model.get("layout", {}))
+        x_axis = dbdt2.settings.x_axis
+        df = dbdt2.dataframe
 
-    active_tab = get_active_tab_id(model)
-    # print()
-    # if active_tab == 1:
-        # Sing_inv.invert_single_site(df_data[df_data['site_id'] == highlighted])
-        # print('here?')
-    # if invert_layout_color == 'primary':
-    #     print('will launch an inversion next time')
-        
-    
-    
+        # sorted axis positions
+        x_vals = np.sort(df[x_axis].dropna().unique())
 
-    return ctx.triggered_id, m1.render(is_last_tab=False), mod1.render(), dbdt1.render(), Multi_inv.render(), mod2.render(), dbdt2.render(), rhoa.render()
+        # find index of highlighted site
+        sel = df[df["site_id"] == highlighted]
+        if not sel.empty:
+            x_val = sel[x_axis].iloc[0]
+
+            idx = np.where(x_vals == x_val)[0]
+            if len(idx) > 0:
+                idx = int(idx[0])
+
+                # slide buffer when highlight exits window
+                print(start)
+                if idx-1 < start:
+                    start = idx-1
+                elif idx > start + length:
+                    start = idx - length
+
+                # clamp
+                start = max(0, min(start, max(0, len(x_vals) - length)))
+
+                buffer_data["start_site"] = start
+                buffer_data["source"] = "site_nav"
+                new_buffer = buffer_data
+
+    return (
+        ctx.triggered_id,
+        m1.render(is_last_tab=False),
+        mod1.render(),
+        dbdt1.render(),
+        Multi_inv.render(),
+        mod2.render(),
+        dbdt2.render(),
+        rhoa.render(),
+        new_buffer,   # <-- return updated buffer only when needed
+    )
 
 
 @app.callback(
@@ -1220,7 +1309,10 @@ def upload_file(contents, current_process_clicks):
     warning_msg = None
     if sesh.save_dir is None:
         warning_msg = "No working directory selected. You can still explore data; choose Save to set one."
-    sesh.data            = TEMframe.from_zip_content(contents[0])
+    try:
+        sesh.data            = TEMframe.from_zip_content(contents[0])
+    except Exception as e:
+        return (html.Div("Upload failed."),no_update,no_update,no_update,no_update,build_data_summary(),True,f"Upload failed: Only one geometry is supported at a time",True,True,no_update,no_update,no_update,no_update,no_update,{'display': 'block'}, {'display': 'block'})
     sesh.data.history    = ['df_data = TEMframe.from_zip_content("uploaded_data_zip.txt")']
     sesh.data['include'] = sesh.data['inuse_manual'].astype(bool, copy=False).fillna(sesh.data['inuse_auto'])
     sesh.models          = None
@@ -2258,11 +2350,13 @@ layout_output_list = [
         Output('process_layout', 'color', allow_duplicate=True),
         Output('invert_layout',  'color', allow_duplicate=True),
         Output('review_layout',  'color', allow_duplicate=True), #Output('review_layout', 'disabled', allow_duplicate=True)
-
+        Output('interpret_layout',  'color', allow_duplicate=True),
+        
         Output('upload_layout',  'disabled',  allow_duplicate=True),
         Output('process_layout', 'disabled', allow_duplicate=True),
         Output('invert_layout',  'disabled', allow_duplicate=True),
         Output('review_layout',  'disabled', allow_duplicate=True), #Output
+        Output('interpret_layout',  'disabled', allow_duplicate=True),
         Output("current-working-directory", "children", allow_duplicate=True),
 
         Output('use-borehole', 'value', allow_duplicate=True),
@@ -2376,20 +2470,24 @@ def handle_url_hash(url_hash, model):
             res[7]   = 'secondary'
             res[8]   = 'secondary'
             res[9]   = 'success'
-            res[10]  = False
+            res[10]  = 'secondary'
             res[11]  = False
             res[12]  = False
             res[13]  = False
+            res[14]  = False
+            res[15]  = False
         else:
             # res[5]   = layouts.data
             # res[6]   = 'secondary'
             res[7]   = 'success'
             res[8]   = 'secondary'
             res[9]   = 'secondary'
+            res[10]  = 'secondary'
             res[10]   = False
             res[11]  = False
             res[12]  = False
             res[13]  = True
+            res[14]  = True
 
     return res
 
