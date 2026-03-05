@@ -137,17 +137,6 @@ class MultiInversion(Panel):
 
             )
 
-            fig.update_traces(name="Misfit", showlegend=True)
-            
-            
-            fig = px.line(
-                x=self.iterations,
-                y=self.misfit, labels={'x':'Iterations', 'y':'Misfit'},
-                markers=True,
-                color_discrete_sequence=[self.settings.line_color, self.settings.line_color],
-
-            )
-
             fig.update_traces(name="Total misfit", showlegend=True)
 
             fig.update_layout(title=self.title,xaxis_title='Iterations',yaxis_title='Misfit',xaxis_type='linear',yaxis_type='log',yaxis=dict(range=[-1,2]),
@@ -274,6 +263,7 @@ class MultiInversion(Panel):
         
         @app.callback(
                 [Output('review_layout', 'disabled', allow_duplicate=True),
+                Output('interpret_layout', 'disabled', allow_duplicate=True),
                 Output("multi_inv", "figure", allow_duplicate=True),
                 Output("review_layout","color", allow_duplicate=True),],
             Input('invert_all_button', 'n_clicks'),
@@ -299,29 +289,31 @@ class MultiInversion(Panel):
                 from torch import from_numpy, tensor
                 print('starting model:', starting_model["rho"])
                 rho = tensor(starting_model["rho"]).repeat(len(starting_model["depth"]))
-                z   = tensor(starting_model["depth"][:-1])
+                # z   = tensor(starting_model["depth"][:-1])
+                depth = self.build_depth_from_loop(gates=len(sesh.data.time.unique()))
+                # rho = tensor(starting_model["rho"]).repeat(len(depth))
+                z   = tensor(depth[:-1])
 
                 if vc_level == "loose":
-                    Vert = 1.0
+                    Vert = 2.0
                 elif vc_level == "medium":
-                    Vert = 0.5
+                    Vert = 0.8
                 elif vc_level == "tight":
-                    Vert = 0.1
+                    Vert = 0.2
 
                 if hc_level == "loose":
-                    Horz = 1.0
-                elif hc_level == "medium":
                     Horz = 0.6
-                elif hc_level == "tight":
+                elif hc_level == "medium":
                     Horz = 0.3
+                elif hc_level == "tight":
+                    Horz = 0.1
                 res_start                        = LogResistivity.smooth(rho,z) 
-                # print(TABLES['data'])
                 sesh.models, sesh.data, self.site = sesh.data.invert(res_start,vc = Vert, hc = Horz)
                 # sesh.site = sesh.data.overview()
                 self.title = "Inversion Finished!!!"
                 new_review_clicks = (current_review_clicks or 0) + 1
                 # layouts.invert = layouts.invert_multi_first
-                return False, self.render(), "success" #,new_review_clicks,  0mod2.render(), dbdt1.render(), 
+                return False, False, self.render(), "success" #,new_review_clicks,  0mod2.render(), dbdt1.render(), 
             raise PreventUpdate
         
         @app.callback(
@@ -430,6 +422,15 @@ class MultiInversion(Panel):
     @classmethod
     def standard(cls, misfit=None, rho=10.):
         return cls(data=misfit, rho=rho)
+    def build_depth_from_loop(self, gates, n_layers=31):
+        import numpy as np
+
+        if gates <35:
+            depth = np.cumsum(np.logspace(0, 1.3, 31)).tolist()
+        elif gates > 35:
+            depth = np.cumsum(np.logspace(0, 1.8, 31)).tolist()
+
+        return depth
 
 @nosj
 class SinglesiteSettings(PanelSettings):
@@ -528,7 +529,6 @@ class Single_site(Panel):
 
                 err_plus  = d_obs * e
                 err_minus = d_obs * e / (1 + e)
-                # print(len(sesh.data[sesh.data['site_id']==1].time),len(dbdt))
                 time = sesh.data[sesh.data['site_id']==site_with_median_dbdt].time.dropna().values
                 fig.add_trace(go.Scatter(x=time,y=dbdt,mode="lines",line=dict(color=self.settings.line_color),name="Starting model"), row=1, col=2        )
                 fig.add_trace(go.Scatter(x=time,y=d_obs,mode="markers",name="Observed dB/dt",marker=dict(color="black",size=6,),
@@ -662,17 +662,17 @@ class Single_site(Panel):
             curves = None
             return self.render()
 
-        @app.callback(
-            Output("selected-site-id", "data"),
-            Input("map", "clickData"),
-            prevent_initial_call=True
-        )
-        def select_site_from_map(click_data):
-            if not click_data or "points" not in click_data:
-                raise PreventUpdate
+        # @app.callback(
+        #     Output("selected-site-id", "data"),
+        #     Input("map", "clickData"),
+        #     prevent_initial_call=True
+        # )
+        # def select_site_from_map(click_data):
+        #     if not click_data or "points" not in click_data:
+        #         raise PreventUpdate
 
-            site_id = int(click_data["points"][0]["pointNumber"])
-            return site_id
+        #     site_id = int(click_data["points"][0]["pointNumber"])
+        #     return site_id
         
         @app.callback(
             Output("vc-single-levels", "data"),
@@ -719,7 +719,6 @@ class Single_site(Panel):
             Output("inv-single", "figure", allow_duplicate=True),
             # Output("map", "figure", allow_duplicate=True),
             Input("map", "clickData"),
-            Input("selected-site-id", "data"),
             State("vc-single-levels", "data"),
             State("starting-model", "data"),
             State("invert_layout", "color"),
@@ -730,7 +729,7 @@ class Single_site(Panel):
             (Output("single-inv-status", "children"), "Inversion running", "Select constraints and interact with map       ")],
             prevent_initial_call=True
         )
-        def invert_single_site(click_data, selected_site_id, vc_levels, starting_model, layout):
+        def invert_single_site(click_data, vc_levels, starting_model, layout):
             if not click_data or 'points' not in click_data or not layout=='primary':
                 raise PreventUpdate
             from __main__ import sesh
@@ -739,9 +738,7 @@ class Single_site(Panel):
                 raise PreventUpdate
             trigger = ctx.triggered_id
             if trigger == "map" and click_data and "points" in click_data:
-                site_id = int(click_data['points'][0]['pointNumber'])
-            elif trigger == "selected-site-id":
-                site_id = selected_site_id
+                site_id = sesh.data['site_id'].iloc[click_data['points'][0]['pointNumber']]
             else:
                 raise PreventUpdate
             if site_id is None:
@@ -749,11 +746,12 @@ class Single_site(Panel):
             curves = []
             print('starting model:', starting_model["rho"])
             rho = tensor(starting_model["rho"]).repeat(len(starting_model["depth"]))
-            z   = tensor(starting_model["depth"][:-1])
+            depth = self.build_depth_from_loop(gates=len(sesh.data.time.unique()))
+            z   = tensor(depth[:-1])
 
             for vc in vc_levels:
                 
-                Vert = {"loose": 1.0, "medium": 0.5, "tight": 0.1}[vc]
+                Vert = {"loose": 2.0, "medium": 0.8, "tight": 0.2}[vc]
                 res_start = LogResistivity.smooth(rho, z)
                 df_layers, df_site, _ = sesh.data.invert_site(site_id=site_id,res_start=res_start,vc=Vert)
                 curves.append((vc, df_layers['resistivity'].values, df_layers['bottom_depth'].values,df_layers['misfit'].values[-1],df_layers, df_site['dbdt'].values, df_site['dbdt_syn'].values, df_site['time'].values, df_site['error'].values,df_site['include'].values, df_layers['doi'].values))
@@ -775,3 +773,13 @@ class Single_site(Panel):
     @classmethod
     def standard(cls, misfit=None, rho=10.):
         return cls(data=misfit, rho=rho)#cls(data=df)
+
+    def build_depth_from_loop(self, gates=None, n_layers=31):
+        import numpy as np
+
+        if gates <35:
+            depth = np.cumsum(np.logspace(0, 1.3, 31)).tolist()
+        elif gates > 35:
+            depth = np.cumsum(np.logspace(0, 1.8, 31)).tolist()
+
+        return depth

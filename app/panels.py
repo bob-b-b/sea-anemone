@@ -1,18 +1,15 @@
 from dataclasses import field
 from basepanel import *
-#from database_panel import DatabasePanel
-from dash import dash_table, ctx, no_update
-import numpy as np
-from nosj import nosj
+from map import Map, MapSettings
+from inversion_panels import MultiInversion, MultiInversionSettings, Single_site, SinglesiteSettings
+from model import ModelGraph, ModelGraphSettings, ModelSection, ModelSectionSettings
 
+from dash import dash_table, ctx, no_update
 import plotly.io as pio
-from typing import Literal
-import plotly.express as px
-import plotly.graph_objects as go
-from plotly.subplots import make_subplots
+
 import numpy as np
 import os
-
+import re
 
 
 
@@ -59,11 +56,10 @@ def cdist(lat1,lon1,lat2,lon2):
 class MapSettings(PanelSettings):
     zoom: int = 14
     color: str = '#ff0000'
+    color_data: str = '#000000'
     highlight_color: str= '#ffff00'  # Default highlight color
     plot_by: str = 'misfit'
-    buffer_color: str= '#0000ff'  # Default buffer color
-
-
+    buffer_color: str= '#ffffff'  # Default buffer color
 
 class Map(Panel):
     dataframe: None
@@ -71,7 +67,8 @@ class Map(Panel):
     buffer_sites: list = None
     view  = None
     lines = None
-    boreholes = None
+    hover_marker: dict = None
+    boreholes : dict = None
     rock_color_map = None
 
     def __init__(self, data, **kwargs):
@@ -79,20 +76,34 @@ class Map(Panel):
         super().__init__(id='map', settings=settings)
         self.dataframe = data
 
-    def render(self):
+    def render(self, current_idx=None, is_last_tab = False):
         if self.dataframe is None: return self.empty_render()
         df_plot = self.dataframe
-        if 'site_id' in df_plot.columns:
-            df_plot = df_plot[df_plot['site_id'] != -1]
+        # if 'site_id' in df_plot.columns:
+            # df_plot = df_plot[df_plot['site_id'] != -1]
+
+        if 'site_id' not in df_plot.columns and df_plot.index.name == 'site_id':
+            df_plot = df_plot.reset_index()
 
         zoom = self.view['map.zoom'] if self.view is not None else self.settings.zoom
-        center = self.view['map.center'] if self.view is not None else None
+        center = self.view['map.center'] if self.view is not None else None      
+        
+        
+        from __main__ import sesh
+        # if sesh.models is not None:
+        if sesh.models is not None and self.settings.plot_by in sesh.models.columns:
 
-        if self.settings.plot_by in self.dataframe.columns:
-
-            fig = px.scatter_map(df_plot, lat="latitude", lon="longitude", zoom=zoom, center=center, 
-                                 color=self.settings.plot_by, color_continuous_scale='turbo'
-                                 )
+            fig = px.scatter_map(
+                sesh.models,
+                lat="latitude",
+                lon="longitude",
+                zoom=zoom,
+                center=center,
+                color=self.settings.plot_by,
+                color_continuous_scale='turbo',
+                custom_data=["site_id"]
+            )
+            
             fig.update_layout(
                 coloraxis_colorbar=dict(
                     orientation="h", 
@@ -106,9 +117,36 @@ class Map(Panel):
                 text='',
                 side="bottom"))
             )
+            if self.settings.plot_by == 'misfit':
+                fig.update_coloraxes(cmin=0, cmax=3)
+            elif self.settings.plot_by == 'doi':
+                fig.update_coloraxes(cmin=10, cmax=sesh.models['doi'].max())
+            # data_trace = px.scatter_map(
+            #     df_plot,
+            #     lat="latitude",
+            #     lon="longitude",
+            #     zoom=zoom,
+            #     center=center,
+            #     color_discrete_sequence=[self.settings.color_data],
+            #     custom_data=["site_id"]   # <-- ADD THIS
+            # )
+            # data_trace.update_traces(marker={'size': 8})
+            # for trace in data_trace.data:
+            #     fig.add_trace(trace)
         else:
-            fig = px.scatter_map(df_plot, lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.color])
-
+            # fig = px.scatter_map(df_plot, lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.color])
+            fig = px.scatter_map(
+                df_plot,
+                lat="latitude",
+                lon="longitude",
+                zoom=zoom,
+                center=center,
+                color_discrete_sequence=[self.settings.color],
+                custom_data=["site_id"]   
+            )
+        
+        fig.update_traces(marker={'size': 8})
+        
         if self.buffer_sites is not None and len(self.buffer_sites) > 0 and self.dataframe is not None and 'site_id' in self.dataframe.columns:
             df_buffer = self.dataframe[self.dataframe["site_id"].isin(self.buffer_sites)]
 
@@ -118,16 +156,18 @@ class Map(Panel):
                     lat="latitude",
                     lon="longitude",
                     zoom=zoom, center=center, 
-                    # color_discrete_sequence=["#00cc96"],  # soft green
+                    custom_data=["site_id"],
                 )
 
                 buffer_trace.update_traces(
-                    marker=dict(size=12, color=self.settings.buffer_color),
+                    marker=dict(size=15, color=self.settings.buffer_color),
                     name="Buffer window"
                 )
 
                 for trace in buffer_trace.data:
                     fig.add_trace(trace)
+                fig.data = (fig.data[1], fig.data[0])
+
 
         fig.update_layout(map_style="white-bg",
             map_layers=[
@@ -138,26 +178,105 @@ class Map(Panel):
                     "source": ['https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}']
                 }])
         if self.highlighted is not None:
-            highlight_trace = px.scatter_map(df_plot[df_plot.index == self.highlighted], lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.highlight_color])
+            # highlight_trace = px.scatter_map(df_plot[df_plot.index == self.highlighted], lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.highlight_color])
+            
+            highlight_trace = px.scatter_map(
+                df_plot[df_plot['site_id'] == self.highlighted],
+                lat="latitude",
+                lon="longitude",
+                zoom=zoom,
+                center=center,
+                color_discrete_sequence=[self.settings.highlight_color],
+                custom_data=["site_id"],   # <-- ADD THIS
+            )
             highlight_trace.update_traces(marker=dict(size=14))
             for trace in highlight_trace.data:
                 fig.add_trace(
-                    trace
-                )
-        if self.lines is not None:
-            fig2 = px.line_map(self.lines, lat='latitude', lon='longitude', line_group='line', color='line', zoom=zoom, center=center, hover_name='line')
-            fig = go.Figure(data=fig2.data+fig.data, layout=fig.layout)
+                    trace)
+        else:
+            highlight_trace = px.scatter_map(
+                df_plot,
+                lat="latitude",
+                lon="longitude",
+                zoom=zoom,
+                center=center,
+                color_discrete_sequence=[self.settings.color],
+                # custom_data=["site_id"],   # <-- ADD THIS
+            )
+
+        # if self.lines is not None:
+        #     fig2 = px.line_map(self.lines, lat='latitude', lon='longitude', line_group='line', color='line',  zoom=zoom, center=center, hover_name='line')
+        #     fig = go.Figure(data=fig2.data+fig.data, layout=fig.layout)
 
         # --- Borehole overlay ---
         if self.boreholes:
-            from borehole_utils import add_boreholes_to_map_fig
+            from Sections_plotting import add_boreholes_to_map_fig
             fig = add_boreholes_to_map_fig(fig, self.boreholes)
 
-        fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0},
-                          modebar=dict(add=['drawline'], remove=['zoomIn', 'zoomOut']),
-                          newshape=dict(line_color='cyan', line_width=3, line_dash='dash'),
-                          dragmode='drawline', showlegend=False)
-        
+        if self.lines is not None and not self.lines.empty:
+            unique_ids = sorted(self.lines['line'].unique())
+            
+            # Identify the actual ID of the active line
+            # (Handling case where current_idx might be out of range)
+            active_line_id = None
+            if current_idx is not None and 0 <= current_idx < len(unique_ids):
+                active_line_id = unique_ids[current_idx]
+
+            # --- Trace 1: Inactive Lines (Yellow, Width 5) ---
+            inactive_df = self.lines[self.lines['line'] != active_line_id]
+            if not inactive_df.empty:
+                inactive_fig = px.line_map(
+                    inactive_df, lat='latitude', lon='longitude', 
+                    line_group='line', zoom=zoom, center=center
+                )
+                inactive_fig.update_traces(line=dict(color="yellow", width=2), name="Inactive Profile")
+                fig.add_traces(inactive_fig.data)
+
+            # --- Trace 2: Active Line (Red, Width 8) ---
+            active_df = self.lines[self.lines['line'] == active_line_id]
+            if not active_df.empty:
+                active_fig = px.line_map(
+                    active_df, lat='latitude', lon='longitude', 
+                    line_group='line', zoom=zoom, center=center
+                )
+                active_fig.update_traces(line=dict(color="red", width=4), name="Active Profile")
+                fig.add_traces(active_fig.data)
+
+            if self.hover_marker is not None:
+                hover_trace = px.scatter_map(
+                    pd.DataFrame([self.hover_marker]),
+                    lat="latitude",
+                    lon="longitude",
+                    zoom=zoom,
+                    center=center,)
+                hover_trace.update_traces(
+                    marker=dict(size=16, color="red"),
+                    name="Hover position")
+
+                for trace in hover_trace.data:
+                    fig.add_trace(trace)
+            
+        if self.boreholes:
+            from Sections_plotting import add_boreholes_to_map_fig
+            fig = add_boreholes_to_map_fig(fig, self.boreholes)
+
+
+        tools_to_add = ['drawline', 'drawopenpath'] if is_last_tab else []
+        tools_to_remove = ['select2d','lasso2d','zoomIn', 'zoomOut'] if is_last_tab else []
+
+        # 2. Update the layout dynamically
+        fig.update_layout(
+            margin={"r":0,"t":0,"l":0,"b":0},
+            # uirevision=str(is_last_tab),
+            uirevision=f"mode-{is_last_tab}",
+            modebar=dict(add=tools_to_add, remove=tools_to_remove),
+            newshape=dict(line_color='cyan', line_width=4, line_dash='dash'),
+            dragmode='pan', 
+            showlegend=False,
+            map=dict(bearing=0, pitch=0)
+        )
+        # print("is last tab", is_last_tab)
+
         return fig    
     
     @property
@@ -175,42 +294,75 @@ class Map(Panel):
         
     def paper2latlon(self, x, y):
         if self.view is None:
-            raise Warning("no view, please zoom")
+            # raise Warning("no view, please zoom")
+            return None
+            # raise ValueError("Map coordinate system not initialized")
         elif self.view['map.bearing']!=0 or self.view['map.pitch']!=0:
-            raise Warning("no view, please zoom")
+            # raise Warning("no view, please zoom")
+            return None
+            # raise ValueError("Map coordinate system not initialized")
         else:
             lat = self.lat0 + (self.lat1-self.lat0)*y
             lon = self.lon0 + (self.lon1-self.lon0)*x
             return lat,lon
 
+
     def initialize(self):
-        return  html.Div([
-                    html.Div([
-                        dcc.Graph(figure=self.render(), id=self.id, mathjax=True, 
-                                   style={'height': '95%'}),
+        return html.Div(
+            [
+                html.Div(
+                    [
+                        html.Div(  
+                            dcc.Graph(
+                                figure=self.render(),
+                                id=self.id,
+                                mathjax=True,
+                                responsive=True,
+                                style={
+                                    'height': '100%',
+                                    'width': '100%'
+                                }
+                            ),
+                            style={
+                                'flex': '1',
+                                'minHeight': 0,
+                                'padding': '15px',     # ✅ safe margin
+                                'boxSizing': 'border-box'
+                            }
+                        ),
+
                         dbc.Select(
                             options=['misfit', 'doi', 'date'],
                             id=self.id+'_plot_by',
                             value='misfit',
-                            style={'margin-left':'45%', 'justify': 'center','width':'10%'}),
-                    ]),
-                    gear_maker(self.id)],
-                    style={'height': '100%'} 
-                )
+                            style={
+                                'position': 'absolute',
+                                'bottom': '75px',
+                                'left': '50%',
+                                'transform': 'translateX(-50%)',
+                                'width': '150px'
+                            }
+                        ),
+                    ],
+                    style={
+                        'flex': '1',
+                        'minHeight': 0,
+                        'position': 'relative',
+                        'display': 'flex'
+                    }
+                ),
+                gear_maker(self.id)
+            ],
+            style={
+                'display': 'flex',
+                'flexDirection': 'column',
+                'height': '100%',
+                'minHeight': 0
+            }
+        )
 
     def add_callbacks(self, app):
         super().add_callbacks(app)
-
-        @app.callback(
-            Output(self.id, "figure", allow_duplicate=True),
-            Input("selected-site-id", "data"),
-            prevent_initial_call=True
-        )
-        def update_highlight(site_id):
-            if site_id is None:
-                raise PreventUpdate
-            self.highlighted = site_id
-            return self.render()
 
         @app.callback(
             self.output,
@@ -218,7 +370,10 @@ class Map(Panel):
             prevent_initial_call=True
         )
         def update_plotby(value):
-            if value not in self.dataframe.columns:
+            from __main__ import sesh
+            if sesh.models is None:
+                raise PreventUpdate
+            if value not in sesh.models.columns:
                 raise PreventUpdate
             self.settings.plot_by = value
             return self.render()  
@@ -231,24 +386,57 @@ class Map(Panel):
         )
         def update_view(relayout_data):
             fig=no_update
+            
             if 'map.center' in relayout_data:
                 self.view = relayout_data
-            elif 'shapes' in relayout_data:
-                lat0,lon0 = self.paper2latlon(relayout_data['shapes'][-1]['x0'], relayout_data['shapes'][-1]['y0'])
-                lat1,lon1 = self.paper2latlon(relayout_data['shapes'][-1]['x1'], relayout_data['shapes'][-1]['y1'])
-                line_id = 1
-                if self.lines is None:
-                    self.lines = pd.DataFrame({'latitude':[lat0], 'longitude':[lon0], 'line':[line_id]})
-                else:
-                    lat,lon,line_id = self.lines.loc[len(self.lines)-1].tolist()
-                    if cdist(lat,lon, lat0, lon0) > 10:
-                        line_id +=1 
-                        self.lines.loc[len(self.lines)] = [lat0, lon0, line_id]
-                self.lines.loc[len(self.lines)] = [lat1, lon1, line_id]
-                del relayout_data['shapes']
-                fig=self.render()
-            return relayout_data, fig
 
+            elif 'shapes' in relayout_data:
+                if self.view is None:
+                    return no_update, no_update
+
+                # 1. Get the last drawn shape
+                last_shape = relayout_data['shapes'][-1]
+                new_points = []
+
+                if 'path' in last_shape:
+                    path_str = last_shape['path']                    
+                    coords = re.findall(r"[-+]?\d*\.\d+|\d+", path_str)
+                    for i in range(0, len(coords), 2):
+                        try:
+                            lon_val = float(coords[i])
+                            lat_val = float(coords[i+1])
+                            lat, lon = self.paper2latlon(lon_val, lat_val)
+                            new_points.append({'latitude': lat, 'longitude': lon})
+                        except (IndexError, ValueError):
+                            continue
+                
+                elif 'x0' in last_shape:
+                    lat0, lon0 = self.paper2latlon(last_shape['x0'], last_shape['y0'])
+                    lat1, lon1 = self.paper2latlon(last_shape['x1'], last_shape['y1'])
+                    new_points = [
+                        {'latitude': lat0, 'longitude': lon0},
+                        {'latitude': lat1, 'longitude': lon1}
+                    ]
+                if new_points:
+                    if self.lines is None or self.lines.empty:
+                        line_id = 1.0
+                    else:
+                        last_row = self.lines.iloc[-1]
+                        last_lat, last_lon, line_id = last_row['latitude'], last_row['longitude'], last_row['line']
+                        if cdist(last_lat, last_lon, new_points[0]['latitude'], new_points[0]['longitude']) > 10:
+                            line_id += 1.0
+                    new_df = pd.DataFrame(new_points)
+                    new_df['line'] = line_id
+                    
+                    if self.lines is None or self.lines.empty:
+                        self.lines = new_df
+                    else:
+                        self.lines = pd.concat([self.lines, new_df], ignore_index=True)
+                    from __main__ import sesh
+                    sesh.lines = self.lines
+                    del relayout_data['shapes']
+                    fig = self.render()
+            return relayout_data, fig
 
 
 @nosj
@@ -287,6 +475,7 @@ class dbdtSounding(Panel):
         df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt_syn']  *= self.settings.hm_factor
         df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
         df_tmp.loc[df_tmp['site_id'] == -1, 'include']  = False
+        df_tmp.loc[df_tmp['dbdt']<=0, 'dbdt'] = np.nan
 
         df_tmp['system_id']                                = df_tmp['system_id'].map({1: 'hm', 0: 'lm'})
 
@@ -334,13 +523,13 @@ class dbdtSounding(Panel):
             x=self.settings.x_axis,
             y='dbdt_syn',
             color="system_id",
-            color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
+            color_discrete_sequence=[self.settings.lm_color, self.settings.hm_color],
             title="dbdt vs time by site_id",
             custom_data=["system_id", "data_id", "site_id"],
             # range_y=[self.settings.dbdt_min, self.settings.dbdt_max]
 
         )
-
+        fig2.update_traces(line_width=2)
 
 
         for trace in fig3.data:
@@ -411,7 +600,7 @@ class dbdtSounding(Panel):
             custom_data=["system_id", "data_id", "site_id"],
             range_y=[self.settings.dbdt_min, self.settings.dbdt_max]
         )
-        
+        fig3.update_traces(line_width=2)
         for trace in fig2.data:
             fig.add_trace(trace)
 
@@ -440,10 +629,41 @@ class dbdtSounding(Panel):
             margin={"l": 50, "r": 50, "t": 50, "b": 50},
             dragmode='select'
         )
+        shown_groups = set()
 
+        for trace in fig.data:
+
+            # ----- LINES -----
+            if trace.mode == "lines":
+                if trace.name == "lm":
+                    trace.name = "LM lines"
+                    trace.legendgroup = "lm_lines"
+                elif trace.name == "hm":
+                    trace.name = "HM lines"
+                    trace.legendgroup = "hm_lines"
+
+            # ----- MARKERS -----
+            elif trace.mode == "markers":
+
+                if trace.marker.color == "black":
+                    trace.name = "Enabled"
+                    trace.legendgroup = "enabled_points"
+
+                elif trace.marker.color == "gray":
+                    trace.name = "Disabled"
+                    trace.legendgroup = "disabled_points"
+
+            # ---- SHOW LEGEND ONLY ONCE PER GROUP ----
+            if trace.legendgroup not in shown_groups:
+                trace.showlegend = True
+                shown_groups.add(trace.legendgroup)
+            else:
+                trace.showlegend = False
+
+        # ---- REMOVE LEGEND TITLE ----
+        fig.update_layout(legend_title_text=None)
         return fig
    
-
 
 class rhoaSounding(dbdtSounding):
     @staticmethod
@@ -454,7 +674,6 @@ class rhoaSounding(dbdtSounding):
             t = time[np.newaxis, :]
         else:
             t = time
-
         rho_a = ((current*area)**(2/3) * (mu0**(5/3))) / ((20 * dbdt)**(2/3) * (pi**(1/3)) * time**(5/3))
         return rho_a
 
@@ -525,6 +744,7 @@ class rhoaSounding(dbdtSounding):
             title="rhoa vs time",
             custom_data=["system_id", "data_id", "site_id"],
         )
+        fig2.update_traces(line_width=2)
 
         for trace in fig3.data:
             fig.add_trace(trace)
@@ -610,6 +830,40 @@ class rhoaSounding(dbdtSounding):
             margin={"l": 50, "r": 50, "t": 50, "b": 50},
             dragmode='select'
         )
+
+        shown_groups = set()
+
+        for trace in fig.data:
+
+            # ----- LINES -----
+            if trace.mode == "lines":
+                if trace.name == "lm":
+                    trace.name = "LM lines"
+                    trace.legendgroup = "lm_lines"
+                elif trace.name == "hm":
+                    trace.name = "HM lines"
+                    trace.legendgroup = "hm_lines"
+
+            # ----- MARKERS -----
+            elif trace.mode == "markers":
+
+                if trace.marker.color == "black":
+                    trace.name = "Enabled"
+                    trace.legendgroup = "enabled_points"
+
+                elif trace.marker.color == "gray":
+                    trace.name = "Disabled"
+                    trace.legendgroup = "disabled_points"
+
+            # ---- SHOW LEGEND ONLY ONCE PER GROUP ----
+            if trace.legendgroup not in shown_groups:
+                trace.showlegend = True
+                shown_groups.add(trace.legendgroup)
+            else:
+                trace.showlegend = False
+
+        # ---- REMOVE LEGEND TITLE ----
+        fig.update_layout(legend_title_text=None)
         return fig
 
 @nosj
@@ -647,7 +901,7 @@ class dbdtSection(Panel):
         df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt_syn']  *= self.settings.hm_factor
         df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
         df_tmp.loc[df_tmp['site_id'] ==  -1, 'include']  = False
-        df_tmp['system_id']                                = df_tmp['system_id'].map({0: 'hm', 1: 'lm'})
+        df_tmp['system_id']                                = df_tmp['system_id'].map({1: 'hm', 0: 'lm'})
 
         # x_axis = df_tmp[self.settings.x_axis].unique()#.values
         # if self.settings.x_axis == 'site_id':
@@ -715,16 +969,53 @@ class dbdtSection(Panel):
             x=self.settings.x_axis,
             y='dbdt_syn',
             color="system_id",
-            color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
+            color_discrete_sequence=[self.settings.lm_color, self.settings.hm_color],
             title="field data versus simulated data",
             custom_data=["system_id", "data_id", "site_id"],
         )
+        fig2.update_traces(line_width=1.5)
 
         for trace in fig3.data:
             fig.add_trace(trace)
 
         for trace in fig2.data:
             fig.add_trace(trace)
+
+        shown_groups = set()
+
+        for trace in fig.data:
+
+            # ----- LINES -----
+            if trace.mode == "lines":
+                if trace.name == "lm":
+                    trace.name = "LM lines"
+                    trace.legendgroup = "lm_lines"
+                elif trace.name == "hm":
+                    trace.name = "HM lines"
+                    trace.legendgroup = "hm_lines"
+
+            # ----- MARKERS -----
+            elif trace.mode == "markers":
+
+                if trace.marker.color == "black":
+                    trace.name = "Enabled"
+                    trace.legendgroup = "enabled_points"
+
+                elif trace.marker.color == "gray":
+                    trace.name = "Disabled"
+                    trace.legendgroup = "disabled_points"
+
+            # ---- SHOW LEGEND ONLY ONCE PER GROUP ----
+            if trace.legendgroup not in shown_groups:
+                trace.showlegend = True
+                shown_groups.add(trace.legendgroup)
+            else:
+                trace.showlegend = False
+        dx = xmax - xmin
+        fig.update_layout(legend_title_text=None)
+        fig.update_xaxes(range=[xmin-0.01*dx, xmax+0.01*dx])
+
+
         dx = xmax - xmin
         fig.update_xaxes(range=[xmin-0.01*dx, xmax+0.01*dx])
         return fig    
@@ -737,7 +1028,7 @@ class dbdtSection(Panel):
         df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
         df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
         df_tmp.loc[df_tmp['site_id'] ==  -1, 'include']  = False
-        df_tmp['system_id']                                = df_tmp['system_id'].map({0: 'hm', 1: 'lm'})
+        df_tmp['system_id']                                = df_tmp['system_id'].map({1: 'hm', 0: 'lm'})
 
         # x_axis = df_tmp[self.settings.x_axis].unique()#.values
         # if self.settings.x_axis == 'site_id':
@@ -815,14 +1106,46 @@ class dbdtSection(Panel):
             title="dbdt vs time by site_id",
             custom_data=["system_id", "data_id", "site_id"],
         )
+        fig2.update_traces(line_width=1.5)
 
         for trace in fig3.data:
             fig.add_trace(trace)
 
         for trace in fig2.data:
             fig.add_trace(trace)
+
+        shown_groups = set()
+
+        for trace in fig.data:
+
+            # ----- LINES -----
+            if trace.mode == "lines":
+                if trace.name == "lm":
+                    trace.name = "LM lines"
+                    trace.legendgroup = "lm_lines"
+                elif trace.name == "hm":
+                    trace.name = "HM lines"
+                    trace.legendgroup = "hm_lines"
+
+            # ----- MARKERS -----
+            elif trace.mode == "markers":
+
+                if trace.marker.color == "black":
+                    trace.name = "Enabled"
+                    trace.legendgroup = "enabled_points"
+
+                elif trace.marker.color == "gray":
+                    trace.name = "Disabled"
+                    trace.legendgroup = "disabled_points"
+
+            # ---- SHOW LEGEND ONLY ONCE PER GROUP ----
+            if trace.legendgroup not in shown_groups:
+                trace.showlegend = True
+                shown_groups.add(trace.legendgroup)
+            else:
+                trace.showlegend = False
         dx = xmax - xmin
-        
+        fig.update_layout(legend_title_text=None)
         fig.update_xaxes(range=[xmin-0.01*dx, xmax+0.01*dx])
         
         return fig  
@@ -891,21 +1214,6 @@ class dbdtSection(Panel):
             dragmode='select'
         )
         return fig    
-
-markdown_text = '''
-# Panels
-## Data
-- [Sounding](#sounding)     [[+]](#new_sounding)
-- [Section](#section)       [[+]](#new_section)
-## Models
-- [graph](#graph)           [[+]](#new_graph)
-- [colorbar](#colorbar)     [[+]](#new_colorbar)
-- [table](#table)           [[+]](#new_table)
-'''
-
-panel_list = html.Div([
-    dcc.Markdown(children=markdown_text)
-])
 
 @nosj
 class AutoProcessing(PanelSettings):
@@ -1121,7 +1429,7 @@ class Upload(Panel):
                     id='dem-options-container',
                     style={'display': 'none'}
                 ),
-                html.Br(),
+            html.Br(),
                 html.Div(
                     [
                         dbc.Checkbox(
@@ -1156,6 +1464,8 @@ class Upload(Panel):
                     id='borehole-options-container',
                     style={'display': 'none'}
                 ),
+
+
         ],
         )
     
@@ -1261,8 +1571,8 @@ import pandas as pd
 class ModelGraphSettings(PanelSettings):
     z: Literal['depth', 'elevation'] = 'depth'
     color_by: Literal['site_id', 'misfit'] = 'site_id'
-    rho_min: float = 1.0
-    rho_max: float = 1000.0
+    vmin: int = 1
+    vmax: int = 300
 
 class ModelGraph(Panel):
     highlighted=None
@@ -1280,7 +1590,7 @@ class ModelGraph(Panel):
         # ...existing code...
         df_layers_long = pd.melt(
             self.dataframe,
-            id_vars=['site_id', 'daytime', 'longitude', 'latitude', 'date', 'elevation', 'layer', 'resistivity'],
+            id_vars=['site_id', 'daytime', 'longitude', 'latitude', 'date', 'elevation', 'layer', 'resistivity','doi'],
             value_vars=['top_depth', 'bottom_depth'],
             var_name='depth_type',
             value_name='depth'
@@ -1325,21 +1635,9 @@ class ModelGraph(Panel):
                     name=f"Site {self.highlighted}"
                 ), 
             )
-            # fig.add_trace(
-            #     go.Scatter(
-            #         x=df_layers_long["resistivity"],
-            #         y=df_layers_long["depth"],
-            #         mode="lines",
-            #         line=dict(color='gray'),
-            #         name='All Sites'
-            #     ), 
-            # )
 
+            fig.add_trace(go.Scatter(x=[0.1,1000],y=[df_highlighted['doi'].iloc[0],df_highlighted['doi'].iloc[0]],mode="lines",line=dict(color="black",width=2,dash="dash"),showlegend=False))
 
-
-        # Reverse y-axis so depth increases downward
-        # fig.update_yaxes(autorange="reversed")
-        # fig.update_xaxes(type="log", range=[np.log10(self.settings.rho_min), np.log10(self.settings.rho_max)])
         fig.update_xaxes(title_text='Resistivity [Ω⋅m]',type='log',range=[0, 2.7],showline=True,mirror=True           )
 
         fig.update_yaxes(
@@ -1354,20 +1652,32 @@ class ModelGraph(Panel):
 class ModelSectionSettings(PanelSettings):
     z: Literal['depth', 'elevation'] = 'depth'
     x_axis: Literal['daytime', 'site_id', 'longitude', 'latitude', 'distance'] = 'site_id'
+    vmin: int = 1
+    vmax: int = 300
+    log: bool = True
+    cmap: str = 'turbo'
+    nticks: int = 4
 
 class ModelSection(Panel):
     highlighted: int = None
     buffer_len = 50
     buffer_start = 0
-    boreholes = None
-    rock_color_map = None
     def __init__(self, **kwargs):
         settings = kwargs.pop('settings', ModelSectionSettings(id='model_section'))
         super().__init__(id='model_section', settings=settings)
         for key, value in kwargs.items():
             setattr(self, key, value)
+
+    def update_attributes(self, data_dict):
+        """Force update the __dict__ to bypass class-level defaults."""
+        for key, value in data_dict.items():
+            if hasattr(self, key):
+                if isinstance(value, str) and value.replace('.', '', 1).isdigit():
+                    value = float(value)
+                # This writes directly to this specific object's memory
+                self.__dict__[key] = value
     
-    def render(self):
+    def render(self,**kwargs):
         if self.dataframe is None: return self.empty_render()
         df_layers_long = self.dataframe.melt(
             id_vars=['site_id', 'daytime', 'longitude', 'latitude', 'date', 'elevation', 'layer', 'resistivity', 'misfit','doi'],
@@ -1375,6 +1685,7 @@ class ModelSection(Panel):
             var_name='depth_type',
             value_name='depth'
         ).sort_values(['daytime', 'layer', 'depth'])
+
 
         df_layers_long = df_layers_long.drop(columns=['depth_type'])
         df_layers_long['log_resistivity'] = np.log10(df_layers_long['resistivity'])
@@ -1395,38 +1706,89 @@ class ModelSection(Panel):
         x_slice = x_values[plot_start:plot_end]
         df_layers_long = df_layers_long[df_layers_long[self.settings.x_axis].isin(x_slice)]
 
+
+        vmin_ms = self.settings.__dict__.get('vmin', self.settings.vmin)
+        vmax_ms = self.settings.__dict__.get('vmax', self.settings.vmax)
+
+
+        # Check what triggered the current Dash lifecycle
+        trigger = "No active callback"
+        if ctx.triggered_id:
+            trigger = ctx.triggered_id
+            # If it's a pattern-matching ID, it might be a dict, so we convert to string
+            if isinstance(trigger, dict):
+                trigger = f"{trigger.get('type')}[{trigger.get('key')}]"
+
+
+        log_vmin = np.log10(vmin_ms)
+        log_vmax = np.log10(vmax_ms)
+
+        tick_vals = np.linspace(log_vmin, log_vmax, self.settings.nticks)
+        tick_text = [f"{10**v:.0f}" for v in tick_vals]
+
+        vmin_ms = self.settings.__dict__.get('vmin', self.settings.vmin)
+        vmax_ms = self.settings.__dict__.get('vmax', self.settings.vmax)
+
+
+        # Check what triggered the current Dash lifecycle
+        trigger = "No active callback"
+        if ctx.triggered_id:
+            trigger = ctx.triggered_id
+            # If it's a pattern-matching ID, it might be a dict, so we convert to string
+            if isinstance(trigger, dict):
+                trigger = f"{trigger.get('type')}[{trigger.get('key')}]"
+
+        # print("--- RENDER DEBUG ---")
+        # print(f"TRIGGERED BY: {trigger}")
+        # print("VMAX RENDER MODEL SECTION", vmax_ms)
+        # print("SETTINGS OBJECT ID:", id(self.settings))
+
+        log_vmin = np.log10(vmin_ms)
+        log_vmax = np.log10(vmax_ms)
+
+        tick_vals = np.linspace(log_vmin, log_vmax, self.settings.nticks)
+        tick_text = [f"{10**v:.0f}" for v in tick_vals]
+        
+        # print(tick_vals)
+
         fig = px.imshow(
             heatmap_df[x_slice],
             aspect='auto',
             origin='lower',
-            color_continuous_scale='turbo',
-            labels={'x': self.settings.x_axis, 'y': 'Depth [m]', 'color': 'Resistivity [Ω·m]'},
-            zmin=0,
-            zmax=2.7,
-        )
-        fig.update_layout(
-            coloraxis_colorbar=dict(
-                tickvals = [0, 1, 2, np.log10(500)],
-                ticktext = ["1", "10", "100", "500"],
-                orientation="h",     # horizontal
-                y=-0.45,              # move below plot
-                x=0.5,               # center horizontally
-                xanchor="center",
-                len=0.5,
-                thickness = 10,
-                title=dict(
-            text="Resistivity [Ωm]",
-            side="bottom"))
-        )
-        fig.update_layout(
-            xaxis=dict(
-                title_standoff=4   # default is ~15–20
-            )
+            # color_continuous_scale=settings.cmap, #'turbo',
+            color_continuous_scale=self.settings.cmap,
+            labels={'x': self.settings.x_axis, 'y': 'Depth [m]'},
+            title='Resistivity Heatmap by Site and Depth',
+            # zmin=heatmap_df.min().min(),
+            # zmax=heatmap_df.max().max(),
+            zmin=log_vmin,
+            zmax=log_vmax,
         )
         fig.update_layout(hovermode="x")
         fig.update_yaxes(autorange="reversed")
         fig.update_layout(yaxis2=dict(title='Misfit',overlaying='y',side='right',showgrid=False))
-
+        
+        fig.update_layout(
+            coloraxis=dict(
+                cmin=log_vmin,
+                cmax=log_vmax,
+                colorscale=self.settings.cmap,
+                colorbar=dict(
+                    orientation='h',
+                    x=0.5,
+                    xanchor='center',
+                    y=-0.2,
+                    yanchor='top',
+                    thickness=20,
+                    len=0.95,
+                    tickmode='array',
+                    tickvals=tick_vals,
+                    ticktext=tick_text,
+                )
+            ),
+            margin=dict(b=120)
+        )
+        
         # ---- Misfit only for buffered sites ----
         misfit_df = (
             df_layers_long
@@ -1456,23 +1818,6 @@ class ModelSection(Panel):
             showlegend=False,
             yaxis='y2'
         ))
-
-
-        # misfit_trace.update(
-        #     yaxis='y2',
-        #     line=dict(color='black', width=2),
-        #     name='Misfit',showlegend=True
-        # )
-        # fig.update_layout(yaxis2=dict(range=[0, 8]))
-        # fig.add_trace(go.Scatter(
-        #     x=x,
-        #     y=y_dashed,
-        #     mode="lines",
-        #     line=dict(color="rgb(0,0,0,0.7)", dash="dash"),
-        #     # hoverinfo="skip",
-        #     showlegend=False, yaxis='y2'
-        # ))
-
 
 
         fig.add_trace(misfit_trace)
@@ -1531,8 +1876,8 @@ class ModelSection(Panel):
                     type="rect",
                     x0=x_value - dx,
                     x1=x_value + dx,
-                    y0=df_layers_long["depth"].min(),
-                    y1=df_layers_long["depth"].max()+20,
+                    y1=df_layers_long["depth"].min(),
+                    y0=df_layers_long["depth"].max()+20,
                     line=dict(color="black", width=1.5),
                     fillcolor="rgba(0,0,0,0.0)",
                 )
@@ -1548,16 +1893,6 @@ class ModelSection(Panel):
             autorange=False
         )
         fig.update_layout(yaxis2=dict(range=[0, 8]))
-
-        # --- Borehole overlay ---
-        if self.boreholes and self.rock_color_map:
-            from borehole_utils import add_boreholes_to_section_fig
-            fig = add_boreholes_to_section_fig(
-                fig, self.boreholes, self.rock_color_map,
-                section_df=self.dataframe,
-                x_axis=self.settings.x_axis,
-            )
-
         return fig
     # def add_callbacks(self, app):
     #     super().add_callbacks(app)
@@ -1811,6 +2146,7 @@ class HotKeyReminder(Panel):
                     dbc.Button("enable  [ctrl+e]", id='enableButton'),
                     ]),
                     dbc.ButtonGroup([
+                        dbc.Button("Beginning [<<]", id='beginning-buffer', style={"marginRight": "6px"}),
                         dbc.Button("Previous buffer [<<-]", id='prev-buffer', style={"marginRight": "6px"}),
                         dbc.Button("Previous [<-]", id='highlight_prev', style={"marginRight": "6px"}),
                         dbc.Button("Next [->]", id='highlight_next', style={"marginRight": "6px"}),
@@ -1838,6 +2174,8 @@ class HotKeyReminder(Panel):
                                         "fontSize": "13px"
                                     }
                                 ),
+                            dbc.Progress(id="buffer-progress",value=0,max=100,style={"height": "18px", "marginTop": "10px", "marginLeft": "12px", "marginRight": "6px"}),
+                            html.Div(id="buffer-progress-text", style={"fontSize": "14px"}),
                             ],
                             style={
                                 "display": "flex",
@@ -1845,6 +2183,7 @@ class HotKeyReminder(Panel):
                             }
                         )
                     ]),
+                    
                     dbc.ButtonGroup([
                         dbc.Button("save [ctrl+s]", id='saveButton'),
                     ])
@@ -1856,6 +2195,31 @@ class HotKeyReminder(Panel):
         return x
     
     def add_callbacks(self, app):
-        pass
-        # return super().add_callbacks(app)
+        super().add_callbacks(app)
+        @app.callback(
+            Output("buffer-progress", "value"),
+            Output("buffer-progress-text", "children"),
+            Input("data-buffer", "data"),
+            Input("map", "figure"),   # ← triggers when upload completes
+            prevent_initial_call=False
+        )
+        def update_buffer_progress(buffer_data, _):
+            from __main__ import sesh
 
+            if sesh.data is None or "site_id" not in sesh.data.columns:
+                return 0, "No data loaded"
+
+            total_sites = sesh.data.loc[
+                sesh.data["site_id"] != -1, "site_id"
+            ].nunique()
+
+            if total_sites == 0:
+                return 0, "No sites"
+
+            start = buffer_data.get("start_site", 0)
+            length = buffer_data.get("length", 0)
+
+            end = min(start + length, total_sites)
+            percent = (end / total_sites) * 100
+
+            return percent, f"{start}–{end} of {total_sites} sites"

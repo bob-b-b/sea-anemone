@@ -1,3 +1,4 @@
 D:\sea_anemone_test
 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\anemone_projects\eliya_spring_kenya\
 C:\Users\au646858\OneDrive - Aarhus Universitet\Documents\anemone_projects\dollow_somalia\
+/home/matt/Documents/tem_data/diredawa_profiler/

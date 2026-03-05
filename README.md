@@ -34,6 +34,8 @@ To launch the application, you can either:
 
 - Use the shortcut created in the Start Menu or on your Desktop.
 - Run `run_app.bat` from the installation directory.
+- Run `python app/app.py` from the installation directory.
+- Run `run_app_console.bat` from the installation directory.
 
 ## Requirements
 Ensure you have the following before running the application:

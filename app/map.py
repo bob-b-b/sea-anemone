@@ -1,0 +1,401 @@
+from basepanel import *
+import plotly.io as pio
+from typing import Literal
+import plotly.express as px
+import plotly.graph_objects as go
+from dash import dash_table, ctx, no_update
+import numpy as np
+from nosj import nosj
+import utm
+from pandas import DataFrame
+
+
+
+
+
+# Define a custom template
+custom_template = {
+    "layout": {
+        "font": {"family": "Arial", "size": 14, "color": "black"},
+        "plot_bgcolor": "white",
+        "paper_bgcolor": "white",
+        "margin": {"l": 50, "r": 50, "t": 50, "b": 50},
+        "xaxis": {
+            "showgrid": True,
+            "gridcolor": "#e5e5e5",
+            "zeroline": False,
+            "showline": True,
+            "linecolor": "black",
+            "ticks": "outside",
+        },
+        "yaxis": {
+            "showgrid": True,
+            "gridcolor": "#e5e5e5",
+            "zeroline": False,
+            "showline": True,
+            "linecolor": "black",
+            "ticks": "outside",
+        },
+    }
+}
+pio.templates["custom"] = custom_template
+pio.templates.default = "custom"
+
+
+
+
+def cdist(lat1,lon1,lat2,lon2):
+    lat1rad = lat1/(180./np.pi)
+    lon1rad = lon1/(180./np.pi)
+    lat2rad = lat2/(180./np.pi)
+    lon2rad = lon2/(180./np.pi)
+    d = 3963. * np.arccos((np.sin(lat1rad)*np.sin(lat2rad))+ \
+            np.cos(lat1rad)*np.cos(lat2rad)*np.cos(lon2rad-lon1rad)) * \
+            1.609344 * 1000.
+    return d
+
+
+class ProjectionLine:
+    def __init__(self, x, y):
+        self.x = x
+        self.y = y
+        dx,dy = x[1]-x[0], y[1]-y[0]
+        self.phi = -np.arctan2(dy,dx)
+        self.R = np.array([[np.cos(self.phi), -np.sin(self.phi)],
+                           [np.sin(self.phi), np.cos(self.phi)]])
+        self.iR = np.array([[np.cos(-self.phi), -np.sin(-self.phi)],
+                            [np.sin(-self.phi), np.cos(-self.phi)]])
+
+        self.length = np.sqrt(dx**2 + dy**2)
+        self.m = dy/dx
+        self.b = y[0] - self.m*x[0]
+
+    def inbounds(self, x, y, buffer=np.inf):
+        xp,yp = self.to_line_coords(x,y)
+        inbounds = (xp>=0) * (xp<=self.length)
+        inbounds *= np.abs(yp) <= buffer
+        return inbounds
+        
+    def to_line_coords(self, x, y):
+        xt,yt = x-self.x[0], y-self.y[0]
+        return np.dot(self.R, np.array([xt,yt]))
+    
+    def from_line_coords(self, xp, yp):
+        xt,yt = np.dot(self.iR, np.array([xp,yp]))
+        return xt+self.x[0], yt+self.y[0]
+    
+
+    
+class Profile:
+    def __init__(self, lat, lon):
+        x,y,zone,letter = utm.from_latlon(lat, lon)
+        self.x = x
+        self.y = y
+        self.zone = zone
+        self.letter = letter
+        self.n_segments = len(x)-1
+        self.lines = [ProjectionLine(x[i:i+2], y[i:i+2]) for i in range(self.n_segments)]
+        self.cumulative_length = np.cumsum([0]+[line.length for line in self.lines])
+
+    @classmethod
+    def from_point_list(cls, points):
+        x = np.array([point[0] for point in points])
+        y = np.array([point[1] for point in points])
+        return cls(x,y)
+    
+    @property
+    def length(self):
+        return self.cumulative_length[-1]
+    
+    @property
+    def m(self):
+        return np.array([line.m for line in self.lines]).squeeze()
+
+    @property
+    def b(self):
+        return np.array([line.b for line in self.lines]).squeeze()
+        
+    def inbounds(self, x, y, buffer=np.inf):
+        inbounds = np.zeros_like(x, dtype=bool)
+        for line in self.lines:
+            inbounds += line.inbounds(x,y, buffer=buffer)
+        return inbounds
+
+    def to_line_coords(self, x, y, return_segment_index=False):
+        if not isinstance(x, np.ndarray): x = np.array([x], dtype=float)
+        if not isinstance(y, np.ndarray): y = np.array([y], dtype=float)
+        projections = np.zeros((self.n_segments, 2, len(x)))
+        projection_dist = np.zeros_like(projections)
+        for i,line in enumerate(self.lines):
+            projections[i] = line.to_line_coords(x,y)
+            projection_dist[i] = projections[i]
+            # not in bound points lie beyond the ends of the line segement.
+            # There are instances when the extension of a particular line segement gets closer to a point than the line segment that is actually closest to the point. To avoid this, out of bound points get additional perpendicular distance added to them, so the ideal line segment is more likely to get assigned.
+            not_inbounds = np.logical_not(line.inbounds(x,y))
+            
+            projection_dist[i,1,not_inbounds] = np.abs(projection_dist[i,1,not_inbounds]) + np.abs(projections[i,0,not_inbounds])
+        idx_min = np.nanargmin(np.abs(projection_dist[:,1:,:]), axis=0)
+
+        projections = idx_min.choose(projections)
+
+        projections[0,:] += np.squeeze(self.cumulative_length[idx_min])
+        if return_segment_index:
+            return projections[0], projections[1], idx_min[0]
+        else:
+            return projections[0], projections[1]
+    
+    
+    def from_line_coords(self, xp, yp):
+        if isinstance(xp, (int, float)):
+            xp, yp = np.array([xp], dtype=float), np.array([yp], dtype=float)
+        idx = np.clip(np.searchsorted(self.cumulative_length, xp, side='right')-1, 0, self.n_segments-1)
+        x = np.zeros_like(xp)
+        y = np.zeros_like(yp)
+        for i in range(len(xp)):
+            x[i], y[i] = self.lines[idx[i]].from_line_coords(xp[i]-self.cumulative_length[idx[i]], yp[i])
+        return x,y
+    
+    @property
+    def line_x(self):
+        xp,yp = self.to_line_coords(self.x, self.y)
+        return xp
+    
+    @property
+    def line_y(self):
+        xp,yp = self.to_line_coords(self.x, self.y)
+        return yp
+    
+    def __call__(self, lat, lon):
+        x,y,_,__ = utm.from_latlon(lat, lon, force_zone_number=self.zone, force_zone_letter=self.letter)
+        x,y = self.to_line_coords(x,y)
+        y[x<0] = np.inf
+        y[x>self.length] = np.inf
+        return x,y
+
+
+@nosj
+class MapSettings(PanelSettings):
+    zoom: int = 10
+    color: str = '#ff0000'
+    highlight_color: str= '#ffff00'  # Default highlight color
+    plot_by: str = 'misfit'
+    buffer_color: str= '#0000ff'  # Default buffer color
+    dragmode: str='select'
+    view: dict = None
+
+
+class Map(Panel):
+    dataframe: None
+    highlighted: int = None
+    buffer_sites: list = None
+    lines = None
+
+    def __init__(self, data, **kwargs):
+        settings = MapSettings(id='map', **kwargs)
+        super().__init__(id='map', settings=settings)
+        self.dataframe = data
+
+    def render(self):
+        if self.dataframe is None: return self.empty_render()
+        df_plot = self.dataframe
+        if 'site_id' in df_plot.columns:
+            df_plot = df_plot[df_plot['site_id'] != -1]
+
+        zoom = self.settings.view['map.zoom'] if self.settings.view is not None else self.settings.zoom
+        center = self.settings.view['map.center'] if self.settings.view is not None else None
+
+        if self.settings.plot_by in self.dataframe.columns:
+
+            fig = px.scatter_map(df_plot, lat="latitude", lon="longitude", zoom=zoom, center=center, 
+                                 color=self.settings.plot_by, color_continuous_scale='turbo'
+                                 )
+            fig.update_layout(
+                coloraxis_colorbar=dict(
+                    orientation="h", 
+                    y=-0.01,
+                    x=0.5,          
+                    xanchor="center",
+                    yanchor="top",
+                    len=0.75,
+                    thickness = 10,
+                    title=dict(
+                text='',
+                side="bottom"))
+            )
+        else:
+            fig = px.scatter_map(df_plot, lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.color])
+
+        if self.buffer_sites is not None and len(self.buffer_sites) > 0 and self.dataframe is not None and 'site_id' in self.dataframe.columns:
+            df_buffer = self.dataframe[self.dataframe["site_id"].isin(self.buffer_sites)]
+
+            if not df_buffer.empty:
+                buffer_trace = px.scatter_map(
+                    df_buffer,
+                    lat="latitude",
+                    lon="longitude",
+                    zoom=zoom, center=center, 
+                    # color_discrete_sequence=["#00cc96"],  # soft green
+                )
+
+                buffer_trace.update_traces(
+                    marker=dict(size=12, color=self.settings.buffer_color),
+                    name="Buffer window"
+                )
+
+                for trace in buffer_trace.data:
+                    fig.add_trace(trace)
+
+        fig.update_layout(map_style="white-bg",
+            map_layers=[
+                {
+                    "below": 'traces',
+                    "sourcetype": "raster",
+                    "sourceattribution": "Google Earth (C)",
+                    "source": ['https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}']
+                }])
+        if self.highlighted is not None:
+            highlight_trace = px.scatter_map(df_plot[df_plot.index == self.highlighted], lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.highlight_color])
+            highlight_trace.update_traces(marker=dict(size=14))
+            for trace in highlight_trace.data:
+                fig.add_trace(
+                    trace
+                )
+        if self.lines is not None:
+            fig2 = px.line_map(self.lines, lat='latitude', lon='longitude', line_group='line', color='line', zoom=zoom, center=center, hover_name='line')
+            fig2.update_traces(mode='lines+markers')
+            fig = go.Figure(data=fig2.data+fig.data, layout=fig.layout)
+
+        fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0},
+                          modebar=dict(add=['drawline'], remove=['zoomIn', 'zoomOut', 'lasso', 'toImage', 'plotly-logomark']),
+                          newshape=dict(line_color='black', line_width=3, line_dash='dash'),
+                          dragmode=self.settings.dragmode, showlegend=False)
+        
+        return fig       
+    
+    @property
+    def lat0(self):
+        return min([p[1] for p in self.settings.view['map._derived']['coordinates']])
+    @property
+    def lat1(self):
+        return max([p[1] for p in self.settings.view['map._derived']['coordinates']])
+    @property
+    def lon0(self):
+        return min([p[0] for p in self.settings.view['map._derived']['coordinates']])
+    @property
+    def lon1(self):
+        return max([p[0] for p in self.settings.view['map._derived']['coordinates']])
+        
+    def paper2latlon(self, x, y):
+        if self.settings.view is None:
+            raise Warning("no view, please zoom")
+        elif self.settings.view['map.bearing']!=0 or self.settings.view['map.pitch']!=0:
+            raise Warning("non-standard view, bearing and pitch must be zero, reset axis and zoom")
+        else:
+            lat = self.lat0 + (self.lat1-self.lat0)*y
+            lon = self.lon0 + (self.lon1-self.lon0)*x
+            return lat,lon
+        
+    def latlon2paper(self, lat,lon):
+        if self.settings.view is None:
+            raise Warning("no view, please zoom")
+        elif self.settings.view['map.bearing']!=0 or self.settings.view['map.pitch']!=0:
+            raise Warning("non-standard view, bearing and pitch must be zero, reset axis and zoom")
+        
+        x = (lon - self.lon0) / (self.lon1-self.lon0)
+        y = (lat - self.lat0) / (self.lat1-self.lat0)
+        return x,y
+
+    def initialize(self):
+        return  html.Div([
+                    html.Div([
+                        dcc.Graph(figure=self.render(), id=self.id, mathjax=True, 
+                                   style={'height': '95%'}),
+                        dbc.Select(
+                            options=['misfit', 'doi', 'date'],
+                            id=self.id+'_plot_by',
+                            value='misfit',
+                            style={'margin-left':'45%', 'justify': 'center','width':'10%', 'height':'4%'}),
+                    ]),
+                    gear_maker(self.id)],
+                    style={'height': '100%'} 
+                )
+
+    def add_callbacks(self, app):
+        super().add_callbacks(app)
+
+        @app.callback(
+            Output(self.id, "figure", allow_duplicate=True),
+            Input("selected-site-id", "data"),
+            prevent_initial_call=True
+        )
+        def update_highlight(site_id):
+            if site_id is None:
+                raise PreventUpdate
+            self.highlighted = site_id
+            return self.render()
+
+        @app.callback(
+            self.output,
+            Input(self.id+'_plot_by', 'value'),
+            prevent_initial_call=True
+        )
+        def update_plotby(value):
+            if value not in self.dataframe.columns:
+                raise PreventUpdate
+            self.settings.plot_by = value
+            return self.render()  
+
+        @app.callback(
+            Output(self.id, 'relayoutData'),
+            self.output,
+            Output('model_section_axis', 'options'),
+            Input(self.id, 'relayoutData'),
+            State('model_section_axis', 'options'),
+            prevent_initial_call=True
+        )
+        def update_view(relayout_data, options):
+            fig=no_update
+            if 'map.center' in relayout_data:
+                self.settings.view = relayout_data
+            if 'dragmode' in relayout_data:
+                self.settings.dragmode=relayout_data['dragmode']
+            elif 'shapes' in relayout_data:
+                if relayout_data['shapes'][-1]['type']=='line':
+                    from __main__ import sesh
+                    lat0,lon0 = self.paper2latlon(relayout_data['shapes'][-1]['x0'], relayout_data['shapes'][-1]['y0'])
+                    lat1,lon1 = self.paper2latlon(relayout_data['shapes'][-1]['x1'], relayout_data['shapes'][-1]['y1'])
+                    line_id = 1
+                    if self.lines is None:
+                        self.lines = DataFrame({'latitude':[lat0], 'longitude':[lon0], 'line':[line_id]})
+                        options.append(f'line {line_id}')
+                    else:
+                        lat,lon,line_id = self.lines.loc[len(self.lines)-1].tolist()
+                        if cdist(lat,lon, lat0, lon0) > 10:
+                            line_id +=1 
+                            self.lines.loc[len(self.lines)] = [lat0, lon0, line_id]
+                            options.append(f'line {line_id}')
+                    self.lines.loc[len(self.lines)] = [lat1, lon1, line_id]
+                    del relayout_data['shapes']
+                    sesh.lines = self.lines.copy()
+                    fig=self.render()
+                else:
+                    print(relayout_data['shapes'][-1])
+
+            return relayout_data, fig, options
+
+        @app.callback(self.output,
+                        Output(self.id, 'selectedData', allow_duplicate=True),
+                        Input(self.id, 'selectedData'),
+            prevent_initial_call=True)
+        def trace_select(selected_data):
+            fig = no_update
+            if selected_data is not None:
+                [[lon0,lat0],[lon1,lat1]] = selected_data['range']['map']
+                if self.lines is not None:
+                    for i,row in self.lines.iterrows():
+                        if cdist(row['latitude'], row['longitude'],  lat0, lon0)<100:
+                            self.lines.loc[i, 'latitude'] = lat1
+                            self.lines.loc[i, 'longitude'] = lon1
+                            fig = self.render()
+                            break
+            return fig, no_update

@@ -5,7 +5,7 @@ rem Set the path to the embedded Python interpreter
 set PYTHON_PATH=python.exe
 
 rem Launch the Dash application in the background using the PID wrapper
-start "" "%PYTHON_PATH%" -i app\app.py
+start "" "%PYTHON_PATH%" -i app\app.py --console
 
 rem Wait for the server to start and PID file to be created
 timeout /t 6 /nobreak > nul
