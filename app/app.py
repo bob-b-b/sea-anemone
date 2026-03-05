@@ -48,6 +48,13 @@ def serve_help_docs(filename):
     return send_from_directory(docs_root, filename)
 
 
+
+
+# df_overview = pd.DataFrame(columns=['date', 'daytime', 'latitude', 'longitude', 'elevation', 'utm_x', 'utm_y', 'distance'])
+
+
+
+
 def _sanitize_filename(name: str, fallback: str = "dem.tif") -> str:
     if not name:
         return fallback
@@ -318,6 +325,7 @@ mod1 = ModelGraph(   dataframe=sesh.models )
 mod2 = ModelSection( dataframe=sesh.models )
 Multi_inv = MultiInversion( dataframe=sesh.data )
 
+# gis = GIS(dataframe =sesh.models)
 profile = Profile(sesh.models)
 
 
@@ -348,6 +356,11 @@ profile_controls = html.Div([
     dcc.Download(id="download-profile-files"),
 ], id='profile-buttons', style={"height": "85%"})
 
+
+#stmod = StartingModel.standard(rho=10.)F
+
+# Inv_it = Inversion_iterations.standard(misfit=None,rho=10.)
+
 Sing_inv = Single_site( dataframe=sesh.data, rho=10 )
 
 hkr = HotKeyReminder()
@@ -376,7 +389,6 @@ app.layout = html.Div([
     dcc.Store(id="dem-applied", data=False),
     dcc.Store(id="dem-downloaded", data=False),
     dcc.Store(id="dem-api-keys", data=[], storage_type="local"),
-    # dcc.Store(id="borehole-loaded", data=False),
     html.Div([dbc.Toast(
                     "⛔ Please Zoom or Pan in the map.",
                     id="zoom-toast",
@@ -400,9 +412,6 @@ app.layout = html.Div([
             }), 
     
     dcc.Store(id="borehole-loaded", data=False),
-    # dcc.Store(id="right-click-index-store", data=None),
-    # dcc.Store(id="combined-window-store", data={"window_id": None, "items": []}),
-    # html.Div(id="window-container", style={"position": "relative", "zIndex": 9999}),
     html.Div([
         dbc.ButtonGroup([
             dbc.Button("1. Load Data",  id="upload_layout",    color="primary"),
@@ -1070,7 +1079,6 @@ def highlight_change(n1, n2, invert_layout_color,model):
     return ctx.triggered_id, m1.render(is_last_tab=False), mod1.render(), dbdt1.render(), Multi_inv.render(), mod2.render(), dbdt2.render(), rhoa.render()
 
 
-
 @app.callback(
     m1.output, mod1.output, dbdt1.output, mod2.output, dbdt2.output, rhoa.output,
     Input('model_section', 'clickData'),
@@ -1124,9 +1132,6 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color,re
     #     mod1.dataframe = df_layers
     #     dbdt1.dataframe = df_site
     return m1.render(is_last_tab=False), mod1.render(), dbdt1.render(), mod2.render(), dbdt2.render(), rhoa.render()
-
-
-
 
 @app.callback(
     Output("starting-model", "data", allow_duplicate=True),
@@ -1270,7 +1275,7 @@ def upload_file(contents, current_process_clicks):
     if warning_msg:
         upload_msg = f"{upload_msg} {warning_msg}"
 
-        return html.Div(upload_msg), m1.render(), dbdt1.render(), dbdt2.render(), rhoa.render(), summary, True, toast_msg, False, False, new_process_clicks, *bbox_vals, {'display': 'block'}, {'display': 'block'}
+    return html.Div(upload_msg), m1.render(), dbdt1.render(), dbdt2.render(), rhoa.render(), summary, True, toast_msg, False, False, new_process_clicks, *bbox_vals, {'display': 'block'}, {'display': 'block'}
 
 
 @app.callback(
@@ -1877,6 +1882,42 @@ def remember_api_key_on_download(dem_downloaded, api_key, api_keys):
     return keys[:20]
 
 
+# --------------------- auto-close callback for layers ---------------------
+@app.callback(
+    Output("layers-panel", "style", allow_duplicate=True),
+    Input({"type": "layer-check", "layer": ALL}, "value"),   # checkboxes
+    Input({"type": "layer-opacity", "layer": ALL}, "value"),    # opacity sliders
+    Input({"type": "layer-menu-btn", "layer": ALL}, "n_clicks"),# 3-dot menus
+    State("layers-panel", "style"),
+    prevent_initial_call=True,
+)
+def auto_close_layers(layer_values, opacity_values, menu_clicks, style):
+
+    # Check for ANY triggered change:
+    changed = False
+
+    # Layer checkbox values (lists)
+    if layer_values and any(v is not None for v in layer_values):
+        changed = True
+
+    # Opacity slider values (floats)
+    if opacity_values and any(v is not None for v in opacity_values):
+        changed = True
+
+    # 3-dot menu clicks (ints)
+    if menu_clicks and any((x or 0) > 0 for x in menu_clicks):
+        changed = True
+
+    if not changed:
+        return no_update
+
+    # Close panel
+    new = style.copy()
+    new["display"] = "none"
+    # print(">> Layers panel auto-closed")
+
+    return new
+
 def prune_models_without_data():
     """
     Remove models for sites that no longer have any active (in-use) *real* data.
@@ -1917,6 +1958,92 @@ def prune_models_without_data():
     sesh.models = sesh.models[sesh.models['site_id'].isin(active_sites)].copy()
 
 
+# @app.callback(
+#     Output("points-attr", "options"),
+#     Output("points-attr", "value"),
+#     Output("points-filter", "options"),
+#     Output("points-filter", "value"),
+#     Output("points-color-map-store", "data"),
+#     Output("points-filters-by-attr-store", "data"),
+#     Input("interpret_layout", 'n_clicks'),
+#     Input("map-settings-store", "data"),     # so it can initialize from settings
+#     Input("points-attr", "value"),           # user changes attribute
+#     Input("points-filter", "value"),         # user changes checklist
+ 
+#     State("points-attr", "options"),
+#     State("points-filters-by-attr-store", "data"),
+#     State("points-available-attrs-store", "data"),
+#     prevent_initial_call=False,)
+ 
+# def sync_points_ui(trig, settings, attr_value, filter_value,
+#                    existing_attr_options, filters_by_attr, 
+#                    existing_attrs):
+#     # gis.dataframe = sesh.models
+#     # local_df, color_master_map, existing_attrs = preprocess_new_df(gis.dataframe)
+#     if gis.dataframe is None:
+#         return [], no_update, [], [], {}, (filters_by_attr or {})
+ 
+       
+#     filters_by_attr = filters_by_attr or {}
+ 
+#     # ---- available attributes come ONLY from existing_attrs ----
+#     # existing_attrs = []
+#     # existing_attrs = existing_attrs or []
+#     available_attrs = [a for a in existing_attrs if a in local_df.columns]
+ 
+#     attr_options = [{"label": a, "value": a} for a in available_attrs]
+ 
+#     # ---- decide default attribute ----
+#     default_attr = None
+#     if settings and isinstance(settings, dict):
+#         default_attr = settings.get("plot_attribute")
+ 
+#     if not default_attr or default_attr not in available_attrs:
+#         default_attr = "date" if "date" in available_attrs else (available_attrs[0] if available_attrs else None)
+ 
+#     # what triggered?
+#     trig = ctx.triggered_id
+ 
+#     # ---- choose current attribute ----
+#     current_attr = attr_value if attr_value in available_attrs else default_attr
+ 
+#     if not current_attr:
+#         return attr_options, no_update, [], [], {}, filters_by_attr
+ 
+#     # ---- compute unique cleaned values (must match renderer cleaning) ----
+#     series_cleaned = (local_df[current_attr].astype(str)
+#                       .str.replace(r"\.0$", "", regex=True)
+#                       .str.strip())
+#     unique_vals = sorted(series_cleaned.unique().tolist())
+ 
+#     filter_options = [{"label": str(v), "value": str(v)} for v in unique_vals]
+#     all_values = [str(v) for v in unique_vals]
+ 
+#     # ---- numeric vs categorical ----
+#     is_numeric = pd.api.types.is_numeric_dtype(local_df[current_attr]) and current_attr != "date"
+#     if is_numeric:
+#         color_map = {}  # numeric uses colorscale in renderer
+#     else:
+#         palette = px.colors.qualitative.Light24
+#         color_map = {val: palette[i % len(palette)] for i, val in enumerate(unique_vals)}
+ 
+#     # ---- decide checklist value & persist memory ----
+#     if trig == "points-filter":
+#         # print("POINT FILTER SYNC FUN", filter_value)
+#         selected = filter_value or []
+#         filters_by_attr[current_attr] = selected
+#         checklist_value = selected
+#     else:
+#         restored = filters_by_attr.get(current_attr)
+#         if restored is None:
+#             checklist_value = all_values
+#         else:
+#             restored = [v for v in restored if v in set(all_values)]
+#             checklist_value = restored if restored else all_values
+ 
+#         filters_by_attr[current_attr] = checklist_value
+ 
+#     return attr_options,current_attr,filter_options,checklist_value,color_map,filters_by_attr
 
 
 
@@ -2120,7 +2247,6 @@ def update_layout(model, active_idx,
         return layouts.review, *colors.values(), map_fig
 
     elif button_id == "interpret_layout":
-        print("interpret here")
         return layouts.interpret, *colors.values(), map_fig
 
 
@@ -2133,21 +2259,17 @@ layout_output_list = [
         Output('process_layout', 'color', allow_duplicate=True),
         Output('invert_layout',  'color', allow_duplicate=True),
         Output('review_layout',  'color', allow_duplicate=True), #Output('review_layout', 'disabled', allow_duplicate=True)
-        
-        Output('interpret_layout',  'color', allow_duplicate=True),
 
         Output('upload_layout',  'disabled',  allow_duplicate=True),
         Output('process_layout', 'disabled', allow_duplicate=True),
         Output('invert_layout',  'disabled', allow_duplicate=True),
         Output('review_layout',  'disabled', allow_duplicate=True), #Output
-        
-        Output('interpret_layout',  'disabled', allow_duplicate=True),
-
         Output("current-working-directory", "children", allow_duplicate=True),
 
         Output('use-borehole', 'value', allow_duplicate=True),
         Output('use-borehole', 'label', allow_duplicate=True),
         Output('borehole-options-container', 'style', allow_duplicate=True),
+
 
         Output('url', 'hash', allow_duplicate=True),
 ]
@@ -2165,7 +2287,7 @@ def no_update_factory(n):
 def handle_url_hash(url_hash, model):
     global sesh
     res = no_update_factory(len(layout_output_list))
-    res[-5] = ''
+    res[-1] = ''
     layout=model
     print(f'url hash: {url_hash}')
     if url_hash.startswith('#open_session'):
@@ -2250,30 +2372,25 @@ def handle_url_hash(url_hash, model):
             mod1.dataframe  = sesh.models.copy()
             mod2.dataframe  = sesh.models.copy()
             res[4] = mod2.render()
-
+            # res[5]   = layouts.review
+            # res[6]   = 'secondary'
             res[7]   = 'secondary'
             res[8]   = 'secondary'
             res[9]   = 'success'
-            res[10]   = 'secondary'
-            res[11]   = 'secondary'
-            
+            res[10]  = False
+            res[11]  = False
             res[12]  = False
             res[13]  = False
-            res[14]  = False
-            res[15]  = False
-            res[16]  = False
         else:
+            # res[5]   = layouts.data
+            # res[6]   = 'secondary'
             res[7]   = 'success'
             res[8]   = 'secondary'
             res[9]   = 'secondary'
-            res[10]   = 'secondary'
-            res[11]   = 'secondary'
-            
-            res[12]   = False
-            res[13]  = False
-            res[14]  = False
-            res[15]  = True
-            res[16]  = False
+            res[10]   = False
+            res[11]  = False
+            res[12]  = False
+            res[13]  = True
 
     return res
 
@@ -2710,7 +2827,7 @@ def master_line_controller(url_hash,relayout, clear_sel_n, clear_all_n, prev_n, 
 
 
 
-if __name__ == "__main__": 
+if __name__ == "__main__":
     try:
         is_frozen = getattr(sys, "frozen", False)
         app.run(port=8050, debug=not is_frozen, use_reloader=not is_frozen)
