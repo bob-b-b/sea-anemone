@@ -411,11 +411,6 @@ app.layout = html.Div([
             'elevation': {'vmin': -100, 'vmax': 1000, 'log': False},
             'daytime': {'vmin': 0, 'vmax': 24, 'log': False},
             }), 
-    
-    dcc.Store(id="borehole-loaded", data=False),
-    dcc.Store(id="right-click-index-store", data=None),
-    dcc.Store(id="combined-window-store", data={"window_id": None, "items": []}),
-    html.Div(id="window-container", style={"position": "relative", "zIndex": 9999}),
     html.Div([
         dbc.ButtonGroup([
             dbc.Button("1. Load Data",  id="upload_layout",    color="primary"),
