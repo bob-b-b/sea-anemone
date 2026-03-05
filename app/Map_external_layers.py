@@ -427,7 +427,7 @@ class GIS_helpers(Panel):
 
         # 2. Create KML and Link the Image
         kml = simplekml.Kml()
-        ls = kml.newlinestring(name=f"Profile {profile_index+1}")
+        ls = kml.newlinestring(name=f"Profile {profile_index}")
         
         # FIX: Map dictionary to (Longitude, Latitude) tuples
         # SimpleKML uses (lon, lat, alt) - order matters!
@@ -442,7 +442,7 @@ class GIS_helpers(Panel):
         
         # Optional: Attach the image to the description so it pops up when clicked
         # We use os.path.basename because inside the KMZ, the folder structure is flattened
-        ls.description = f'<![CDATA[<img src="{os.path.basename(png_path)}" width="400" />]]>'
+        ls.description = f'<![CDATA[<img src="{os.path.basename(png_path)}" width="1000" />]]>'
         # -----------------------
 
         kml.savekmz(kmz_path)

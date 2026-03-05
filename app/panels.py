@@ -86,8 +86,6 @@ class MapSettings(PanelSettings):
     plot_by: str = 'misfit'
     buffer_color: str= '#ffffff'  # Default buffer color
 
-
-
 class Map(Panel):
     dataframe: None
     highlighted: int = None
@@ -97,7 +95,6 @@ class Map(Panel):
     hover_marker: dict = None
     boreholes : dict = None
     rock_color_map = None
-    hover_marker: dict = None
 
     def __init__(self, data, **kwargs):
         settings = MapSettings(id='map', **kwargs)
@@ -110,6 +107,9 @@ class Map(Panel):
         # if 'site_id' in df_plot.columns:
             # df_plot = df_plot[df_plot['site_id'] != -1]
 
+        if 'site_id' not in df_plot.columns and df_plot.index.name == 'site_id':
+            df_plot = df_plot.reset_index()
+
         zoom = self.view['map.zoom'] if self.view is not None else self.settings.zoom
         center = self.view['map.center'] if self.view is not None else None      
         
@@ -117,9 +117,7 @@ class Map(Panel):
         from __main__ import sesh
         # if sesh.models is not None:
         if sesh.models is not None and self.settings.plot_by in sesh.models.columns:
-            # fig = px.scatter_map(sesh.models, lat="latitude", lon="longitude", zoom=zoom, center=center, 
-            #                      color=self.settings.plot_by, color_continuous_scale='turbo'
-            #                      )
+
             fig = px.scatter_map(
                 sesh.models,
                 lat="latitude",
@@ -172,7 +170,8 @@ class Map(Panel):
                 # custom_data=["site_id"]   
             )
         
-        fig.update_traces(marker={'size': 12})
+        fig.update_traces(marker={'size': 8})
+        
         if self.buffer_sites is not None and len(self.buffer_sites) > 0 and self.dataframe is not None and 'site_id' in self.dataframe.columns:
             df_buffer = self.dataframe[self.dataframe["site_id"].isin(self.buffer_sites)]
 
@@ -239,7 +238,7 @@ class Map(Panel):
 
         # --- Borehole overlay ---
         if self.boreholes:
-            from borehole_utils import add_boreholes_to_map_fig
+            from Sections_plotting import add_boreholes_to_map_fig
             fig = add_boreholes_to_map_fig(fig, self.boreholes)
 
         if self.lines is not None and not self.lines.empty:
@@ -285,7 +284,6 @@ class Map(Panel):
                 for trace in hover_trace.data:
                     fig.add_trace(trace)
             
-        # fig.update_traces(marker=dict(size=7))
         if self.boreholes:
             from Sections_plotting import add_boreholes_to_map_fig
             fig = add_boreholes_to_map_fig(fig, self.boreholes)
@@ -336,20 +334,7 @@ class Map(Panel):
             lon = self.lon0 + (self.lon1-self.lon0)*x
             return lat,lon
 
-    # def initialize(self):
-    #     return  html.Div([
-    #                 html.Div([
-    #                     dcc.Graph(figure=self.render(), id=self.id, mathjax=True,
-    #                                 style={'height': '75vh', 'width': '100%','margin':'1%'}),
-    #                     dbc.Select(
-    #                         options=['misfit', 'doi', 'date'],
-    #                         id=self.id+'_plot_by',
-    #                         value='misfit',
-    #                         style={'margin-left':'45%', 'justify': 'center','width':'10%'}),
-    #                 ]),
-    #                 gear_maker(self.id)],
-    #                 style={'height': '100%'} 
-                # )
+
     def initialize(self):
         return html.Div(
             [
@@ -480,7 +465,6 @@ class Map(Panel):
                     del relayout_data['shapes']
                     fig = self.render()
             return relayout_data, fig
-
 
 
 @nosj
@@ -727,7 +711,6 @@ class dbdtSounding(Panel):
         fig.update_layout(legend_title_text=None)
         return fig
    
-
 
 class rhoaSounding(dbdtSounding):
 
@@ -1926,23 +1909,6 @@ class ModelSection(Panel):
             showlegend=False,
             yaxis='y2'
         ))
-
-
-        # misfit_trace.update(
-        #     yaxis='y2',
-        #     line=dict(color='black', width=2),
-        #     name='Misfit',showlegend=True
-        # )
-        # fig.update_layout(yaxis2=dict(range=[0, 8]))
-        # fig.add_trace(go.Scatter(
-        #     x=x,
-        #     y=y_dashed,
-        #     mode="lines",
-        #     line=dict(color="rgb(0,0,0,0.7)", dash="dash"),
-        #     # hoverinfo="skip",
-        #     showlegend=False, yaxis='y2'
-        # ))
-
 
 
         fig.add_trace(misfit_trace)

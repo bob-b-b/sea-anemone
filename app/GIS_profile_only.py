@@ -128,6 +128,7 @@ class Profile(Panel):
         # Note: self.dataframe is passed during __init__
         df_up_map, color_master_map, existing_attrs = preprocess_new_df(self.dataframe)
         
+        
         # 4. Gather Geometry Data
         y_depth = np.array(df_up_map["Depths"].iloc[0])[:-1]
         all_x, interp_lons, interp_lats = get_polyline_profile(current_line, df_up_map, resolution_m=50)
