@@ -49,22 +49,38 @@ class TEMframe(DataFrame):
         super().__init__(*args, **kwargs)
         # self.__post_init__()
 
+    # def overview(self):
+    #     current_history = self.history.copy()
+
+    #     df = self.pivot_table(
+    #         index=['site_id'],
+    #         values=['date', 'daytime', 'latitude', 'longitude', 'elevation', 'utm_x', 'utm_y', 'distance'],
+    #         aggfunc='first'
+    #     )
+    #     # df = df.reset_index()
+    #     # df['site_id'] = df.index
+    #     if 'misfit' in self.columns:
+    #         df['misfit'] = self.groupby('site_id')['misfit'].mean()
+
+    #     self.history = current_history
+    #     return df
+    
+
     def overview(self):
         current_history = self.history.copy()
-
         df = self.pivot_table(
-            index=['site_id'],
+            index=['site_id'], 
             values=['date', 'daytime', 'latitude', 'longitude', 'elevation', 'utm_x', 'utm_y', 'distance'],
             aggfunc='first'
         )
-        df = df.reset_index()
-        # df['site_id'] = df.index
+        # We leave it as an index only for now to avoid ambiguity
         if 'misfit' in self.columns:
-            df['misfit'] = self.groupby('site_id')['misfit'].mean()
-
+            misfit_means = self.groupby('site_id')['misfit'].mean()
+            df['misfit'] = df.index.map(misfit_means)
+        
         self.history = current_history
         return df
-    
+
     def apply_slope_filter(self, threshold=1.0, min_points=5):
         """
         Disable datapoints after a large slope change in log-log space.

@@ -70,7 +70,6 @@ class Map(Panel):
     hover_marker: dict = None
     boreholes : dict = None
     rock_color_map = None
-    hover_marker: dict = None
 
     def __init__(self, data, **kwargs):
         settings = MapSettings(id='map', **kwargs)
@@ -82,6 +81,9 @@ class Map(Panel):
         df_plot = self.dataframe
         # if 'site_id' in df_plot.columns:
             # df_plot = df_plot[df_plot['site_id'] != -1]
+
+        if 'site_id' not in df_plot.columns and df_plot.index.name == 'site_id':
+            df_plot = df_plot.reset_index()
 
         zoom = self.view['map.zoom'] if self.view is not None else self.settings.zoom
         center = self.view['map.center'] if self.view is not None else None      
@@ -119,18 +121,18 @@ class Map(Panel):
                 fig.update_coloraxes(cmin=0, cmax=3)
             elif self.settings.plot_by == 'doi':
                 fig.update_coloraxes(cmin=10, cmax=sesh.models['doi'].max())
-            data_trace = px.scatter_map(
-                df_plot,
-                lat="latitude",
-                lon="longitude",
-                zoom=zoom,
-                center=center,
-                color_discrete_sequence=[self.settings.color_data],
-                custom_data=["site_id"]   # <-- ADD THIS
-            )
-            data_trace.update_traces(marker={'size': 8})
-            for trace in data_trace.data:
-                fig.add_trace(trace)
+            # data_trace = px.scatter_map(
+            #     df_plot,
+            #     lat="latitude",
+            #     lon="longitude",
+            #     zoom=zoom,
+            #     center=center,
+            #     color_discrete_sequence=[self.settings.color_data],
+            #     custom_data=["site_id"]   # <-- ADD THIS
+            # )
+            # data_trace.update_traces(marker={'size': 8})
+            # for trace in data_trace.data:
+            #     fig.add_trace(trace)
         else:
             # fig = px.scatter_map(df_plot, lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.color])
             fig = px.scatter_map(
@@ -143,7 +145,8 @@ class Map(Panel):
                 custom_data=["site_id"]   
             )
         
-        fig.update_traces(marker={'size': 12})
+        fig.update_traces(marker={'size': 8})
+        
         if self.buffer_sites is not None and len(self.buffer_sites) > 0 and self.dataframe is not None and 'site_id' in self.dataframe.columns:
             df_buffer = self.dataframe[self.dataframe["site_id"].isin(self.buffer_sites)]
 
@@ -253,7 +256,6 @@ class Map(Panel):
                 for trace in hover_trace.data:
                     fig.add_trace(trace)
             
-        # fig.update_traces(marker=dict(size=7))
         if self.boreholes:
             from Sections_plotting import add_boreholes_to_map_fig
             fig = add_boreholes_to_map_fig(fig, self.boreholes)

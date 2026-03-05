@@ -389,6 +389,7 @@ app.layout = html.Div([
     dcc.Store(id="dem-applied", data=False),
     dcc.Store(id="dem-downloaded", data=False),
     dcc.Store(id="dem-api-keys", data=[], storage_type="local"),
+    dcc.Store(id="borehole-loaded", data=False),
     html.Div([dbc.Toast(
                     "⛔ Please Zoom or Pan in the map.",
                     id="zoom-toast",
@@ -1956,94 +1957,6 @@ def prune_models_without_data():
     sesh.models = sesh.models[sesh.models['site_id'].isin(active_sites)].copy()
 
 
-# @app.callback(
-#     Output("points-attr", "options"),
-#     Output("points-attr", "value"),
-#     Output("points-filter", "options"),
-#     Output("points-filter", "value"),
-#     Output("points-color-map-store", "data"),
-#     Output("points-filters-by-attr-store", "data"),
-#     Input("interpret_layout", 'n_clicks'),
-#     Input("map-settings-store", "data"),     # so it can initialize from settings
-#     Input("points-attr", "value"),           # user changes attribute
-#     Input("points-filter", "value"),         # user changes checklist
- 
-#     State("points-attr", "options"),
-#     State("points-filters-by-attr-store", "data"),
-#     State("points-available-attrs-store", "data"),
-#     prevent_initial_call=False,)
- 
-# def sync_points_ui(trig, settings, attr_value, filter_value,
-#                    existing_attr_options, filters_by_attr, 
-#                    existing_attrs):
-#     # gis.dataframe = sesh.models
-#     # local_df, color_master_map, existing_attrs = preprocess_new_df(gis.dataframe)
-#     if gis.dataframe is None:
-#         return [], no_update, [], [], {}, (filters_by_attr or {})
- 
-       
-#     filters_by_attr = filters_by_attr or {}
- 
-#     # ---- available attributes come ONLY from existing_attrs ----
-#     # existing_attrs = []
-#     # existing_attrs = existing_attrs or []
-#     available_attrs = [a for a in existing_attrs if a in local_df.columns]
- 
-#     attr_options = [{"label": a, "value": a} for a in available_attrs]
- 
-#     # ---- decide default attribute ----
-#     default_attr = None
-#     if settings and isinstance(settings, dict):
-#         default_attr = settings.get("plot_attribute")
- 
-#     if not default_attr or default_attr not in available_attrs:
-#         default_attr = "date" if "date" in available_attrs else (available_attrs[0] if available_attrs else None)
- 
-#     # what triggered?
-#     trig = ctx.triggered_id
- 
-#     # ---- choose current attribute ----
-#     current_attr = attr_value if attr_value in available_attrs else default_attr
- 
-#     if not current_attr:
-#         return attr_options, no_update, [], [], {}, filters_by_attr
- 
-#     # ---- compute unique cleaned values (must match renderer cleaning) ----
-#     series_cleaned = (local_df[current_attr].astype(str)
-#                       .str.replace(r"\.0$", "", regex=True)
-#                       .str.strip())
-#     unique_vals = sorted(series_cleaned.unique().tolist())
- 
-#     filter_options = [{"label": str(v), "value": str(v)} for v in unique_vals]
-#     all_values = [str(v) for v in unique_vals]
- 
-#     # ---- numeric vs categorical ----
-#     is_numeric = pd.api.types.is_numeric_dtype(local_df[current_attr]) and current_attr != "date"
-#     if is_numeric:
-#         color_map = {}  # numeric uses colorscale in renderer
-#     else:
-#         palette = px.colors.qualitative.Light24
-#         color_map = {val: palette[i % len(palette)] for i, val in enumerate(unique_vals)}
- 
-#     # ---- decide checklist value & persist memory ----
-#     if trig == "points-filter":
-#         # print("POINT FILTER SYNC FUN", filter_value)
-#         selected = filter_value or []
-#         filters_by_attr[current_attr] = selected
-#         checklist_value = selected
-#     else:
-#         restored = filters_by_attr.get(current_attr)
-#         if restored is None:
-#             checklist_value = all_values
-#         else:
-#             restored = [v for v in restored if v in set(all_values)]
-#             checklist_value = restored if restored else all_values
- 
-#         filters_by_attr[current_attr] = checklist_value
- 
-#     return attr_options,current_attr,filter_options,checklist_value,color_map,filters_by_attr
-
-
 
 # --------------------- SECTION BUTTON ---------------------
 @app.callback(
@@ -2146,7 +2059,7 @@ def trigger_export(n_clicks, fig_data, current_idx):
         
         # Convert to list of dicts or whatever GIS_helpers expects
         current_coords = current_line_df.to_dict('records')
-        print("CURRENT COORDS",current_coords)
+
 
         # 4. Execute Save logic
         # Passing fig_data, coords, and the ID to your helper
@@ -2256,12 +2169,16 @@ layout_output_list = [
         Output('upload_layout',  'color',  allow_duplicate=True),
         Output('process_layout', 'color', allow_duplicate=True),
         Output('invert_layout',  'color', allow_duplicate=True),
-        Output('review_layout',  'color', allow_duplicate=True), #Output('review_layout', 'disabled', allow_duplicate=True)
+        Output('review_layout',  'color', allow_duplicate=True), 
+        
+        Output('interpret_layout',  'color', allow_duplicate=True), 
 
         Output('upload_layout',  'disabled',  allow_duplicate=True),
         Output('process_layout', 'disabled', allow_duplicate=True),
         Output('invert_layout',  'disabled', allow_duplicate=True),
-        Output('review_layout',  'disabled', allow_duplicate=True), #Output
+        Output('review_layout',  'disabled', allow_duplicate=True),         
+        Output('interpret_layout',  'disabled', allow_duplicate=True), 
+
         Output("current-working-directory", "children", allow_duplicate=True),
 
         Output('use-borehole', 'value', allow_duplicate=True),
@@ -2370,25 +2287,32 @@ def handle_url_hash(url_hash, model):
             mod1.dataframe  = sesh.models.copy()
             mod2.dataframe  = sesh.models.copy()
             res[4] = mod2.render()
-            # res[5]   = layouts.review
-            # res[6]   = 'secondary'
+
+            res[6]   = 'secondary'
             res[7]   = 'secondary'
             res[8]   = 'secondary'
-            res[9]   = 'success'
-            res[10]  = False
+            res[9]   = 'secondary'
+            res[10]   = 'success'
+
             res[11]  = False
             res[12]  = False
             res[13]  = False
+            res[14]  = False
+            res[15]  = False
         else:
-            # res[5]   = layouts.data
-            # res[6]   = 'secondary'
-            res[7]   = 'success'
+
+            res[6]   = 'success'
+            res[7]   = 'secondary'
             res[8]   = 'secondary'
             res[9]   = 'secondary'
-            res[10]   = False
+            res[10]   = 'secondary'
+
             res[11]  = False
             res[12]  = False
-            res[13]  = True
+            res[13]  = False
+            res[14]  = True
+            res[15]  = True
+            
 
     return res
 
