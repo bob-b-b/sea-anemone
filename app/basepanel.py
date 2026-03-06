@@ -229,7 +229,12 @@ class PanelSettings:
             n_clicks=0,
             style={'margin': '10px'}
         ))
-
+        form_items.append(dbc.Button(
+            "Apply Settings",
+            id=f'{self.id}_apply_settings',
+            n_clicks=0,
+            style={'margin': '10px'}
+        ))
         return html.Div([dbc.Form(form_items, style={'margin': '10px'}), 
                          gear_maker(self.id+'_settings')], style={'width':'95%'})
 
@@ -508,7 +513,21 @@ class Panel:
             #         for x in self.settings.flat_keys
             #     ]
             # )(update_render)
+        if self.settings is None:
+            return    
+        # self.settings.add_callbacks(app)
+        if self.childname != "figure":
+            return
 
+        @app.callback(
+            Output(self.id, self.childname, allow_duplicate=True),
+            Input(f"{self.id}_apply_settings", "n_clicks"),
+            prevent_initial_call=True
+        )
+        def apply_settings(n):
+            if not n:
+                raise PreventUpdate
+            return self.render()
 
             
     def initialize(self):

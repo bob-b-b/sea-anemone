@@ -1135,7 +1135,6 @@ def highlight_change(n1, n2, invert_layout_color, model, buffer_data):
                 idx = int(idx[0])
 
                 # slide buffer when highlight exits window
-                print(start)
                 if idx-1 < start:
                     start = idx-1
                 elif idx > start + length:
