@@ -153,7 +153,7 @@ class Map(Panel):
                 zoom=zoom,
                 center=center,
                 color_discrete_sequence=[self.settings.color_data],
-                # custom_data=["site_id"]   # <-- ADD THIS
+                custom_data=["site_id"]   # <-- ADD THIS
             )
             data_trace.update_traces(marker={'size': 8})
             for trace in data_trace.data:
@@ -167,14 +167,13 @@ class Map(Panel):
                 zoom=zoom,
                 center=center,
                 color_discrete_sequence=[self.settings.color],
-                # custom_data=["site_id"]   
+                custom_data=["site_id"]   
             )
         
         fig.update_traces(marker={'size': 8})
         
         if self.buffer_sites is not None and len(self.buffer_sites) > 0 and self.dataframe is not None and 'site_id' in self.dataframe.columns:
             df_buffer = self.dataframe[self.dataframe["site_id"].isin(self.buffer_sites)]
-
             if not df_buffer.empty:
                 buffer_trace = px.scatter_map(
                     df_buffer,
@@ -258,6 +257,8 @@ class Map(Panel):
                     line_group='line', zoom=zoom, center=center
                 )
                 inactive_fig.update_traces(line=dict(color="yellow", width=2), name="Inactive Profile")
+                for trace in inactive_fig.data:
+                    trace.update(line=dict(color="yellow", width=2), hoverinfo="skip")
                 fig.add_traces(inactive_fig.data)
 
             # --- Trace 2: Active Line (Red, Width 8) ---
@@ -268,6 +269,8 @@ class Map(Panel):
                     line_group='line', zoom=zoom, center=center
                 )
                 active_fig.update_traces(line=dict(color="red", width=4), name="Active Profile")
+                for trace in active_fig.data:
+                    trace.update(line=dict(color="red", width=4), hoverinfo="skip")
                 fig.add_traces(active_fig.data)
 
             if self.hover_marker is not None:
@@ -1257,7 +1260,7 @@ class dbdtSection(Panel):
                     x0=x_value - dx,
                     x1=x_value + dx,
                     y0=self.dataframe["dbdt"].abs().min() * 0.5,
-                    y1=self.dataframe["dbdt"].max() * 25,
+                    y1=self.dataframe["dbdt"].max()*self.settings.lm_factor * 25,
                     line=dict(color="rgba(0,0,0,0.8)", width=1.5),
                     fillcolor="rgba(0,0,0,0.0)",
                 )
@@ -1712,8 +1715,9 @@ class ModelGraph(Panel):
                     y=[doi_val, doi_val],
                     mode="lines",
                     line=dict(color="black",width=2,dash="dash"),
-                    showlegend=False
+                    showlegend=False,
                 ))
+                fig.update_layout(dragmode=False) 
             # fig.add_trace(
             #     go.Scatter(
             #         x=df_layers_long["resistivity"],
@@ -1733,7 +1737,7 @@ class ModelGraph(Panel):
 
         fig.update_yaxes(
             title_text='Depth [m]',
-            range=[180, -0.5],  # depth increasing downward
+            range=[df_layers_long['depth'].max(), -0.5],  # depth increasing downward
             showline=True,
             mirror=True,
         )
@@ -1844,6 +1848,8 @@ class ModelSection(Panel):
 
         fig = px.imshow(
             heatmap_df[x_slice],
+            x=heatmap_df[x_slice].columns,
+            y=heatmap_df.index,  # depth values
             aspect='auto',
             origin='lower',
             # color_continuous_scale=settings.cmap, #'turbo',
@@ -1856,6 +1862,15 @@ class ModelSection(Panel):
             zmax=log_vmax,
         )
         fig.update_layout(hovermode="x")
+        fig.update_traces(
+            customdata=10**heatmap_df[x_slice].values,
+            hovertemplate=(
+                "Depth: %{y} m<br>"
+                "Site: %{x}<br>"
+                "Resistivity: %{customdata:.2f} Ω·m"
+                "<extra></extra>"
+            )
+        )
         fig.update_yaxes(autorange="reversed")
         fig.update_layout(yaxis2=dict(title='Misfit',overlaying='y',side='right',showgrid=False))
         
@@ -1943,6 +1958,8 @@ class ModelSection(Panel):
                     fillcolor="rgba(255,255,255,0.6)",
                     line=dict(width=0),
                     name="Below DOI",
+                    hoverinfo='skip',
+                    showlegend=True
                 )
             )
 
@@ -2274,7 +2291,8 @@ class HotKeyReminder(Panel):
                             }
                         )
                     ]),
-                    
+                    html.Div(dbc.Toast(id="save-session-toast",header="Session Saved",is_open=False,dismissable=True,duration=8000,icon="success", 
+                        style={"position": "fixed","top": "80px","right": "20px","width": 350,"zIndex": 9999})),
                     dbc.ButtonGroup([
                         dbc.Button("save [ctrl+s]", id='saveButton'),
                     ])
@@ -2314,3 +2332,16 @@ class HotKeyReminder(Panel):
             percent = (end / total_sites) * 100
 
             return percent, f"{start+1}–{end} of {total_sites} sites"
+        @app.callback(
+            Output("save-session-toast", "is_open"),
+            Output("save-session-toast", "children"),
+            Input("session-save-complete", "data"),
+            prevent_initial_call=True
+        )
+        def show_save_toast(save_data):
+            if not save_data:
+                raise PreventUpdate
+            # from __main__ import sesh
+            # save_dir = getattr(sesh, "session_path", "unknown")
+
+            return True, f"Session saved to: {save_data.get('dir', 'unknown')}"

@@ -428,7 +428,7 @@ class PanelSettings:
                 if hasattr(self, key):
                     setattr(self, key, val)
 
-            print(f"Real-time update for {self.id}: vmin={self.vmin}, vmax={self.vmax}")
+            # print(f"Real-time update for {self.id}: vmin={self.vmin}, vmax={self.vmax}")
             return  "updated"
 
     @property

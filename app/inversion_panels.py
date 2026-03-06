@@ -65,6 +65,15 @@ class MultiInversion(Panel):
         #         # dragmode = 'select'
         #     )
         # fig.update_layout(dragmode="select")
+        fig.update_xaxes(title_text='Resistivity [Ω⋅m]',type='log',range=[0, 2.7],showline=True,mirror=True,row=1,col=1        )
+
+        fig.update_yaxes(title_text='Depth [m]',range=[180, -0.5],showline=True,mirror=True,row=1,col=1        )
+
+        fig.update_xaxes(title_text='Time [s]',type = 'log',range=[-6,-2.1],showline=True,mirror=True,row=1,col=2        )
+
+        fig.update_yaxes(title_text='dB/dt [V / m²]',type = 'log',range = [-12, -5],showline=True,mirror=True,row=1,col=2        )
+
+
         if sesh.data is None:
             fig.add_trace(go.Scatter(x=[1e-6, 1e-2],y=[1e-10, 1e-3],mode="markers",marker=dict(opacity=0),showlegend=False),row=1,col=2            )
         else:
@@ -78,19 +87,61 @@ class MultiInversion(Panel):
                     .median()
             )
             site_with_median_dbdt = (site_medians - global_median).abs().idxmin()
+            df_site = sesh.data[sesh.data['site_id'] == site_with_median_dbdt].dropna(subset=['dbdt'])
+            df_lm = df_site[df_site['system_id'] == 0]
+            df_hm = df_site[df_site['system_id'] == 1]
+
+            time_lm = df_lm['time'].values
+            time_hm = df_hm['time'].values
+
+            d_obs_lm = df_lm['dbdt'].values
+            d_obs_hm = df_hm['dbdt'].values
 
             d_err = sesh.data[sesh.data['site_id']==site_with_median_dbdt].error.dropna().values
             d_obs = sesh.data[sesh.data['site_id']==site_with_median_dbdt].dbdt.dropna().values
             dbdt = sesh.data.dmfwr(rho,depth).exp()
+            dbdt_lm = dbdt[:len(time_lm)]
+            dbdt_hm = dbdt[len(time_lm):len(time_lm)+len(time_hm)]
             e = d_err / 100
-
-            err_plus  = d_obs * e
-            err_minus = d_obs * e / (1 + e)
-            # print(len(sesh.data[sesh.data['site_id']==1].time),len(dbdt))
+            e_lm = e[:len(time_lm)]
+            e_hm = e[len(time_lm):len(time_lm)+len(time_hm)]
+            err_plus_lm  = d_obs_lm * e_lm
+            err_minus_lm = d_obs_lm * e_lm / (1 + e_lm)
+            err_plus_hm  = d_obs_hm * e_hm
+            err_minus_hm = d_obs_hm * e_hm / (1 + e_hm)
+            # err_plus  = d_obs * e
+            # err_minus = d_obs * e / (1 + e)
             time = sesh.data[sesh.data['site_id']==site_with_median_dbdt].time.dropna().values
-            fig.add_trace(go.Scatter(x=time,y=dbdt,mode="lines",line=dict(color=self.settings.line_color),name="Starting model"), row=1, col=2        )
-            fig.add_trace(go.Scatter(x=time,y=d_obs,mode="markers",name="Observed dB/dt",marker=dict(color="black",size=6,),
-            error_y=dict(type="data",array=err_plus,arrayminus=err_minus,visible=True,thickness=1,width=0),),row=1,col=2)
+            # fig.add_trace(go.Scatter(x=time,y=dbdt,mode="lines",line=dict(color=self.settings.line_color),name="Starting model"), row=1, col=2        )
+            # fig.add_trace(go.Scatter(x=time,y=d_obs,mode="markers",name="Observed dB/dt",marker=dict(color="black",size=6,),
+            fig.add_trace(
+                    go.Scatter(
+                        x=time_lm,
+                        y=d_obs_lm*8,
+                        mode="markers",
+                        marker=dict(color="black", size=6),
+                        name="Observed LM",
+                        error_y=dict(type="data",array=err_plus_lm,arrayminus=err_minus_lm,visible=True,thickness=1,width=0),
+                    ),
+                    row=1, col=2
+                )
+
+            fig.add_trace(
+                go.Scatter(
+                    x=time_hm,
+                    y=d_obs_hm,
+                    mode="markers",
+                    marker=dict(color="black", size=6),
+                    name="Observed HM",
+                    error_y=dict(type="data",array=err_plus_hm,arrayminus=err_minus_hm,visible=True,thickness=1,width=0),
+                ),
+                row=1, col=2
+            )
+
+            fig.add_trace(go.Scatter(x=time_lm, y=dbdt_lm*8, mode="lines",
+                        line=dict(color="blue"), name="LM model"),row=1, col=2)
+
+            fig.add_trace(go.Scatter(x=time_hm, y=dbdt_hm, mode="lines",line=dict(color="red"), name="HM model"),row=1, col=2)
             vals = np.concatenate([d_obs, dbdt])
             vals = vals[np.isfinite(vals) & (vals > 0)]
 
@@ -110,22 +161,17 @@ class MultiInversion(Panel):
                 row=1,
                 col=2
             )
+            fig.update_xaxes(title_text='Time [s]',type = 'log',range=[np.log10(time).min()-0.2,np.log10(time).max()+0.2],showline=True,mirror=True,row=1,col=2)
             
 
         # -------- Axes & layout formatting --------
-        fig.update_xaxes(title_text='Resistivity [Ω⋅m]',type='log',range=[0, 2.7],showline=True,mirror=True,row=1,col=1        )
 
-        fig.update_yaxes(title_text='Depth [m]',range=[180, -0.5],showline=True,mirror=True,row=1,col=1        )
-
-        fig.update_xaxes(title_text='Time [s]',type = 'log',range=[-6,-2.1],showline=True,mirror=True,row=1,col=2        )
-
-        fig.update_yaxes(title_text='dB/dt [V / m²]',type = 'log',range = [-12, -5],showline=True,mirror=True,row=1,col=2        )
 
         fig.update_layout(
             title = self.title,
             showlegend=False,
             modebar=dict(
-                remove=['toImage', 'zoom', 'zoomIn', 'zoomOut', 'pan', 'select']
+                remove=['toImage', 'zoom']
             )
         )
         fig.update_layout(
@@ -432,7 +478,18 @@ class MultiInversion(Panel):
             prevent_initial_call=True
         )
         def update_starting_model(relayoutData):
-            self.starting_rho = int(relayoutData.get('shapes[0].x0', self.starting_rho))
+            if relayoutData is None:
+                raise PreventUpdate
+
+            # Ignore zoom / pan events
+            if any(k.startswith("xaxis.range") or k.startswith("yaxis.range") for k in relayoutData):
+                raise PreventUpdate
+
+            # Only update when the starting-model line moves
+            if "shapes[0].x0" not in relayoutData:
+                raise PreventUpdate
+
+            self.starting_rho = float(relayoutData["shapes[0].x0"])
             self.dataframe['resistivity'] = self.starting_rho
             return self.render()
         
@@ -448,7 +505,6 @@ class MultiInversion(Panel):
             depth = np.cumsum(np.logspace(0, 1.3, 31)).tolist()
         elif gates > 35:
             depth = np.cumsum(np.logspace(0, 1.8, 31)).tolist()
-
         return depth
 
 @nosj
@@ -540,18 +596,63 @@ class Single_site(Panel):
                         .median()
                 )
                 site_with_median_dbdt = (site_medians - global_median).abs().idxmin()
+                df_site = sesh.data[sesh.data['site_id'] == site_with_median_dbdt].dropna(subset=['dbdt'])
+
+                df_lm = df_site[df_site['system_id'] == 0]
+                df_hm = df_site[df_site['system_id'] == 1]
+
+                time_lm = df_lm['time'].values
+                time_hm = df_hm['time'].values
+
+                d_obs_lm = df_lm['dbdt'].values
+                d_obs_hm = df_hm['dbdt'].values
 
                 d_err = sesh.data[sesh.data['site_id']==site_with_median_dbdt].error.dropna().values
                 d_obs = sesh.data[sesh.data['site_id']==site_with_median_dbdt].dbdt.dropna().values
                 dbdt = sesh.data.dmfwr(rho,depth).exp()
+                dbdt_lm = dbdt[:len(time_lm)]
+                dbdt_hm = dbdt[len(time_lm):len(time_lm)+len(time_hm)]
                 e = d_err / 100
-
-                err_plus  = d_obs * e
-                err_minus = d_obs * e / (1 + e)
+                e_lm = e[:len(time_lm)]
+                e_hm = e[len(time_lm):len(time_lm)+len(time_hm)]
+                err_plus_lm  = d_obs_lm * e_lm
+                err_minus_lm = d_obs_lm * e_lm / (1 + e_lm)
+                err_plus_hm  = d_obs_hm * e_hm
+                err_minus_hm = d_obs_hm * e_hm / (1 + e_hm)
+                # err_plus  = d_obs * e
+                # err_minus = d_obs * e / (1 + e)
                 time = sesh.data[sesh.data['site_id']==site_with_median_dbdt].time.dropna().values
-                fig.add_trace(go.Scatter(x=time,y=dbdt,mode="lines",line=dict(color=self.settings.line_color),name="Starting model"), row=1, col=2        )
-                fig.add_trace(go.Scatter(x=time,y=d_obs,mode="markers",name="Observed dB/dt",marker=dict(color="black",size=6,),
-                error_y=dict(type="data",array=err_plus,arrayminus=err_minus,visible=True,thickness=1,width=0),),row=1,col=2)
+                # fig.add_trace(go.Scatter(x=time,y=dbdt,mode="lines",line=dict(color=self.settings.line_color),name="Starting model"), row=1, col=2        )
+                # fig.add_trace(go.Scatter(x=time,y=d_obs,mode="markers",name="Observed dB/dt",marker=dict(color="black",size=6,),
+                fig.add_trace(
+                        go.Scatter(
+                            x=time_lm,
+                            y=d_obs_lm*8,
+                            mode="markers",
+                            marker=dict(color="black", size=6),
+                            name="Observed LM",
+                            error_y=dict(type="data",array=err_plus_lm,arrayminus=err_minus_lm,visible=True,thickness=1,width=0),
+                        ),
+                        row=1, col=2
+                    )
+
+                fig.add_trace(
+                    go.Scatter(
+                        x=time_hm,
+                        y=d_obs_hm,
+                        mode="markers",
+                        marker=dict(color="black", size=6),
+                        name="Observed HM",
+                        error_y=dict(type="data",array=err_plus_hm,arrayminus=err_minus_hm,visible=True,thickness=1,width=0),
+                    ),
+                    row=1, col=2
+                )
+
+                fig.add_trace(go.Scatter(x=time_lm, y=dbdt_lm*8, mode="lines",
+                            line=dict(color="blue"), name="LM model"),row=1, col=2)
+
+                fig.add_trace(go.Scatter(x=time_hm, y=dbdt_hm, mode="lines",line=dict(color="red"), name="HM model"),row=1, col=2)
+                # error_y=dict(type="data",array=err_plus,arrayminus=err_minus,visible=True,thickness=1,width=0),),row=1,col=2)
                 vals = np.concatenate([d_obs, dbdt])
                 vals = vals[np.isfinite(vals) & (vals > 0)]
 
@@ -571,6 +672,7 @@ class Single_site(Panel):
                     row=1,
                     col=2
                 )
+                fig.update_xaxes(title_text='Time [s]',type = 'log',range=[np.log10(time).min()-0.2,np.log10(time).max()+0.2],showline=True,mirror=True,row=1,col=2        )
             return fig
 
         
@@ -588,27 +690,87 @@ class Single_site(Panel):
         error    = curves[0][8]
 
         opacity = np.where(include, 1.0, 0.2)
+        time_inc = time[include]
+        dt = np.diff(time_inc)
 
+        idx = np.where(dt<0)[0][0]+1
+        time_lm = time_inc[:idx]
+        time_hm = time_inc[idx:]
 
         inc = include
 
-        y = dbdt_obs[inc]
-        e = error[inc] / 100
+        y_lm = dbdt_obs[:idx][inc[:idx]]*8
+        y_hm = dbdt_obs[idx:][inc[idx:]]
+        # y = dbdt_obs[inc]
 
-        err_plus  = y * e
-        err_minus = y * e / (1 + e)
+        e_lm = error[:idx][inc[:idx]] / 100
+        e_hm = error[idx:][inc[idx:]] / 100
+        # e = error[inc] / 100
 
-        fig.add_trace(go.Scatter(x=time[inc],y=y,mode="markers",name="Observed dB/dt",marker=dict(color="black",size=6,),
-        error_y=dict(type="data",array=err_plus,arrayminus=err_minus,visible=True,thickness=1,width=0),),row=1,col=2)
+        # err_plus  = y * e
+        # err_minus = y * e / (1 + e)
+
+        err_plus_lm  = y_lm * e_lm
+        err_minus_lm = y_lm * e_lm / (1 + e_lm)
+        err_plus_hm  = y_hm * e_hm
+        err_minus_hm = y_hm * e_hm / (1 + e_hm)
+
+        fig.add_trace(
+            go.Scatter(
+                x=time_lm,
+                y=y_lm,
+                mode="markers",
+                name="Observed LM",
+                marker=dict(color="black", size=6),
+                error_y=dict(type="data",array=err_plus_lm,arrayminus=err_minus_lm,visible=True,thickness=1,width=0),
+            ),
+            row=1, col=2
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=time_hm,
+                y=y_hm,
+                mode="markers",
+                name="Observed HM",
+                marker=dict(color="black", size=6),
+                error_y=dict(type="data",array=err_plus_hm,arrayminus=err_minus_hm,visible=True,thickness=1,width=0),
+            ),
+            row=1, col=2
+        )
+        # fig.add_trace(go.Scatter(x=time[inc],y=y,mode="markers",name="Observed dB/dt",marker=dict(color="black",size=6,),
+        # error_y=dict(type="data",array=err_plus,arrayminus=err_minus,visible=True,thickness=1,width=0),),row=1,col=2)
         
         exc = ~include
+        # Excluded data (split the same way)
+        fig.add_trace(
+            go.Scatter(
+                x=time[:idx][exc[:idx]],
+                y=dbdt_obs[:idx][exc[:idx]]*8,
+                mode="markers",
+                showlegend=False,
+                marker=dict(color="black", size=6, opacity=0.2),
+            ),
+            row=1, col=2
+        )
 
-        fig.add_trace(go.Scatter(x=time[exc],y=dbdt_obs[exc],mode="markers",showlegend=False,marker=dict(color="black",size=6,opacity=0.2,),),row=1,col=2,        )
+        fig.add_trace(
+            go.Scatter(
+                x=time[idx:][exc[idx:]],
+                y=dbdt_obs[idx:][exc[idx:]],
+                mode="markers",
+                showlegend=False,
+                marker=dict(color="black", size=6, opacity=0.2),
+            ),
+            row=1, col=2
+        )
+        # fig.add_trace(go.Scatter(x=time[exc],y=dbdt_obs[exc],mode="markers",showlegend=False,marker=dict(color="black",size=6,opacity=0.2,),),row=1,col=2,        )
 
         for (vc,rho,depth,misfit,df_layers,dbdt_obs,dbdt_syn,time,error,include, doi) in curves:
             rho = np.insert(np.array(rho),0,rho[0])
             depth = np.insert(np.array(depth),0,0)
             color = VC_COLORS.get(vc, "black")
+            dbdt_syn_lm = dbdt_syn[:len(time_lm)]*8
+            dbdt_syn_hm = dbdt_syn[len(time_lm):len(time_lm)+len(time_hm)]
 
             fig.add_trace(
                 go.Scatter(
@@ -623,17 +785,19 @@ class Single_site(Panel):
                 row=1,
                 col=1
             )
-
-            fig.add_trace(go.Scatter(x=time,y=dbdt_syn,mode="lines",line=dict(color=color),name=f"{vc} syn",legendgroup=vc,showlegend=False), row=1, col=2 )
+            fig.add_trace(go.Scatter(x=time_lm,y=dbdt_syn_lm,mode="lines",line=dict(color=color),name=f"{vc} LM",legendgroup=vc,showlegend=False), row=1, col=2 )
+            fig.add_trace(go.Scatter(x=time_hm,y=dbdt_syn_hm,mode="lines",line=dict(color=color),name=f"{vc} HM",legendgroup=vc,showlegend=False), row=1, col=2 )
+            # fig.add_trace(go.Scatter(x=time,y=dbdt_syn,mode="lines",line=dict(color=color),name=f"{vc} syn",legendgroup=vc,showlegend=False), row=1, col=2 )
         
         fig.add_trace(go.Scatter(x=[0.1,1000],y=[doi[0],doi[0]],mode="lines",line=dict(color="black",width=2,dash="dash"),showlegend=False),row=1,col=1)
-        fig.update_yaxes(range=[180, -0.5],title_text="Depth [m]",row=1,col=1,showline=True,mirror=True,linewidth=1,linecolor='black')
+
+        fig.update_yaxes(range=[doi[0]+30, -0.5],title_text="Depth [m]",row=1,col=1,showline=True,mirror=True,linewidth=1,linecolor='black')
 
         fig.update_xaxes(type="log",range=[0,2.7],title_text="Resistivity [Ωm]",row=1,col=1,showline=True,mirror=True,linewidth=1,linecolor='black')
 
-        fig.update_xaxes(title_text='Time [s]',type = 'log',range=[-6,-2.1],showline=True,mirror=True,row=1,col=2)
+        fig.update_xaxes(title_text='Time [s]',type = 'log',range=[np.log10(time).min()-0.2,np.log10(time).max()+0.2],showline=True,mirror=True,row=1,col=2)
 
-        fig.update_yaxes(title_text='dB/dt [V / m²]',type = 'log',range = [-12, -5],showline=True,mirror=True,row=1,col=2)
+        fig.update_yaxes(title_text='dB/dt [V / m²]',type = 'log',range = [np.log10(dbdt_obs).min()-1, np.log10(dbdt_obs).max()+1],showline=True,mirror=True,row=1,col=2)
 
         # ---- LAYOUT ----
         fig.update_layout(
@@ -779,7 +943,7 @@ class Single_site(Panel):
                 site_id = sesh.data['site_id'].iloc[click_data['points'][0]['pointNumber']]
             else:
                 raise PreventUpdate
-            if site_id is None:
+            if site_id is None or sesh.data[sesh.data['site_id'] == site_id].empty:
                 raise PreventUpdate
             curves = []
             print('starting model:', starting_model["rho"])
@@ -802,7 +966,18 @@ class Single_site(Panel):
             prevent_initial_call=True
         )
         def update_starting_model(relayoutData):
-            self.starting_rho = int(relayoutData.get('shapes[0].x0', self.starting_rho))
+            if relayoutData is None:
+                raise PreventUpdate
+
+            # Ignore zoom / pan events
+            if any(k.startswith("xaxis.range") or k.startswith("yaxis.range") for k in relayoutData):
+                raise PreventUpdate
+
+            # Only update when the starting-model line moves
+            if "shapes[0].x0" not in relayoutData:
+                raise PreventUpdate
+
+            self.starting_rho = float(relayoutData.get('shapes[0].x0', self.starting_rho))
             self.dataframe['resistivity'] = self.starting_rho
             return self.render()
         

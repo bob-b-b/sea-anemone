@@ -382,7 +382,7 @@ flex_layout = dfl.FlexLayout(
 app.layout = html.Div([
     dcc.Location(id='url', refresh='callback-nav'),
     dcc.Interval(id= "inv-log-poll", interval=1000, n_intervals=0, disabled=True),  # Poll every 2 seconds
-
+    dcc.Store(id="session-save-complete"),
     dcc.Store(id="starting-model", data={"rho": 10.0,"depth": np.cumsum(np.logspace(0, 1.3, 31)).tolist()}),
     dcc.Store(id='starting-model-selected',data=[]),
     dcc.Store(id='data-buffer',data={"length": 50, "start_site":0}),
@@ -555,7 +555,10 @@ function(selectedLineIdx, sectionMode, profileFig) {
             overlay.style.display = 'flex';
             overlay.style.position = 'fixed';
             overlay.style.top = '320px';
-            overlay.style.left = '12px';
+            overlay.style.left = '50%';
+            overlay.style.width = '200px';
+            overlay.style.marginLeft = '-100px';  // half the width to center
+            overlay.style.textAlign = 'center';
             overlay.style.zIndex = '10000';
         } else {
             console.log("JS: Value is identical. Message stays hidden.");
@@ -572,7 +575,10 @@ function(selectedLineIdx, sectionMode, profileFig) {
             overlay.style.display = 'flex';
             overlay.style.position = 'fixed';
             overlay.style.top = '320px';
-            overlay.style.left = '12px';
+            overlay.style.left = '50%';
+            overlay.style.width = '200px';
+            overlay.style.marginLeft = '-100px';  // half the width to center
+            overlay.style.textAlign = 'center';
             overlay.style.zIndex = '10000';
             console.log("JS: Section mode changed - showing overlay");
         }
@@ -814,10 +820,64 @@ def show_value(n1, n2, ttem_selected, sounding_selected, rhoa_selected):
     return dbdt1.render(), dbdt2.render(), rhoa.render()
 
 @app.callback(
-    Output('data-buffer', 'data', allow_duplicate=True),
+    mod2.output, dbdt2.output, dbdt1.output, m1.output, mod1.output, rhoa.output,
+    Input('data-buffer', 'data'),
+    prevent_initial_call=True
+)
+def update_model_section_from_buffer(buffer_data):
+    start  = buffer_data["start_site"]
+    length = buffer_data["length"]
+
+    # Update model section buffer
+    mod2.buffer_start = start
+    mod2.buffer_len   = length
+    mod1.buffer_start = start
+    mod1.buffer_len   = length
+    
+
+    # Update tTEM buffer
+    dbdt2.buffer_start = start
+    dbdt2.buffer_len   = length
+
+
+    x_axis = dbdt2.settings.x_axis
+    df = dbdt2.dataframe
+
+    df_buf = dbdt2.dataframe.copy()
+    if x_axis == "site_id":
+        df_buf = df_buf[df_buf["site_id"] != -1]
+    x_vals = np.sort(df_buf[x_axis].dropna().unique())
+
+    x_slice = x_vals[start:start+length]
+
+    buffer_sites = (
+            df[
+                (df[x_axis].isin(x_slice)) &
+                (df["site_id"] != -1)
+            ]["site_id"]
+            .dropna()
+            .unique()
+        )
+
+
+    if buffer_data.get("source") == "buffer_button":
+        dbdt1.dataframe = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
+        rhoa.dataframe  = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
+    m1.buffer_sites = buffer_sites
+    # rhoa.dataframe = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
+    # dbdt1.buffer_sites = buffer_sites
+    if buffer_data.get("source") == "buffer_button":
+        mod1.highlighted = None
+        mod2.highlighted = None
+        m1.highlighted = None
+        dbdt2.highlighted = None
+    return mod2.render(), dbdt2.render(), dbdt1.render(), m1.render(is_last_tab=False), mod1.render(), rhoa.render()
+
+@app.callback(
+    Output('data-buffer', 'data'),
+    Input('beginning-buffer', 'n_clicks'),
     Input('next-buffer', 'n_clicks'),
     Input('prev-buffer', 'n_clicks'),
-    Input('beginning-buffer', 'n_clicks'),
     State('data-buffer', 'data'),
     prevent_initial_call=True
 )
@@ -835,7 +895,12 @@ def update_buffer(next_clicks, prev_clicks, beginning_clicks, buffer_data):
         raise PreventUpdate
 
     x_axis = dbdt2.settings.x_axis
-    x_vals = np.sort(dbdt2.dataframe[x_axis].dropna().unique())
+    df = dbdt2.dataframe
+
+    if x_axis == "site_id":
+        df = df[df["site_id"] != -1]
+
+    x_vals = np.sort(df[x_axis].dropna().unique())
     n_sites = len(x_vals)
 
     if trigger == "next-buffer":
@@ -844,84 +909,6 @@ def update_buffer(next_clicks, prev_clicks, beginning_clicks, buffer_data):
         start -= length
     elif trigger == "beginning-buffer":
         start = 0
-
-    # Clamp safely
-    start = max(0, min(start, max(0, n_sites - length)))
-
-    buffer_data["start_site"] = start
-    return buffer_data
-
-@app.callback(
-    mod2.output, dbdt2.output, dbdt1.output, m1.output, mod1.output, rhoa.output,
-    Input('data-buffer', 'data'),
-    prevent_initial_call=True
-)
-def update_model_section_from_buffer(buffer_data):
-    start  = buffer_data["start_site"]
-    length = buffer_data["length"]
-
-    # Update model section buffer
-    mod2.buffer_start = start
-    mod2.buffer_len   = length
-    mod1.buffer_start = start
-    mod1.buffer_len   = length
-
-    # Update tTEM buffer
-    dbdt2.buffer_start = start
-    dbdt2.buffer_len   = length
-
-
-    x_axis = dbdt2.settings.x_axis
-    df = dbdt2.dataframe
-
-    x_vals = np.sort(df[x_axis].dropna().unique())
-
-    x_slice = x_vals[start:start+length]
-
-    buffer_sites = (
-        df[df[x_axis].isin(x_slice)]["site_id"]
-        .dropna()
-        .unique()
-    )
-
-
-    if buffer_data.get("source") == "buffer_button":
-        dbdt1.dataframe = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
-        rhoa.dataframe  = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
-    m1.buffer_sites = buffer_sites
-    # rhoa.dataframe = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
-    # dbdt1.buffer_sites = buffer_sites
-
-    return mod2.render(), dbdt2.render(), dbdt1.render(), m1.render(is_last_tab=False), mod1.render(), rhoa.render()
-
-@app.callback(
-    Output('data-buffer', 'data'),
-    Input('next-buffer', 'n_clicks'),
-    Input('prev-buffer', 'n_clicks'),
-    State('data-buffer', 'data'),
-    prevent_initial_call=True
-)
-def update_buffer(next_clicks, prev_clicks, buffer_data):
-    if not ctx.triggered:
-        raise PreventUpdate
-
-    trigger = ctx.triggered_id
-
-    length = buffer_data["length"]
-    start  = buffer_data["start_site"]
-
-    # Get total number of sites from models (safer than tTEM)
-    if dbdt2.dataframe is None:
-        raise PreventUpdate
-
-    x_axis = dbdt2.settings.x_axis
-    x_vals = np.sort(dbdt2.dataframe[x_axis].dropna().unique())
-    n_sites = len(x_vals)
-
-    if trigger == "next-buffer":
-        start += length
-    elif trigger == "prev-buffer":
-        start -= length
 
     # Clamp safely
     start = max(0, min(start, max(0, n_sites - length)))
@@ -977,7 +964,8 @@ def update_model_on_interpret(_, invert_color):
 
 
 @app.callback(
-    Output('output-click', 'children', allow_duplicate=True),
+    [Output('output-click', 'children', allow_duplicate=True),
+    Output('session-save-complete', 'data', allow_duplicate=True),],
     Input('saveButton', 'n_clicks'),
     Input('saveButton-profiles', 'n_clicks'),
     prevent_initial_call=True,
@@ -1014,9 +1002,11 @@ def save_session(n1,n2):
     except Exception as exc:
         kml_msg = f"KML export failed: {exc}"
 
+    message = f"Session saved to {sesh.save_dir}"
     if kml_msg:
-        return f"Session saved to {sesh.save_dir}. {kml_msg}"
-    return f'Session saved to {sesh.save_dir}'
+        message = f"{message}. {kml_msg}"
+
+    return message, {"dir": sesh.save_dir}
 
 # @app.callback(
 #     Output("output-click", "children", allow_duplicate=True),
@@ -1129,7 +1119,11 @@ def highlight_change(n1, n2, invert_layout_color, model, buffer_data):
         df = dbdt2.dataframe
 
         # sorted axis positions
+        # df_buf = dbdt2.dataframe.copy()
+        if x_axis == "site_id":
+            df_buf = df[df["site_id"] != -1]
         x_vals = np.sort(df[x_axis].dropna().unique())
+        # x_vals = np.sort(df[x_axis].dropna().unique())
 
         # find index of highlighted site
         sel = df[df["site_id"] == highlighted]
@@ -1174,10 +1168,11 @@ def highlight_change(n1, n2, invert_layout_color, model, buffer_data):
     Input('map', 'clickData'),
     State('invert_layout',  'color'),
     State('review_layout', 'color'),
+    State('interpret_layout', 'color'),
     State('data-buffer', 'data'),
     prevent_initial_call=True
 )
-def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color,review_layout_color, buffer_data):
+def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color,review_layout_color, interpret_layout_color, buffer_data):
     # ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
@@ -1198,10 +1193,13 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color,re
         cd = pt.get('customdata')
         if cd and isinstance(cd, list) and len(cd) >= 3 and cd[2] == 'borehole':
             raise PreventUpdate
-        if review_layout_color != 'primary':
-            site_id = sesh.data['site_id'].iloc[click_data['points'][0]['pointNumber']]
-        else:
+        if review_layout_color == 'primary':
             site_id = sesh.models['site_id'].iloc[click_data['points'][0]['pointNumber']]
+        elif interpret_layout_color == 'primary':
+            raise PreventUpdate
+        else:
+            site_id = sesh.data['site_id'].iloc[click_data['points'][0]['pointNumber']]
+            
 
     else:
         site_id = None
@@ -1272,7 +1270,7 @@ def reset_polling(n):
 @app.callback(
     [Output('output-data-upload', 'children'),
 
-     m1.output, dbdt1.output, dbdt2.output, rhoa.output,
+     m1.output, dbdt1.output, dbdt2.output, rhoa.output,Multi_inv.output, Sing_inv.output,
 
      Output('output-data-summary', 'children', allow_duplicate=True),
      Output('upload-toast', 'is_open'),
@@ -1288,6 +1286,7 @@ def reset_polling(n):
      Output('dem-bbox-maxlat', 'value', allow_duplicate=True),
      Output('dem-options-container', 'style', allow_duplicate=True),
      Output('borehole-options-container', 'style', allow_duplicate=True),
+     
     ],
     Input('upload-data', 'contents'),
     State('process_layout', 'n_clicks'),
@@ -1322,7 +1321,8 @@ def upload_file(contents, current_process_clicks):
     # m1.dataframe    = sesh.overview
     m1.dataframe = sesh.data.copy()
     buffer_length = 50
-    unique_sites = np.sort(sesh.data['site_id'].unique())
+    # unique_sites = np.sort(sesh.data['site_id'].unique())
+    unique_sites = np.sort(sesh.data.loc[sesh.data['site_id'] != -1, 'site_id'].unique())
     initial_sites = unique_sites[:buffer_length]
 
     m1.buffer_sites = initial_sites.tolist()
@@ -1366,7 +1366,7 @@ def upload_file(contents, current_process_clicks):
     if warning_msg:
         upload_msg = f"{upload_msg} {warning_msg}"
 
-    return html.Div(upload_msg), m1.render(), dbdt1.render(), dbdt2.render(), rhoa.render(), summary, True, toast_msg, False, False, new_process_clicks, *bbox_vals, {'display': 'block'}, {'display': 'block'}
+    return html.Div(upload_msg), m1.render(), dbdt1.render(), dbdt2.render(), rhoa.render(), Multi_inv.render(), Sing_inv.render(), summary, True, toast_msg, False, False, new_process_clicks, *bbox_vals, {'display': 'block'}, {'display': 'block'}
 
 
 @app.callback(

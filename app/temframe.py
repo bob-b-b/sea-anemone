@@ -241,7 +241,6 @@ class TEMframe(DataFrame):
         lm.location = np.pad(lm.location, ((1,0), (0,0)), mode='constant', constant_values=np.nan)
         lm.daytime  = np.pad(lm.daytime, (1,0), mode='constant', constant_values=np.nan)
 
-
         data_avg = {
             'site_id': np.concatenate([np.ones(n_gates, dtype=int)*i for i in site_id]),
             'dbdt': lm.data.flatten(),
@@ -574,6 +573,7 @@ class TEMframe(DataFrame):
                     doi.append(val.item() if hasattr(val, 'item') else float(val))
                 else:
                     doi.append(0.0)
+
         for i,((id_row, row), (id_meta, row_meta)) in enumerate(zip(pivot_multi.iterrows(), df_overview.iterrows())):
             assert id_meta == id_row, "Site ID mismatch between row and metadata"
 
