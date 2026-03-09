@@ -20,18 +20,14 @@ if iteration_cap<50:
 
 
 def make_log():
-    """Initialize a log file by creating it empty or clearing if it exists."""
-    try:
-        with open('inversion_log.txt', 'w') as f:
-            f.write('')
-    except IOError as e:
-        print(f"Error creating log file: {e}")
+    from __main__ import sesh
+    sesh.inv_status = []
+
     
 
 def write_log(message):
-    print(message)
-    with open('inversion_log.txt', 'a') as f:
-        f.write(message+'\n')
+    from __main__ import sesh
+    sesh.inv_status.append(message)
     
 
 class TEMframe(DataFrame):

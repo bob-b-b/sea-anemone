@@ -272,32 +272,31 @@ class MultiInversion(Panel):
             timer_text = f"Elapsed time: {int(minutes)}:{int(seconds):02d}"
             self.iterations = []
             self.misfit = []
-            log_path = "inversion_log.txt"
+            from __main__ import sesh
 
-            with open("inversion_log.txt", "r") as file:
-                for line in file:
-                    if not line.strip():
-                        continue  # skip empty lines
+            for line in sesh.inv_status:
+                if not line.strip():
+                    continue  # skip empty lines
 
-                    parts = line.split()
+                parts = line.split()
 
-                    # Iteration number is the first token
-                    if not parts[0].isdigit():
-                        continue  # skip lines that don't start with an iteration number
-                    iteration = int(parts[0])
+                # Iteration number is the first token
+                if not parts[0].isdigit():
+                    continue  # skip lines that don't start with an iteration number
+                iteration = int(parts[0])
 
-                    # Find "Total misfit:" and take the number after it
-                    total_misfit_index = parts.index("Total") + 2
-                    total_misfit = float(parts[total_misfit_index])
+                # Find "Total misfit:" and take the number after it
+                total_misfit_index = parts.index("Total") + 2
+                total_misfit = float(parts[total_misfit_index])
 
-                    self.iterations.append(iteration)
-                    self.misfit.append(total_misfit)
+                self.iterations.append(iteration)
+                self.misfit.append(total_misfit)
 
-                    if "Last" in parts:
-                        last_index = parts.index("Last")
-                        target_index = last_index + 3
-                        if target_index < len(parts):
-                            log_time_value = parts[target_index]
+                if "Last" in parts:
+                    last_index = parts.index("Last")
+                    target_index = last_index + 3
+                    if target_index < len(parts):
+                        log_time_value = parts[target_index]
 
             timer_text = f"Elapsed time: {int(minutes)}:{int(seconds):02d}"
             if log_time_value is not None:
