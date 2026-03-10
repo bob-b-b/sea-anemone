@@ -220,8 +220,8 @@ class MultiInversion(Panel):
                                     config=dict(edits={'shapePosition':True}, displayModeBar=False)),
                             width=10),
                     dbc.Col([dbc.Button("invert all", id='invert_all_button', style={'width':'100%'}),
-                             html.Div(style={'height':'10px'}),
-                             dbc.Button("invert selected", id='invert_selected_button', style={'width':'100%'}),
+                            #  html.Div(style={'height':'10px'}),
+                            #  dbc.Button("invert selected", id='invert_selected_button', style={'width':'100%'}),
                              html.Div(style={'height':'30px'}), 
                              html.Div(
                             "Vertical constraints", style={"fontWeight": "bold", 'textAlign':'center'}),
@@ -244,7 +244,14 @@ class MultiInversion(Panel):
                              dbc.Button("Starting model", id='reset_inv_model_button', color='secondary', style={'width':'100%'}),
                              html.Div(style={'height':'40px'}),
                              html.Div("Elapsed time: 0:00",id="inv-timer",style={"fontWeight": "bold","whiteSpace":"pre-line"}),] , width=2),
-                             dbc.Tooltip('The sounding panel shows the selected data', target='invert_selected_button')
+                            dbc.Tooltip('Constraint value of (2.0). Inversion will allow a lot of vertical variation in resistivity', target='vc_loose_button'),
+                            dbc.Tooltip('Constraint value of (0.8). Inversion will allow a standard vertical variation in resistivity', target='vc_medium_button'),
+                            dbc.Tooltip('Constraint value of (0.2). Inversion will be very smooth vertically and have a higher misfit.', target='vc_tight_button'),
+                            dbc.Tooltip('Constraint value of (0.6). Inversion will allow a lot of horizontal variation in resistivity', target='hc_loose_button'),
+                            dbc.Tooltip('Constraint value of (0.3). Inversion will allow a standard horizontal variation in resistivity', target='hc_medium_button'),
+                            dbc.Tooltip('Constraint value of (0.1). Inversion will be very smooth horizontally and have a higher misfit.', target='hc_tight_button'),
+                            dbc.Tooltip('Reset to starting model', target='reset_inv_model_button'),
+                            dbc.Tooltip('Inverts all data with spatial constraints, with strengths set below and the starting model selected.', target='invert_all_button'),
                 ], style={'height':'100%'})], style={'height':'95%', 'padding':'25px'}),
                 # html.Div(
                 #             "Elapsed time: 0:00",
@@ -354,7 +361,7 @@ class MultiInversion(Panel):
                 print('starting model:', starting_model["rho"])
                 rho = tensor(starting_model["rho"]).repeat(len(starting_model["depth"]))
                 # z   = tensor(starting_model["depth"][:-1])
-                depth = self.build_depth_from_loop(gates=len(sesh.data.time.unique()))
+                depth = self.build_depth_from_loop(time=sesh.data.time.unique()[-1])
                 # rho = tensor(starting_model["rho"]).repeat(len(depth))
                 z   = tensor(depth[:-1])
 
@@ -497,18 +504,19 @@ class MultiInversion(Panel):
     @classmethod
     def standard(cls, misfit=None, rho=10.):
         return cls(data=misfit, rho=rho)
-    def build_depth_from_loop(self, gates, n_layers=31):
+    def build_depth_from_loop(self, time, n_layers=31):
         import numpy as np
 
-        if gates <35:
+        if time <0.005:
             depth = np.cumsum(np.logspace(0, 1.3, 31)).tolist()
-        elif gates > 35:
+        elif time >0.005:
             depth = np.cumsum(np.logspace(0, 1.8, 31)).tolist()
         return depth
 
 @nosj
 class SinglesiteSettings(PanelSettings):
     line_color: str='#ff0000'
+    lm_factor: int = 8
 
 class Single_site(Panel):
     def __init__(self, dataframe,rho=10., **kwargs):
@@ -626,7 +634,7 @@ class Single_site(Panel):
                 fig.add_trace(
                         go.Scatter(
                             x=time_lm,
-                            y=d_obs_lm*8,
+                            y=d_obs_lm*self.settings.lm_factor,
                             mode="markers",
                             marker=dict(color="black", size=6),
                             name="Observed LM",
@@ -647,7 +655,7 @@ class Single_site(Panel):
                     row=1, col=2
                 )
 
-                fig.add_trace(go.Scatter(x=time_lm, y=dbdt_lm*8, mode="lines",
+                fig.add_trace(go.Scatter(x=time_lm, y=dbdt_lm*self.settings.lm_factor, mode="lines",
                             line=dict(color="blue"), name="LM model"),row=1, col=2)
 
                 fig.add_trace(go.Scatter(x=time_hm, y=dbdt_hm, mode="lines",line=dict(color="red"), name="HM model"),row=1, col=2)
@@ -698,7 +706,7 @@ class Single_site(Panel):
 
         inc = include
 
-        y_lm = dbdt_obs[:idx][inc[:idx]]*8
+        y_lm = dbdt_obs[:idx][inc[:idx]]*self.settings.lm_factor
         y_hm = dbdt_obs[idx:][inc[idx:]]
         # y = dbdt_obs[inc]
 
@@ -744,7 +752,7 @@ class Single_site(Panel):
         fig.add_trace(
             go.Scatter(
                 x=time[:idx][exc[:idx]],
-                y=dbdt_obs[:idx][exc[:idx]]*8,
+                y=dbdt_obs[:idx][exc[:idx]]*self.settings.lm_factor,
                 mode="markers",
                 showlegend=False,
                 marker=dict(color="black", size=6, opacity=0.2),
@@ -768,7 +776,7 @@ class Single_site(Panel):
             rho = np.insert(np.array(rho),0,rho[0])
             depth = np.insert(np.array(depth),0,0)
             color = VC_COLORS.get(vc, "black")
-            dbdt_syn_lm = dbdt_syn[:len(time_lm)]*8
+            dbdt_syn_lm = dbdt_syn[:len(time_lm)]*self.settings.lm_factor
             dbdt_syn_hm = dbdt_syn[len(time_lm):len(time_lm)+len(time_hm)]
 
             fig.add_trace(
@@ -831,9 +839,15 @@ class Single_site(Panel):
                              dbc.Button("Tight", id='vc_sing_tight_button',color='secondary', outline=True, style={'width':'100%'}),
                              html.Div(style={'height':'30px'}), 
                              html.Div(style={'height':'10px'}),
+                             dbc.Button("Invert single site", id='invert-single', color='primary', style={'width':'100%'}),
+                             html.Div(style={'height':'10px'}),
                              dbc.Button("Starting model",id="reset_single_model_button",color="secondary",style={"width": "100%"}),
                              ], width=2),
-                             dbc.Tooltip('The sounding panel shows the selected data', target='invert_selected_button')
+                             dbc.Tooltip('Constraint value of (2.0). Inversion will allow a lot of variation in resistivity', target='vc_sing_loose_button'),
+                             dbc.Tooltip('Constraint value of (0.8). Inversion will allow a standard variation in resistivity', target='vc_sing_medium_button'),
+                             dbc.Tooltip('Constraint value of (0.2). Inversion will be very smooth and have a higher misfit.', target='vc_sing_tight_button'),
+                             dbc.Tooltip('Inverts the currently selected site on the map with the starting model and constraints selected.', target='invert-single'),
+                             dbc.Tooltip('Reset to starting model', target='reset_single_model_button'),
                 ], style={'height':'100%'})], style={'height':'95%', 'padding':'25px'}),
                  gear_maker(self.id)], style={'height': '100%', 'overflow': 'hidden'},
                   )
@@ -918,8 +932,7 @@ class Single_site(Panel):
             )
         @app.callback(
             Output("inv-single", "figure", allow_duplicate=True),
-            # Output("map", "figure", allow_duplicate=True),
-            Input("map", "clickData"),
+            Input("invert-single", "n_clicks"),
             State("vc-single-levels", "data"),
             State("starting-model", "data"),
             State("invert_layout", "color"),
@@ -927,27 +940,31 @@ class Single_site(Panel):
             (Output("vc_sing_medium_button", "disabled"), True, False), 
             (Output("vc_sing_tight_button", "disabled"), True, False),
             (Output('reset_single_model_button', "disabled"), True, False),
-            (Output("single-inv-status", "children"), "Inversion running", "Select constraints and interact with map       ")],
+            (Output('invert-single','disabled'),True,False),
+            (Output("single-inv-status", "children"), "Inversion running", "Select constraints and choose site on map      ")],
             prevent_initial_call=True
         )
-        def invert_single_site(click_data, vc_levels, starting_model, layout):
-            if not click_data or 'points' not in click_data or not layout=='primary':
-                raise PreventUpdate
-            from __main__ import sesh
+        def invert_single_site(n_clicks, vc_levels, starting_model, layout):
+            # if not click_data or 'points' not in click_data or not layout=='primary':
+            #     raise PreventUpdate
+
+            from __main__ import sesh,m1
             from torch import tensor
-            if not ctx.triggered:
+            if m1.highlighted is None:
                 raise PreventUpdate
-            trigger = ctx.triggered_id
-            if trigger == "map" and click_data and "points" in click_data:
-                site_id = sesh.data['site_id'].iloc[click_data['points'][0]['pointNumber']]
             else:
-                raise PreventUpdate
+                site_id = m1.highlighted
+
+            # if trigger == "map" and click_data and "points" in click_data:
+            #     site_id = sesh.data['site_id'].iloc[click_data['points'][0]['pointNumber']]
+            # else:
+            #     raise PreventUpdate
             if site_id is None or sesh.data[sesh.data['site_id'] == site_id].empty:
                 raise PreventUpdate
             curves = []
             print('starting model:', starting_model["rho"])
             rho = tensor(starting_model["rho"]).repeat(len(starting_model["depth"]))
-            depth = self.build_depth_from_loop(gates=len(sesh.data.time.unique()))
+            depth = self.build_depth_from_loop(time=sesh.data.time.unique()[-1])
             z   = tensor(depth[:-1])
 
             for vc in vc_levels:
@@ -986,12 +1003,10 @@ class Single_site(Panel):
     def standard(cls, misfit=None, rho=10.):
         return cls(data=misfit, rho=rho)#cls(data=df)
 
-    def build_depth_from_loop(self, gates=None, n_layers=31):
+    def build_depth_from_loop(self, time, n_layers=31):
         import numpy as np
-
-        if gates <35:
+        if time <0.005:
             depth = np.cumsum(np.logspace(0, 1.3, 31)).tolist()
-        elif gates > 35:
+        elif time >0.005:
             depth = np.cumsum(np.logspace(0, 1.8, 31)).tolist()
-
         return depth

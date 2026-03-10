@@ -1312,6 +1312,7 @@ def upload_file(contents, current_process_clicks):
     except Exception as e:
         return (html.Div("Upload failed."),no_update,no_update,no_update,no_update,build_data_summary(),True,f"Upload failed: Only one geometry is supported at a time",True,True,no_update,no_update,no_update,no_update,no_update,{'display': 'block'}, {'display': 'block'})
     sesh.data.history    = ['df_data = TEMframe.from_zip_content("uploaded_data_zip.txt")']
+    sesh.site = sesh.data.overview()
     sesh.data['include'] = sesh.data['inuse_manual'].astype(bool, copy=False).fillna(sesh.data['inuse_auto'])
     sesh.models          = None
 
@@ -2363,6 +2364,10 @@ def handle_url_hash(url_hash, model):
             dbdt1.dataframe = sesh.data.copy()    
             dbdt2.dataframe = sesh.data.copy()    
             m1.dataframe    = sesh.overview.copy()
+            # unique_sites = np.sort(sesh.data.loc[sesh.data['site_id'] != -1, 'site_id'].unique())
+            # initial_sites = unique_sites[:buffer_length]
+
+            # m1.buffer_sites = initial_sites.tolist()
             rhoa.dataframe  = sesh.data.copy()    
             Multi_inv.dataframe = sesh.data.copy()
             Sing_inv.dataframe = sesh.data.copy()
