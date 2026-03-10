@@ -83,7 +83,7 @@ class MapSettings(PanelSettings):
     color: str = '#ff0000'
     color_data: str = '#000000'
     highlight_color: str= '#ffff00'  # Default highlight color
-    plot_by: str = 'misfit'
+    plot_by: Literal['misfit', 'doi', 'date'] = 'date'
     buffer_color: str= '#ffffff'  # Default buffer color
 
 class Map(Panel):
@@ -500,7 +500,7 @@ class dbdtSounding(Panel):
         y_axis                                             = 'dbdt_syn'
 
         df_tmp                                             = self.dataframe.sort_values(['site_id', 'system_id',  self.settings.x_axis])
-        df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto'])
+        df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=True).fillna(df_tmp['inuse_auto'])
         # lm_factor = compute_lm_scaling(self.dataframe, self.settings.lm_factor)
         lm_factor = self.settings.lm_factor
         hm_factor = self.settings.hm_factor
@@ -1815,7 +1815,7 @@ class ModelSection(Panel):
                 # This writes directly to this specific object's memory
                 self.__dict__[key] = value
     
-    def render(self,**kwargs):
+    def render(self):
         if self.dataframe is None: return self.empty_render()
         df_layers_long = self.dataframe.melt(
             id_vars=['site_id', 'daytime', 'longitude', 'latitude', 'date', 'elevation', 'layer', 'resistivity', 'misfit','doi'],
@@ -1845,49 +1845,11 @@ class ModelSection(Panel):
         df_layers_long = df_layers_long[df_layers_long[self.settings.x_axis].isin(x_slice)]
 
 
-        vmin_ms = self.settings.__dict__.get('vmin', self.settings.vmin)
-        vmax_ms = self.settings.__dict__.get('vmax', self.settings.vmax)
-
-
-        # Check what triggered the current Dash lifecycle
-        trigger = "No active callback"
-        if ctx.triggered_id:
-            trigger = ctx.triggered_id
-            # If it's a pattern-matching ID, it might be a dict, so we convert to string
-            if isinstance(trigger, dict):
-                trigger = f"{trigger.get('type')}[{trigger.get('key')}]"
-
-
-        log_vmin = np.log10(vmin_ms)
-        log_vmax = np.log10(vmax_ms)
+        log_vmin = np.log10(self.settings.vmin)
+        log_vmax = np.log10(self.settings.vmax)
 
         tick_vals = np.linspace(log_vmin, log_vmax, self.settings.nticks)
         tick_text = [f"{10**v:.0f}" for v in tick_vals]
-
-        vmin_ms = self.settings.__dict__.get('vmin', self.settings.vmin)
-        vmax_ms = self.settings.__dict__.get('vmax', self.settings.vmax)
-
-
-        # Check what triggered the current Dash lifecycle
-        trigger = "No active callback"
-        if ctx.triggered_id:
-            trigger = ctx.triggered_id
-            # If it's a pattern-matching ID, it might be a dict, so we convert to string
-            if isinstance(trigger, dict):
-                trigger = f"{trigger.get('type')}[{trigger.get('key')}]"
-
-        # print("--- RENDER DEBUG ---")
-        # print(f"TRIGGERED BY: {trigger}")
-        # print("VMAX RENDER MODEL SECTION", vmax_ms)
-        # print("SETTINGS OBJECT ID:", id(self.settings))
-
-        log_vmin = np.log10(vmin_ms)
-        log_vmax = np.log10(vmax_ms)
-
-        tick_vals = np.linspace(log_vmin, log_vmax, self.settings.nticks)
-        tick_text = [f"{10**v:.0f}" for v in tick_vals]
-        
-        # print(tick_vals)
 
         fig = px.imshow(
             heatmap_df[x_slice],

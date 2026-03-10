@@ -215,20 +215,20 @@ class PanelSettings:
                     )
                 )
             form_items.append(dbc.Row(row_children, className='mb-2'))
-        # Add a save button
-        form_items.append(dbc.Button(
-            "Save Settings",
-            id=f'{self.id}_settings_save',
-            n_clicks=0,
-            style={'margin': '10px'}
-        ))
-        # Add a load button
-        form_items.append(dbc.Button(
-            "Load Settings",
-            id=f'{self.id}_settings_load',
-            n_clicks=0,
-            style={'margin': '10px'}
-        ))
+        # # Add a save button
+        # form_items.append(dbc.Button(
+        #     "Save Settings",
+        #     id=f'{self.id}_settings_save',
+        #     n_clicks=0,
+        #     style={'margin': '10px'}
+        # ))
+        # # Add a load button
+        # form_items.append(dbc.Button(
+        #     "Load Settings",
+        #     id=f'{self.id}_settings_load',
+        #     n_clicks=0,
+        #     style={'margin': '10px'}
+        # ))
         form_items.append(dbc.Button(
             "Apply Settings",
             id=f'{self.id}_apply_settings',
@@ -289,69 +289,8 @@ class PanelSettings:
             'name': f'{self.id.lower()} settings',
         }
     
-    def save_settings(self, fname):
-        import json
-        with open(fname, 'w') as f:
-            json.dump(self.settings, f, indent=4)
-    
-    def load_settings(self, fname):
-        import json
-        with open(fname, 'r') as f:
-            settings = json.load(f)
-        for key, value in settings.items():
-            if hasattr(self, key):
-                setattr(self, key, value)
-
     def add_callbacks(self, app):
-        @app.callback(
-            Output(f'{self.id}_settings_save', 'n_clicks'),
-            [Input(f'{self.id}_settings_save', 'n_clicks')],
-            prevent_initial_call=True
-        )
-        def save_settings(n_clicks):
-            if n_clicks:
-                root = tk.Tk()
-                root.withdraw()  # Hide the root window
-                root.attributes('-topmost', True)
-                root.lift()
-                root.focus_force()
-                root.update()
-                
-                fname = filedialog.asksaveasfilename(
-                    title="Save Settings",
-                    defaultextension=".json",
-                    filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
-                    initialfile=f"{self.id}_settings.json",
-                    parent=root
-                )
 
-                if fname:
-                    self.save_settings(fname)
-                root.destroy()
-            return n_clicks
-        
-        @app.callback(
-            Output(f'tab-{self.id}_settings', 'children'),
-            [Input(f'{self.id}_settings_load', 'n_clicks')],
-            prevent_initial_call=True
-        )
-        def load_settings(n_clicks):
-            if n_clicks:
-                root = tk.Tk()
-                root.withdraw()
-                root.attributes('-topmost', True)
-                root.lift()
-                root.focus_force()
-                root.update()
-                fname = filedialog.askopenfilename(
-                    title="Load Settings",
-                    filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
-                    parent=root
-                )
-                if fname:
-                    self.load_settings(fname)
-                root.destroy()
-            return self.render()
         
         @app.callback(
             Output('flex-layout', 'model', allow_duplicate=True),
@@ -500,19 +439,7 @@ class Panel:
 
                 return self.render()
 
-            # --- The Callback Definition ---
-            # Crucial: The order of Inputs here MUST match the arguments above
-            # update_render = app.callback(
-            #     Output(self.id, self.childname),
-            #     [
-            #         Input('global-colorbar-store', 'data'), # Maps to global_data
-            #         Input('points-attr', 'value')            # Maps to current_attr
-            #     ] + [
-            #         # These all map into the *args tuple
-            #         Input({'type': f'settings-{self.id}', 'key': x}, 'value') 
-            #         for x in self.settings.flat_keys
-            #     ]
-            # )(update_render)
+
         if self.settings is None:
             return    
         # self.settings.add_callbacks(app)

@@ -2,8 +2,6 @@ import sys, os
 import base64
 from tkinter import filedialog, Tk
 import threading
-print(f"Callback is running on thread: {threading.current_thread().name}")
-import copy
 
 fpath = os.path.dirname(os.path.abspath(__file__))
 if fpath not in sys.path:
@@ -11,9 +9,23 @@ if fpath not in sys.path:
 
 import session
 global sesh
-sesh = session.Session()
+sesh = None
 
-session_tracker = fpath+'/recent_projects.txt'
+# if len(sys.argv) == 2:
+#     if sys.argv[1].endswith('session.json'):
+#         sesh = session.Session.load(sys.argv[1])
+#         sesh.load_dataframes()
+#     else:
+#         print('invalid path provided, must provide a session.json file for a project')
+
+if sesh is None:
+    sesh = session.Session()
+
+import tempfile
+with tempfile.NamedTemporaryFile() as f:
+    tempdir = os.path.dirname(f.name)
+session_tracker = os.path.join(tempdir, 'anemone_projects.txt')
+
 
 from panels import *
 from inversion_panels import *
@@ -813,7 +825,7 @@ def show_value(n1, n2, ttem_selected, sounding_selected, rhoa_selected):
     df_data = sesh.data
     
     df_data.loc[df_data['data_id'].isin(data_ids), 'inuse_manual'] = inuse
-    df_data['include'] = df_data['inuse_manual'].astype(bool, copy=False).fillna(df_data['inuse_auto'])
+    df_data['include'] = df_data['inuse_manual'].astype(bool, copy=True).fillna(df_data['inuse_auto'])
     dbdt1.dataframe = df_data[df_data['site_id'].isin(dbdt1.dataframe['site_id'].unique())]
     dbdt2.dataframe = df_data[df_data['site_id'].isin(dbdt2.dataframe['site_id'].unique())]
     rhoa.dataframe  = df_data[df_data['site_id'].isin(rhoa.dataframe['site_id'].unique())]
@@ -1312,8 +1324,8 @@ def upload_file(contents, current_process_clicks):
     except Exception as e:
         return (html.Div("Upload failed."),no_update,no_update,no_update,no_update,build_data_summary(),True,f"Upload failed: Only one geometry is supported at a time",True,True,no_update,no_update,no_update,no_update,no_update,{'display': 'block'}, {'display': 'block'})
     sesh.data.history    = ['df_data = TEMframe.from_zip_content("uploaded_data_zip.txt")']
-    sesh.site = sesh.data.overview()
-    sesh.data['include'] = sesh.data['inuse_manual'].astype(bool, copy=False).fillna(sesh.data['inuse_auto'])
+    sesh.site = sesh.overview
+    sesh.data['include'] = sesh.data['inuse_manual'].astype(bool, copy=True).fillna(sesh.data['inuse_auto'])
     sesh.models          = None
 
     # dbdt1.dataframe = sesh.data.copy()
@@ -1330,7 +1342,6 @@ def upload_file(contents, current_process_clicks):
     mod1.buffer_sites = initial_sites.tolist()
     mod2.dataframe  = sesh.models
 
-    # gis.dataframe   = sesh.models
     profile.dataframe = sesh.models
     full_df = sesh.data.copy()
 
@@ -2406,7 +2417,7 @@ def handle_url_hash(url_hash, model):
             res[14]  = True
             res[15]  = True
             
-
+    res[-1] = ''
     return res
 
 
