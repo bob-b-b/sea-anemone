@@ -97,6 +97,10 @@ def layer_row(label, layer_id, checked=False, default_opacity=1.0):
 
 
 
+from rasterio.io import MemoryFile
+import io
+
+
 
     
 # --------------------- ScatterMapRenderer ---------------------
@@ -395,6 +399,71 @@ class GIS_helpers(Panel):
         # print("MAP LAYERS:", len(layers))
         return layers
     
+    def load_tiff_from_bytes(tiff_bytes):
+        with MemoryFile(tiff_bytes) as memfile:
+            with memfile.open() as src:
+
+                # Reproject to WGS84 if needed
+                if src.crs and src.crs.to_epsg() != 4326:
+
+                    transform, width, height = calculate_default_transform(
+                        src.crs, "EPSG:4326", src.width, src.height, *src.bounds
+                    )
+                    profile = src.profile.copy()
+                    profile.update({
+                        "crs": "EPSG:4326",
+                        "transform": transform,
+                        "width": width,
+                        "height": height
+                    })
+
+                    data = np.zeros((src.count, height, width), dtype=src.dtypes[0])
+
+                    for i in range(1, src.count + 1):
+                        reproject(
+                            source=rasterio.band(src, i),
+                            destination=data[i-1],
+                            src_transform=src.transform,
+                            src_crs=src.crs,
+                            dst_transform=transform,
+                            dst_crs="EPSG:4326",
+                            resampling=Resampling.nearest
+                        )
+
+                    bounds = rasterio.transform.array_bounds(height, width, transform)
+
+                else:
+                    data = src.read()
+                    bounds = src.bounds
+
+                # Convert to RGB image
+                if data.shape[0] >= 3:
+                    img = reshape_as_image(data[:3])
+                else:
+                    img = data[0]
+
+                # Render PNG in memory
+                if img.ndim == 2:  # single-band raster
+                    img = img.astype(np.float32)
+                    img = (img - np.nanmin(img)) / (np.nanmax(img) - np.nanmin(img) + 1e-9)
+                    img = (img * 255).astype(np.uint8)
+                    pil_img = Image.fromarray(img)
+
+                else:  # RGB raster
+                    img = np.clip(img, 0, 255).astype(np.uint8)
+                    pil_img = Image.fromarray(img)
+
+                buf = io.BytesIO()
+                pil_img.save(buf, format="PNG")
+                png_base64 = base64.b64encode(buf.getvalue()).decode()
+                left, bottom, right, top = bounds
+        return {
+                "image": f"data:image/png;base64,{png_base64}",
+                "bounds": (left, bottom, right, top),
+                "opacity": 1.0,
+            }
+
+
     # ------------------- Estimate points' center -------------------
     def _compute_df_center(self):
         """Return dict(lat=..., lon=...) as the center of the dataframe points"""

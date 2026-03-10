@@ -95,6 +95,7 @@ class Map(Panel):
     hover_marker: dict = None
     boreholes : dict = None
     rock_color_map = None
+    tiff_layer = None
 
     def __init__(self, data, **kwargs):
         settings = MapSettings(id='map', **kwargs)
@@ -196,14 +197,43 @@ class Map(Panel):
                     fig.data = (fig.data[1], fig.data[0])
 
 
-        fig.update_layout(map_style="white-bg",
+        fig.update_layout(
+            map_style="white-bg",
             map_layers=[
                 {
-                    "below": 'traces',
+                    "below": "traces",
                     "sourcetype": "raster",
                     "sourceattribution": "Google Earth (C)",
-                    "source": ['https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}']
-                }])
+                    "source": ["https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"]
+                }
+            ]
+        )
+
+        if self.tiff_layer is not None:
+            left, bottom, right, top = self.tiff_layer["bounds"]
+
+            tiff_overlay = {
+                "below": "traces",
+                "sourcetype": "image",
+                "source": self.tiff_layer["image"],
+                "coordinates": [
+                    [left, top],
+                    [right, top],
+                    [right, bottom],
+                    [left, bottom]
+                ]
+            }
+            fig.update_layout(
+                    map_layers=[
+                        {
+                            "below": "traces",
+                            "sourcetype": "raster",
+                            "source": ["https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"]
+                        },
+                        tiff_overlay
+                    ]
+                )
+        
         if self.highlighted is not None:
             # highlight_trace = px.scatter_map(df_plot[df_plot.index == self.highlighted], lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.highlight_color])
             
@@ -1282,7 +1312,7 @@ class dbdtSection(Panel):
                     x0=x_value - dx,
                     x1=x_value + dx,
                     y0=self.dataframe["dbdt"].abs().min() * 0.5,
-                    y1=self.dataframe["dbdt"].max()*self.settings.lm_factor * 25,
+                    y1=self.dataframe["dbdt"].max()*self.settings.lm_factor *4,
                     line=dict(color="rgba(0,0,0,0.8)", width=1.5),
                     fillcolor="rgba(0,0,0,0.0)",
                 )
@@ -1591,8 +1621,8 @@ class Upload(Panel):
             dcc.Markdown("### Upload your data to get started."),
             self.render(),
             html.Div([
-                html.Div(['working directory: '], id="current-working-directory-label", style={"marginLeft":"10px", "marginTop": "10px", 'display': 'inline-block'}),
-                html.A("select directory", href="#change_working", id="current-working-directory", style={"cursor": "pointer", "color": "blue", "textDecoration": "underline", "marginLeft":"10px", "marginTop": "10px", 'display': 'inline-block'}, title='change directory')
+                html.Div(['Working directory: '], id="current-working-directory-label", style={"marginLeft":"10px", "marginTop": "10px", 'display': 'inline-block'}),
+                html.A("Select directory", href="#change_working", id="current-working-directory", style={"cursor": "pointer", "color": "blue", "textDecoration": "underline", "marginLeft":"10px", "marginTop": "10px", 'display': 'inline-block'}, title='change directory')
             ]),
             dcc.Markdown("---"),
             dcc.Markdown(session_text),
@@ -2329,6 +2359,7 @@ class HotKeyReminder(Panel):
                 [
                     dbc.ButtonGroup([
                     dbc.Button("disable [ctrl+d]", id='disableButton'),
+                    html.Div(style={'width':'6px'}),
                     dbc.Button("enable  [ctrl+e]", id='enableButton'),
                     ]),
                     dbc.ButtonGroup([

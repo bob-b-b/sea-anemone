@@ -216,19 +216,19 @@ class PanelSettings:
                 )
             form_items.append(dbc.Row(row_children, className='mb-2'))
         # Add a save button
-        form_items.append(dbc.Button(
-            "Save Settings",
-            id=f'{self.id}_settings_save',
-            n_clicks=0,
-            style={'margin': '10px'}
-        ))
-        # Add a load button
-        form_items.append(dbc.Button(
-            "Load Settings",
-            id=f'{self.id}_settings_load',
-            n_clicks=0,
-            style={'margin': '10px'}
-        ))
+        # form_items.append(dbc.Button(
+        #     "Save Settings",
+        #     id=f'{self.id}_settings_save',
+        #     n_clicks=0,
+        #     style={'margin': '10px'}
+        # ))
+        # # Add a load button
+        # form_items.append(dbc.Button(
+        #     "Load Settings",
+        #     id=f'{self.id}_settings_load',
+        #     n_clicks=0,
+        #     style={'margin': '10px'}
+        # ))
         form_items.append(dbc.Button(
             "Apply Settings",
             id=f'{self.id}_apply_settings',

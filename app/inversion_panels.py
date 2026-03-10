@@ -520,17 +520,19 @@ class SinglesiteSettings(PanelSettings):
     lm_factor: int = 8
 
 class Single_site(Panel):
+    curves = None
     def __init__(self, dataframe,rho=10., **kwargs):
         self.starting_rho = rho
         settings = SinglesiteSettings(id='inv-single', **kwargs)
         super().__init__(id='inv-single', settings=settings)
         self.dataframe = dataframe
+        # self.curves = None
 
-    def render(self, curves=None):
+    def render(self):
         COMMON_LAYOUT = dict(
             margin=dict(l=60, r=40, t=90, b=45),
         )
-        if curves is None:
+        if self.curves is None:
             from __main__ import sesh
             df = pd.DataFrame({
                 'resistivity': [self.starting_rho] * 31,
@@ -691,7 +693,7 @@ class Single_site(Panel):
         }
 
         fig = make_subplots(rows=1,cols=2,column_widths=[0.45, 0.55],subplot_titles=(    "Resistivity Model",    "Sounding curve")        )
-
+        curves = self.curves
         include = curves[0][9]   # include mask (same for all curves)
         time    = curves[0][7]
         dbdt_obs = curves[0][5]
@@ -875,7 +877,7 @@ class Single_site(Panel):
             prevent_initial_call=True
         )
         def reset_inv_model(n_clicks):
-            curves = None
+            self.curves = None
             return self.render()
 
         # @app.callback(
@@ -962,7 +964,7 @@ class Single_site(Panel):
             #     raise PreventUpdate
             if site_id is None or sesh.data[sesh.data['site_id'] == site_id].empty:
                 raise PreventUpdate
-            curves = []
+            self.curves = []
             print('starting model:', starting_model["rho"])
             rho = tensor(starting_model["rho"]).repeat(len(starting_model["depth"]))
             depth = self.build_depth_from_loop(time=sesh.data.time.unique()[-1])
@@ -973,9 +975,9 @@ class Single_site(Panel):
                 Vert = {"loose": 2.0, "medium": 0.8, "tight": 0.2}[vc]
                 res_start = LogResistivity.smooth(rho, z)
                 df_layers, df_site, _ = sesh.data.invert_site(site_id=site_id,res_start=res_start,vc=Vert)
-                curves.append((vc, df_layers['resistivity'].values, df_layers['bottom_depth'].values,df_layers['misfit'].values[-1],df_layers, df_site['dbdt'].values, df_site['dbdt_syn'].values, df_site['time'].values, df_site['error'].values,df_site['include'].values, df_layers['doi'].values))
+                self.curves.append((vc, df_layers['resistivity'].values, df_layers['bottom_depth'].values,df_layers['misfit'].values[-1],df_layers, df_site['dbdt'].values, df_site['dbdt_syn'].values, df_site['time'].values, df_site['error'].values,df_site['include'].values, df_layers['doi'].values))
 
-            return self.render(curves)
+            return self.render()
         
         @app.callback(
             Output(self.id, 'figure', allow_duplicate=True),
