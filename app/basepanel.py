@@ -174,9 +174,17 @@ class PanelSettings:
                 value=eval(f'self.{key}'),
                 style={'margin': '5px'}
             )
+        bool_check = lambda key,prop: prop.get('type') == 'boolean'
+        def bool_render(key,prop):
+            return dbc.Checkbox(
+                        id={'type': f'settings-{self.id}', 'key': key},
+                        value=eval(f'self.{key}'),
+                        style={'marginLeft': '5px'}
+                        )
         return [
-            (color_check, color_render),
-            (enum_check,  enum_render)
+            (enum_check,  enum_render),
+            (bool_check, bool_render),
+            (color_check, color_render)
         ]
 
     def render(self):
@@ -203,8 +211,6 @@ class PanelSettings:
                 input_type = 'text'
                 if prop.get('type') == 'number':
                     input_type = 'number'
-                elif prop.get('type') == 'boolean':
-                    input_type = 'checkbox'
                 row_children.append(
                     dbc.Input(
                         type=input_type,
@@ -215,20 +221,6 @@ class PanelSettings:
                     )
                 )
             form_items.append(dbc.Row(row_children, className='mb-2'))
-        # # Add a save button
-        # form_items.append(dbc.Button(
-        #     "Save Settings",
-        #     id=f'{self.id}_settings_save',
-        #     n_clicks=0,
-        #     style={'margin': '10px'}
-        # ))
-        # # Add a load button
-        # form_items.append(dbc.Button(
-        #     "Load Settings",
-        #     id=f'{self.id}_settings_load',
-        #     n_clicks=0,
-        #     style={'margin': '10px'}
-        # ))
         form_items.append(dbc.Button(
             "Apply Settings",
             id=f'{self.id}_apply_settings',
