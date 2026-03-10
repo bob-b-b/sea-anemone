@@ -346,9 +346,11 @@ profile_controls = html.Div([
     html.Div(
         id="profile-buttons-container",
         children=[
-            dbc.ButtonGroup([
-                dbc.Button("← Previous \nProfile", id="btn-prev-line", color="primary", outline=True, disabled=True),
-                dbc.Button("Next \nProfile →", id="btn-next-line", color="primary", outline=True, disabled=True),
+            dbc.ButtonGroup([html.Div(style={'width':'270px'}),
+                dbc.Button("← Previous \nProfile", id="btn-prev-line", color="primary", disabled=True),
+                html.Div(style={'width':'10px'}),
+                dbc.Button("Next \nProfile →", id="btn-next-line", color="primary", disabled=True),
+                html.Div(style={'width':'270px'})
                             ]),
                 html.Div(id="profile-list-container", style={
                 # "maxHeight": "200px", 
@@ -356,10 +358,13 @@ profile_controls = html.Div([
                 "overflowY": "auto", "width": "100%", "marginTop": "10px"
                         }),
             dbc.ButtonGroup([
-                dbc.Button("Clear Selected", id="btn-clear-sel", color="warning", outline=True),
-                dbc.Button("Clear All", id="btn-clear-all", color="danger", outline=True),
-                dbc.Button("Export Selected as PNG/KMZ", id="btn-export-profile", color="success", outline=True),
-                dbc.Button("Save Session [ctrl+s]", id='saveButton-profiles', color="info"), 
+                dbc.Button("Clear Selected", id="btn-clear-sel", color="primary"),
+                html.Div(style={'width':'10px'}),
+                dbc.Button("Clear All", id="btn-clear-all", color="primary"),
+                html.Div(style={'width':'10px'}),
+                dbc.Button("Export Selected as PNG/KMZ", id="btn-export-profile", color="primary"),
+                html.Div(style={'width':'10px'}),
+                dbc.Button("Save session [ctrl+s]", id='saveButton-profiles', color="primary"), 
                             ]),
         ], 
         style={'padding': '10px', 'display': 'flex', 'flexDirection': 'column', 'gap': '10px','height': '100%',}
@@ -1315,19 +1320,29 @@ def upload_file(contents, current_process_clicks):
         sesh_dict = dict(eval(sesh_str))
         filepath = sesh_dict['save_dir'].replace(' ', '%20')
         return [no_update]*5 + [html.Div(f'File: {sesh_dict['save_dir']}'), f"#load={filepath}"]
-    
     warning_msg = None
     if sesh.save_dir is None:
         warning_msg = "No working directory selected. You can still explore data; choose Save to set one."
-    try:
-        sesh.data            = TEMframe.from_zip_content(contents[0])
-    except Exception as e:
-        return (html.Div("Upload failed."),no_update,no_update,no_update,no_update,build_data_summary(),True,f"Upload failed: Only one geometry is supported at a time",True,True,no_update,no_update,no_update,no_update,no_update,{'display': 'block'}, {'display': 'block'})
+    if contents[0].startswith('data:application/x-zip'):
+        try:
+            sesh.data            = TEMframe.from_zip_content(contents[0])
+        except Exception as e:
+            return (html.Div("Upload failed."),no_update,no_update,no_update,no_update,no_update,no_update,build_data_summary(),True,f"Upload failed: Only one geometry is supported at a time",True,True,no_update,no_update,no_update,no_update,no_update,{'display': 'block'}, {'display': 'block'})
     sesh.data.history    = ['df_data = TEMframe.from_zip_content("uploaded_data_zip.txt")']
     sesh.site = sesh.overview
     sesh.data['include'] = sesh.data['inuse_manual'].astype(bool, copy=True).fillna(sesh.data['inuse_auto'])
     sesh.models          = None
+    toast_tiff = ""
+    if contents[0].startswith("data:application/tiff") or contents[0].startswith("data:image/tiff"):
+        import base64
+        content_type, content_string = contents[0].split(",")
+        decoded = base64.b64decode(content_string)
 
+        tiff_info = GIS_helpers.load_tiff_from_bytes(decoded)
+        left, bottom, right, top = tiff_info["bounds"]
+
+        m1.tiff_layer = tiff_info
+        toast_tiff = "\n Loaded Tiff for Backgroundmap"
     # dbdt1.dataframe = sesh.data.copy()
     # buffer_sites = 
     # m1.dataframe    = sesh.overview
@@ -1362,7 +1377,7 @@ def upload_file(contents, current_process_clicks):
         toast_count = int(sesh.data.loc[sesh.data['site_id'] != -1, 'site_id'].nunique())
     else:
         toast_count = int(len(sesh.data))
-    toast_msg = f"Uploaded {toast_count} sites."
+    toast_msg = f"Uploaded {toast_count} sites."+toast_tiff
 
     bbox_vals = (no_update, no_update, no_update, no_update)
     if 'longitude' in sesh.data.columns and 'latitude' in sesh.data.columns:
