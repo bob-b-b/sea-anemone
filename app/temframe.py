@@ -560,6 +560,8 @@ class TEMframe(DataFrame):
             y_list.append(row_meta['utm_y'])
         
         inv = SCI(inv_list, x=np.array(x_list), y=np.array(y_list), log=write_log)
+        inv.vertical_smoothness = vc
+        inv.horizontal_smoothness = hc
         res_mods = inv.invert(iter_cap=max_iterations)
 
         # DOI: try to get from SCI, fall back to individual inversions, then 0

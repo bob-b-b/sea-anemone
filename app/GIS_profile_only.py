@@ -72,7 +72,7 @@ class Profile(Panel):
 
     def empty_figure(self, msg="No profile selected."):
         fig = go.Figure()
-        fig.add_annotation(text=msg, showarrow=False, font=dict(size=16, color="gray"))
+        fig.add_annotation(text=msg, showarrow=False, font=dict(size=16, color="black"))
         # fig.update_layout(xaxis=dict(visible=False), yaxis=dict(visible=False), margin=dict(t=0,b=0,l=0,r=0))
         return fig
     
@@ -188,8 +188,8 @@ class Profile(Panel):
        
         fig.update_layout(
             title=dict(text=dynamic_title, x=0.5, xanchor='center'), 
-            xaxis=dict(range=[x_min - padding, x_max + padding], title="Distance (m)"),
-            yaxis=dict(title="Elevation (m)"),
+            xaxis=dict(range=[x_min - padding, x_max + padding], title="Distance [m]",color="#2a3f5f"),
+            yaxis=dict(title="Elevation [m]",color="#2a3f5f"),
             hovermode='closest',
             template="plotly_white",
         )
@@ -234,8 +234,8 @@ class Profile(Panel):
                             cmax=log_vmax,
                             color=[log_vmin, log_vmax],
                             colorbar=dict(
-                                # title="Resistivity (Ωm)",
-                                orientation='h',x=0.5, xanchor='center',y=-0.2,yanchor='top',thickness=20,len=0.95,
+                                title=dict(text="Resistivity [Ωm]", side='bottom'),
+                                orientation='h',x=0.5, xanchor='center',y=-0.1,yanchor='top',thickness=20,len=0.95,
                                 tickmode='array',  tickvals=list(tick_vals), ticktext=tick_text,)),
                         hoverinfo='none',showlegend=False))
 

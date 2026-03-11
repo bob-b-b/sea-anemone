@@ -2358,27 +2358,31 @@ class HotKeyReminder(Panel):
             html.Div(
                 [
                     dbc.ButtonGroup([
-                    dbc.Button("disable [ctrl+d]", id='disableButton'),
+                    dbc.Button("Disable [ctrl+d]", id='disableButton'),
                     html.Div(style={'width':'6px'}),
-                    dbc.Button("enable  [ctrl+e]", id='enableButton'),
+                    dbc.Button("Enable  [ctrl+e]", id='enableButton'),
                     ]),
                     dbc.ButtonGroup([
-                        dbc.Button("Beginning [ctrl+B]", id='beginning-buffer', style={"marginRight": "6px"}),
-                        dbc.Button("Previous buffer [ctrl+<-]", id='prev-buffer', style={"marginRight": "6px"}),
-                        dbc.Button("Previous [<-]", id='highlight_prev', style={"marginRight": "6px"}),
-                        dbc.Button("Next [->]", id='highlight_next', style={"marginRight": "6px"}),
-                        dbc.Button("Next buffer [ctrl+->]", id='next-buffer', style={"marginRight": "12px"}),
+                        dbc.Button("Beginning [ctrl+b]", id='beginning-buffer', style={}),
+                        html.Div(style={'width':'6px'}),
+                        dbc.Button("Previous buffer [ctrl+<-]", id='prev-buffer', style={}),
+                        html.Div(style={'width':'6px'}),
+                        dbc.Button("Previous [<-]", id='highlight_prev', style={}),
+                        html.Div(style={'width':'6px'}),
+                        dbc.Button("Next [->]", id='highlight_next', style={}),
+                        html.Div(style={'width':'6px'}),
+                        dbc.Button("Next buffer [ctrl+->]", id='next-buffer', style={}),
+                        html.Div(style={'width':'12px'}),
                         html.Div(
                             [
                                 html.Small(
                                     "Buffer length:",
                                     style={
-                                        "marginLeft": "12px",
-                                        "marginRight": "6px",
                                         "color": "#555",
                                         "fontSize": "12px",
-                                    }
+                                    }, id="buffer-length-label"
                                 ),
+                                html.Div(style={'width':'6px'}),
                                 dcc.Input(
                                     id='buffer-length-input',
                                     type='number',
@@ -2391,7 +2395,9 @@ class HotKeyReminder(Panel):
                                         "fontSize": "13px"
                                     }
                                 ),
-                            dbc.Progress(id="buffer-progress",value=0,max=100,style={"height": "18px", "marginTop": "10px", "marginLeft": "12px", "marginRight": "6px"}),
+                            html.Div(style={'width':'12px'}),
+                            dbc.Progress(id="buffer-progress",value=0,max=100,style={"height": "18px", "marginTop": "10px"}),
+                            html.Div(style={'width':'6px'}),
                             html.Div(id="buffer-progress-text", style={"fontSize": "14px"}),
                             ],
                             style={
@@ -2412,8 +2418,8 @@ class HotKeyReminder(Panel):
                     dbc.Tooltip("Go to the first collected data site.", target='beginning-buffer', placement='top'),
                     dbc.Tooltip("Go to the previous buffer of sites.", target='prev-buffer', placement='top'),
                     dbc.Tooltip("Go to the next buffer of sites.", target='next-buffer', placement='top'),
-                    dbc.Tooltip("Go to the previous site.", target='highlight_prev', placement='top'),
-                    dbc.Tooltip("Go to the next site.", target='highlight_next', placement='top'),
+                    dbc.Tooltip("Go to previous.", target='highlight_prev', placement='top'),
+                    dbc.Tooltip("Go to next", target='highlight_next', placement='top'),
                 ], style={'padding': '10px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between'}
                 ),
                 dcc.Location(id='url_button'),
@@ -2463,3 +2469,55 @@ class HotKeyReminder(Panel):
             # save_dir = getattr(sesh, "session_path", "unknown")
 
             return True, f"Session saved to: {save_data.get('dir', 'unknown')}"
+        @app.callback(
+            Output("disableButton", "children"),
+            Output("enableButton", "children"),
+
+            Output("beginning-buffer", "style"),
+            Output("prev-buffer", "style"),
+            Output("next-buffer", "style"),
+            # Output("highlight_prev", "style"),
+            # Output("highlight_next", "style"),
+            Output("highlight_prev", "children"),
+            Output("highlight_next", "children"),
+            Output("buffer-length-input", "style"),
+            Output("buffer-progress", "style"),
+            Output("buffer-progress-text", "style"),
+            Output('buffer-length-label', 'style'),
+
+            Input("interpret_layout", "color"),
+            prevent_initial_call=True
+        )
+        def interpret_mode_ui(color):
+
+            hidden = {"opacity": 0}
+            shown = {"opacity": 1}
+
+
+            if color != "primary":
+                return (
+                "Disable [ctrl+d]",
+                "Enable [ctrl+e]",
+                shown,  # beginning-buffer
+                shown,  # prev-buffer
+                shown,  # next-buffer
+                'Previous',  # highlight_prev
+                'Next',  # highlight_next
+                {"width": "70px","height": "32px","fontSize": "13px"},  # buffer-length-input
+                shown,  # buffer-progress
+                shown,  # buffer-progress-text
+                shown,  # buffer-length-label
+            )
+            return (
+                "Delete",
+                "Export",
+                hidden,  # beginning-buffer
+                hidden,  # prev-buffer
+                hidden,  # next-buffer
+                "Previous profile",  # highlight_prev
+                "Next profile",  # highlight_next
+                hidden,  # buffer-length-input
+                hidden,  # buffer-progress
+                hidden,  # buffer-progress-text
+                hidden,  # buffer-length-label
+            )
