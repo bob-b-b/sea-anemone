@@ -342,9 +342,9 @@ class Map(Panel):
                         ),
 
                         dbc.Select(
-                            options=['misfit', 'doi', 'date'],
+                            options=self.settings.schema['properties']['plot_by']['enum'],
                             id=self.id+'_plot_by',
-                            value='misfit',
+                            value=self.settings.plot_by,
                             style={
                                 'position': 'absolute',
                                 'bottom': '75px',
