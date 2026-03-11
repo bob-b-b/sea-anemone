@@ -307,65 +307,6 @@ class PanelSettings:
                 return close_settings(model, f'tab-{self.id}', f'tab-{self.id}_settings')
             else:
                 raise PreventUpdate
-            
-
-        @app.callback(
-            Output('global-colorbar-store', 'data', allow_duplicate=True),
-            Input({'type': f'settings-{self.id}', 'key': ALL}, 'value'),
-            State({'type': f'settings-{self.id}', 'key': ALL}, 'id'),
-            State('global-colorbar-store', 'data'),
-            prevent_initial_call=True
-        )
-        def sync_to_global(values, ids, master_data):
-            if master_data is None: master_data = {}
-            
-            # 1. Identify which attribute we are currently looking at (e.g., 'resistivity')
-            # You might get this from a State('points-attr', 'value') 
-            current_attr = 'resistivity' 
-            
-            if current_attr not in master_data:
-                master_data[current_attr] = {}
-
-            # 2. Map every UI change to the store
-            for val, ident in zip(values, ids):
-                key = ident['key']
-                master_data[current_attr][key] = val
-            
-            # 3. Handle Special Logic (e.g., if colors change, update cmap)
-            # This allows 'lm_color' or 'hm_color' to affect the visuals immediately
-            return master_data
-        
-        import time
-        
-        @app.callback(
-            # Output('force-refresh-store', 'data',allow_duplicate=True),
-            Output(f"tab-{self.id}_settings", "data-status"), # Dummy output to trigger the callback
-            Input({'type': f'settings-{self.id}', 'key': ALL}, 'value'),
-            State({'type': f'settings-{self.id}', 'key': ALL}, 'id'),
-            prevent_initial_call=True
-        )
-
-        def update_settings_realtime(values, ids):
-            # 1. Update THIS object instance
-            for val, identifier in zip(values, ids):
-                key = identifier['key']
-                
-                # FIX: More robust numeric conversion
-                if val is not None and str(val).replace('.', '', 1).isdigit():
-                    # val = float(val)
-                    try:
-                        if float(val) == int(float(val)):
-                            val = int(float(val))
-                        else:
-                            val = float(val)
-                    except ValueError:
-                        pass
-
-                if hasattr(self, key):
-                    setattr(self, key, val)
-
-            # print(f"Real-time update for {self.id}: vmin={self.vmin}, vmax={self.vmax}")
-            return  "updated"
 
     @property
     def flat_keys(self):
