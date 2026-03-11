@@ -323,7 +323,6 @@ class TEMframe(DataFrame):
         df_data.forward_operators[0].source     = df_data.forward_operators[1].source
         df_data.forward_operators[0].receiver   = df_data.forward_operators[1].receiver
         df_data.forward_operators[0].filterfunc = df_data.forward_operators[1].filterfunc     
-        df_data.dmfwr = df_data.forward_operators[0]+df_data.forward_operators[1]
 
         if {'site_id','date','daytime'}.issubset(df_data.columns):
 

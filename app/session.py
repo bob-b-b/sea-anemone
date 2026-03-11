@@ -12,7 +12,6 @@ import pandas as pd
 def rounded_nanmean(x):
     return round(x.mean(), 2)
 
-
 @nosj
 class Session:
     data:      TEMframe  = None
@@ -22,6 +21,7 @@ class Session:
     boreholes: DataFrame = None
     rock_map : dict      = None
     forwards:  List[Forward] = None
+    panel_ids: List[str] = None
     settings:  List[PanelSettings] = None
     save_dir:  str = None
     dem_path:  str = None

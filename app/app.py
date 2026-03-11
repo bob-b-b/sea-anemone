@@ -375,7 +375,7 @@ Sing_inv = Single_site( dataframe=sesh.data, rho=10 )
 
 hkr = HotKeyReminder()
 
-panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, Multi_inv, Sing_inv, rhoa, hkr, profile] #,gis
+panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, Multi_inv, Sing_inv, rhoa, hkr, profile]
 nodes = [node for panel in panels for node in panel.to_nodes()]+[dfl.Tab(id=f'tab-profile-buttons', children=[profile_controls])] #dfl.Tab(id=f'tab-processing_buttons', children=[x]),
 
 
@@ -1018,69 +1018,6 @@ def save_session(n1,n2):
 
     return message, {"dir": sesh.save_dir}
 
-# @app.callback(
-#     Output("output-click", "children", allow_duplicate=True),
-#     # Output("selected-site-id", "data", allow_duplicate=True),
-#     m1.output, mod1.output, dbdt1.output, Multi_inv.output, mod2.output, dbdt2.output, rhoa.output,
-#     Input('highlight_prev', 'n_clicks'),
-#     Input('highlight_next', 'n_clicks'),
-#     State('invert_layout',  'color'),
-#     State('flex-layout', 'model'),
-#     prevent_initial_call=True,
-# )
-# def highlight_change(n1, n2, invert_layout_color,model):
-#     # ctx = callback_context
-#     if not ctx.triggered:
-#         raise PreventUpdate
-#     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
-
-#     highlighted = m1.highlighted
-#     if trigger_id == 'highlight_prev':
-#         highlight_change = -1
-#     elif trigger_id == 'highlight_next':
-#         highlight_change = 1
-
-#     if highlighted is None:
-#         PreventUpdate
-#     else:
-#         highlighted += highlight_change
-#     df_data = sesh.data
-#     m1.highlighted = highlighted
-#     mod1.highlighted = highlighted
-#     mod2.highlighted = highlighted
-#     dbdt2.highlighted = highlighted
-#     dbdt1.dataframe = df_data[df_data['site_id'] == highlighted]
-#     rhoa.dataframe = df_data[df_data['site_id'] == highlighted]
-#     print('invert layout color:', invert_layout_color)
-#     def get_active_tab_id(model):
-#         if model is None:
-#             return None
-
-#         def search(node):
-#             if node.get("type") == "tabset":
-#                 return node.get("selected")
-#             for child in node.get("children", []):
-#                 result = search(child)
-#                 if result:
-#                     return result
-#             return None
-
-#         return search(model.get("layout", {}))
-
-#     active_tab = get_active_tab_id(model)
-#     # print()
-#     # if active_tab == 1:
-#         # Sing_inv.invert_single_site(df_data[df_data['site_id'] == highlighted])
-#         # print('here?')
-#     # if invert_layout_color == 'primary':
-#     #     print('will launch an inversion next time')
-        
-    
-    
-
-#     return ctx.triggered_id, m1.render(is_last_tab=False), mod1.render(), dbdt1.render(), Multi_inv.render(), mod2.render(), dbdt2.render(), rhoa.render()
-from dash.dash import no_update
-
 @app.callback(
     Output("output-click", "children", allow_duplicate=True),
     m1.output, mod1.output, dbdt1.output, Multi_inv.output, mod2.output, dbdt2.output, rhoa.output,
@@ -1324,6 +1261,7 @@ def upload_file(contents, current_process_clicks):
     # buffer_sites = 
     # m1.dataframe    = sesh.overview
     m1.dataframe = sesh.data.copy()
+    
     buffer_length = 50
     # unique_sites = np.sort(sesh.data['site_id'].unique())
     unique_sites = np.sort(sesh.data.loc[sesh.data['site_id'] != -1, 'site_id'].unique())
