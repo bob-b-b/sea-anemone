@@ -130,7 +130,6 @@ def _sample_dem_at_points(lons, lats, dem_path):
 def _export_kml_points(df, output_path):
     if df is None or df.empty:
         return "No data to export."
-
     required = {'longitude', 'latitude'}
     if not required.issubset(df.columns):
         return "Missing longitude/latitude columns."
@@ -334,49 +333,12 @@ Multi_inv = MultiInversion( dataframe=sesh.data )
 profile = Profile(sesh.models)
 
 
-profile_controls = html.Div([
-    # dcc.Markdown('### Profile Management'),
-    html.Div(
-        id="profile-buttons-container",
-        children=[
-            dbc.ButtonGroup([html.Div(style={'width':'270px'}),
-                dbc.Button("← Previous \nProfile", id="btn-prev-line", color="primary", disabled=True),
-                html.Div(style={'width':'10px'}),
-                dbc.Button("Next \nProfile →", id="btn-next-line", color="primary", disabled=True),
-                html.Div(style={'width':'270px'})
-                            ]),
-                html.Div(id="profile-list-container", style={
-                # "maxHeight": "200px", 
-                "flex": "1",
-                "overflowY": "auto", "width": "100%", "marginTop": "10px"
-                        }),
-            dbc.ButtonGroup([
-                dbc.Button("Clear Selected", id="btn-clear-sel", color="primary"),
-                html.Div(style={'width':'10px'}),
-                dbc.Button("Clear All", id="btn-clear-all", color="primary"),
-                html.Div(style={'width':'10px'}),
-                dbc.Button("Export Selected as PNG/KMZ", id="btn-export-profile", color="primary"),
-                html.Div(style={'width':'10px'}),
-                dbc.Button("Save session [ctrl+s]", id='saveButton-profiles', color="primary"), 
-                            ]),
-        ], 
-        style={'padding': '10px', 'display': 'flex', 'flexDirection': 'column', 'gap': '10px','height': '100%',}
-    ),
-    html.Div(id="export-message-container"),
-    dcc.Download(id="download-profile-files"),
-], id='profile-buttons', style={"height": "85%"})
-
-
-#stmod = StartingModel.standard(rho=10.)F
-
-# Inv_it = Inversion_iterations.standard(misfit=None,rho=10.)
-
 Sing_inv = Single_site( dataframe=sesh.data, rho=10 )
 
 hkr = HotKeyReminder()
 
-panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, Multi_inv, Sing_inv, rhoa, hkr, profile]
-nodes = [node for panel in panels for node in panel.to_nodes()]+[dfl.Tab(id=f'tab-profile-buttons', children=[profile_controls])] #dfl.Tab(id=f'tab-processing_buttons', children=[x]),
+panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, Multi_inv, Sing_inv, rhoa, hkr, profile] #,gis
+nodes = [node for panel in panels for node in panel.to_nodes()]#+[dfl.Tab(id=f'tab-profile-buttons', children=[profile_controls])] #dfl.Tab(id=f'tab-processing_buttons', children=[x]),
 
 
 html_header = html.H1('Sea Anemone', style={'width': '100%'})
@@ -697,32 +659,6 @@ app.clientside_callback(
     Input("disableButton", "id")
 )
 
-# PROFILE BUTTONS  
-app.clientside_callback(
-    """
-    function(id) {
-        document.addEventListener("keydown", function(event) {
-            const isInput = document.activeElement && 
-                (document.activeElement.tagName === 'INPUT' || 
-                 document.activeElement.tagName === 'TEXTAREA');
-
-            if (!isInput && event.altKey) {
-                if (event.key.toLowerCase() === 'c') {
-                    const btn = document.getElementById('btn-clear-sel');
-                    if (btn) btn.click();
-                }
-                if (event.key.toLowerCase() === 'a') {
-                    const btn = document.getElementById('btn-clear-all');
-                    if (btn) btn.click();
-                }
-            }
-        });
-        return window.dash_clientside.no_update;
-    }
-    """,
-    Output("profile-buttons", "id"),
-    Input("profile-buttons", "id")
-)
 
 # DRAGGABLE WINDOW FOR CTRL + ALT + LEFT CLICK
 app.clientside_callback(
@@ -800,10 +736,12 @@ app.clientside_callback(
     State("tTEM", "selectedData"),
     State("sounding", "selectedData"),
     State("rhoa", "selectedData"),
+    State('interpret_layout','color'),
     prevent_initial_call=True,
 )
-def show_value(n1, n2, ttem_selected, sounding_selected, rhoa_selected):
-
+def show_value(n1, n2, ttem_selected, sounding_selected, rhoa_selected, interpret_layout_color):
+    if interpret_layout_color == 'primary':
+        raise PreventUpdate
     if str(ctx.triggered_id) == 'disableButton':
         inuse = False
     elif str(ctx.triggered_id) == 'enableButton':
@@ -2061,13 +1999,17 @@ def update_profile_callback(relayout, mode, selected_idx, global_cbar_data, view
 # --------------------- SAVE PROFILE AS PNG AND KMZ ---------------------
 @app.callback(
     Output("export-message-container", "children"),
-    Input("btn-export-profile", "n_clicks"),
+    #Input("btn-export-profile", "n_clicks"),
+    Input("enableButton",'n_clicks'),
     State("profile_plot_main", "figure"), 
     State("selected-line-index", "data"),
+    State("interpret_layout",'color'),
     prevent_initial_call=True
 )
-def trigger_export(n_clicks, fig_data, current_idx):
+def trigger_export(n_clicks, fig_data, current_idx, interpret_color):
     # 1. Validation
+    if interpret_color != 'primary':
+        raise PreventUpdate
     if not n_clicks:
         return no_update
 
@@ -2129,7 +2071,10 @@ def toggle_dem_upload(use_dem):
     sesh.dem_name = None
     return {'display': 'none', 'marginTop': '10px'}
 
-
+# @app.callback(Output('flex-layout', 'model',allow_duplicate=True), Input('flex-layout', 'model'), prevent_initial_call=True)
+# def print_flex_layout_model(model):
+#     print("Current flex-layout model:", model)
+#     return no_update
 
 @app.callback(
     [
@@ -2651,23 +2596,22 @@ def show_zoom_warning(relayout_data):
 
 # --------------------- MULTI LINE select profile dropdown and clear all or selected --------------------
 @app.callback(
-    Output("profile-list-container", "children"),
+    # Output("profile-list-container", "children"),
     Output("selected-line-index", "data"),
-    Output("btn-prev-line", "disabled"), 
-    Output("btn-next-line", "disabled"),
     Output("map", "figure", allow_duplicate=True),
     Input("url", "hash"),
     Input("map", "relayoutData"),           
-    Input("btn-clear-sel", "n_clicks"),  
-    Input("btn-clear-all", "n_clicks"),  
-    Input("btn-prev-line", "n_clicks"), 
-    Input("btn-next-line", "n_clicks"), 
-    Input({"type": "view-line-btn", "index": ALL}, "n_clicks"), 
-    State({"type": "del-check", "index": ALL}, "value"),        
+    Input("disableButton", "n_clicks"), 
+    Input("highlight_next", "n_clicks"),
+    Input("highlight_prev", "n_clicks"),
+    Input({"type": "view-line-btn", "index": ALL}, "n_clicks"),       
     State("selected-line-index", "data"),
+    State("interpret_layout", "color"),
     prevent_initial_call=True
 )
-def master_line_controller(url_hash,relayout, clear_sel_n, clear_all_n, prev_n, next_n, view_clicks, check_states, current_idx):
+def master_line_controller(url_hash,relayout, disable_n, highlight_next_n, highlight_prev_n, view_clicks, current_idx, interpret_color):
+    if interpret_color != 'primary':
+        raise PreventUpdate
     ctx = callback_context
     if not ctx.triggered:
         return no_update
@@ -2691,51 +2635,49 @@ def master_line_controller(url_hash,relayout, clear_sel_n, clear_all_n, prev_n, 
     
     if "map.relayoutData" in trigger_id:
         if relayout and 'shapes' not in relayout:
-            return no_update, no_update, no_update, no_update, no_update#, False
+            return no_update, no_update#, no_update, no_update, no_update#, False
         unique_ids = sorted(m1.lines['line'].unique())
         num_lines = len(unique_ids)
         current_idx = num_lines - 1
 
     # --- ACTION: PREVIOUS ---
-    if "btn-prev-line" in trigger_id:
+    if "highlight_prev" in trigger_id:
+        if num_lines == 0:
+            raise PreventUpdate
         current_idx = max(0, current_idx - 1) 
-        print ("PREVIOUS BUTTON",current_idx)
 
     # --- ACTION: NEXT ---
-    elif "btn-next-line" in trigger_id:
+    elif "highlight_next" in trigger_id:
+        if num_lines == 0:
+            raise PreventUpdate
         current_idx = min(num_lines - 1, current_idx + 1)
-        print ("NEXT BUTTON",current_idx)
-
-    # --- ACTION: CLEAR ALL ---
-    elif "btn-clear-all" in trigger_id:
-        m1.lines = pd.DataFrame(columns=['latitude', 'longitude', 'line'])
-        sesh.lines = m1.lines.copy()
-        updated_map = m1.render(current_idx=0, is_last_tab=True)
-        updated_map.update_layout(shapes=[])
-        return [], 0, True, True, updated_map #, False
 
     # --- ACTION: CLEAR SELECTED ---
-    elif "btn-clear-sel" in trigger_id:
-        ids_to_remove = [unique_ids[i] for i, val in enumerate(check_states) if val and len(val) > 0]
-        m1.lines = m1.lines[~m1.lines['line'].isin(ids_to_remove)]
+    elif "disableButton" in trigger_id:
+        if num_lines == 0:
+            raise PreventUpdate
+
+        # line currently displayed on the map
+        line_to_remove = unique_ids[current_idx]
+
+        # remove it
+        m1.lines = m1.lines[m1.lines["line"] != line_to_remove]
         sesh.lines = m1.lines.copy()
-        unique_ids = sorted(m1.lines['line'].unique())
+
+        # recompute ids
+        unique_ids = sorted(m1.lines["line"].unique())
         num_profiles = len(unique_ids)
-        # current_idx = max(0, min((current_idx or 0), num_profiles - 1))
+
+
         if num_profiles == 0:
             current_idx = 0
             updated_map = m1.render(is_last_tab=True)
             updated_map.update_layout(shapes=[])
             return [], 0, True, True, updated_map
         else:
-            current_idx = max(0, min((current_idx or 0), num_profiles - 1))
-            # Fallback to the last available profile if current one was deleted
+            # keep index valid
+            current_idx = min(current_idx, num_profiles - 1)
             updated_map = m1.render(current_idx=current_idx, is_last_tab=True)
-
-    # --- ACTION: CHANGE VIEW (EYE ICON) ---
-    elif "view-line-btn" in trigger_id:
-        btn_index = json.loads(trigger_id.split(".")[0])["index"]
-        current_idx = btn_index
 
     num_profiles = len(unique_ids)
     
@@ -2761,24 +2703,9 @@ def master_line_controller(url_hash,relayout, clear_sel_n, clear_all_n, prev_n, 
                     "flex": 1, "fontSize": "13px", 
                     "fontWeight": "bold" if is_active else "normal"
                 }),
-                html.Button(
-                    "👁️", 
-                    id={"type": "view-line-btn", "index": i},
-                    style={
-                        "border": "none", "background": "none", "cursor": "pointer", 
-                        "fontSize": "16px", "marginRight": "10px",
-                        "opacity": "1" if is_active else "0.3"
-                    }
-                ),
-                dcc.Checklist(
-                    id={"type": "del-check", "index": i},
-                    options=[{"label": "", "value": 1}],
-                    value=[],
-                )
             ]
         ))
-
-    return rows, current_idx, prev_disabled, next_disabled, updated_map
+    return current_idx, updated_map
 
 
 
