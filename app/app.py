@@ -1020,9 +1020,9 @@ def highlight_change(n1, n2, invert_layout_color, model, buffer_data):
 
                 # slide buffer when highlight exits window
                 if idx-1 < start:
-                    start = idx-1
+                    start = idx-5
                 elif idx > start + length:
-                    start = idx - length
+                    start = idx - length+4
 
                 # clamp
                 start = max(0, min(start, max(0, len(x_vals) - length)))
@@ -1205,6 +1205,7 @@ def upload_file(contents, current_process_clicks):
     initial_sites = unique_sites[:buffer_length]
 
     m1.buffer_sites = initial_sites.tolist()
+    print(m1.buffer_sites)
     mod1.dataframe  = sesh.models
     mod1.buffer_sites = initial_sites.tolist()
     mod2.dataframe  = sesh.models
@@ -2246,14 +2247,24 @@ def handle_url_hash(url_hash, model):
             m1.lines = sesh.lines.copy()
             
         if sesh.data is not None:
+            buffer_length = 50
             dbdt1.dataframe = sesh.data.copy()    
             dbdt2.dataframe = sesh.data.copy()    
             m1.dataframe    = sesh.overview.copy()
-            # unique_sites = np.sort(sesh.data.loc[sesh.data['site_id'] != -1, 'site_id'].unique())
-            # initial_sites = unique_sites[:buffer_length]
+            full_df = sesh.data.copy()
+            unique_sites = np.sort(sesh.data.loc[sesh.data['site_id'] != -1, 'site_id'].unique())
+            initial_sites = unique_sites[:buffer_length]
+            buffered_df = full_df[full_df['site_id'].isin(initial_sites)].copy()
 
-            # m1.buffer_sites = initial_sites.tolist()
-            rhoa.dataframe  = sesh.data.copy()    
+            dbdt1.dataframe = buffered_df
+            dbdt2.dataframe = full_df          # keep full section view
+            rhoa.dataframe  = buffered_df
+            print(initial_sites.tolist())
+            m1.buffer_sites = initial_sites.tolist()
+            dbdt2.buffer_sites = initial_sites.tolist()
+
+
+            # rhoa.dataframe  = sesh.data.copy()    
             Multi_inv.dataframe = sesh.data.copy()
             Sing_inv.dataframe = sesh.data.copy()
             profile.dataframe= sesh.models.copy()  if sesh.models is not None else None
