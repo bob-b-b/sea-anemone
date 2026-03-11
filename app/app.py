@@ -21,8 +21,8 @@ sesh = None
 if sesh is None:
     sesh = session.Session()
 
-import tempfile
-with tempfile.NamedTemporaryFile() as f:
+from tempfile import NamedTemporaryFile
+with NamedTemporaryFile() as f:
     tempdir = os.path.dirname(f.name)
 session_tracker = os.path.join(tempdir, 'anemone_projects.txt')
 
@@ -58,13 +58,6 @@ docs_root = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'docs'
 @app.server.route('/help/<path:filename>')
 def serve_help_docs(filename):
     return send_from_directory(docs_root, filename)
-
-
-
-
-# df_overview = pd.DataFrame(columns=['date', 'daytime', 'latitude', 'longitude', 'elevation', 'utm_x', 'utm_y', 'distance'])
-
-
 
 
 def _sanitize_filename(name: str, fallback: str = "dem.tif") -> str:
@@ -1189,11 +1182,12 @@ def highlight_change(n1, n2, invert_layout_color, model, buffer_data):
     prevent_initial_call=True
 )
 def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color,review_layout_color, interpret_layout_color, buffer_data):
-    # ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
     click_data = ctx.triggered[0]['value']
+    site_id = None
+
     if not click_data or 'points' not in click_data:
         raise PreventUpdate
     if trigger_id == 'tTEM':
@@ -1202,37 +1196,20 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color,re
     elif trigger_id == 'model_section':
         x_value = click_data['points'][0]['x']
         site_id = mod2.dataframe.query(f'{mod2.settings.x_axis} == @x_value')['site_id'].iloc[0]
-    # elif trigger_id == 'map':
-    #     site_id = sesh.data['site_id'].iloc[click_data['points'][0]['pointNumber']]
     elif trigger_id == 'map':
-        pt = click_data['points'][0]
-        cd = pt.get('customdata')
-        if cd and isinstance(cd, list) and len(cd) >= 3 and cd[2] == 'borehole':
-            raise PreventUpdate
-        if review_layout_color == 'primary':
-            site_id = sesh.models['site_id'].iloc[click_data['points'][0]['pointNumber']]
-        elif interpret_layout_color == 'primary':
-            raise PreventUpdate
-        else:
-            site_id = sesh.data['site_id'].iloc[click_data['points'][0]['pointNumber']]
-            
+        x_value,y_value = click_data['points'][0]['lon'],click_data['points'][0]['lat']
+        all_dist = cdist(m1.dataframe.latitude, m1.dataframe.longitude, y_value, x_value)
+        site_id = m1.dataframe.loc[np.argmin(all_dist), 'site_id']
+        if m1.boreholes is not None:
+            print('check the boreholes man!')
 
-    else:
-        site_id = None
     df_data = sesh.data
-    # Sing_inv.dataframe = df_data[df_data['site_id'] == site_id]
-    m1.highlighted = site_id
-    mod1.highlighted = site_id
-    mod2.highlighted = site_id
+    m1.highlighted    = site_id
+    mod1.highlighted  = site_id
+    mod2.highlighted  = site_id
     dbdt2.highlighted = site_id
-    dbdt1.dataframe = df_data[df_data['site_id'] == site_id]
-    rhoa.dataframe  = df_data[df_data['site_id'] == site_id]
-    # if invert_layout_color == 'primary':
-    #     # df_layers, df_site, _ = df_data.invert_site(site_id)
-    #     # if mod1.dataframe is not None:
-    #     #     df_layers = pd.concat([mod1.dataframe[df_data['site_id'] != site_id], df_layers], ignore_index=True)
-    #     mod1.dataframe = df_layers
-    #     dbdt1.dataframe = df_site
+    dbdt1.dataframe   = df_data[df_data['site_id'] == site_id]
+    rhoa.dataframe    = df_data[df_data['site_id'] == site_id]
     return m1.render(is_last_tab=False), mod1.render(), dbdt1.render(), mod2.render(), dbdt2.render(), rhoa.render()
 
 @app.callback(
