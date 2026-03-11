@@ -915,11 +915,10 @@ def update_model_on_interpret(_, invert_color):
     [Output('output-click', 'children', allow_duplicate=True),
     Output('session-save-complete', 'data', allow_duplicate=True),],
     Input('saveButton', 'n_clicks'),
-    Input('saveButton-profiles', 'n_clicks'),
     prevent_initial_call=True,
     allow_duplicate=True
 )
-def save_session(n1,n2):
+def save_session(n1):
     if sesh.save_dir is None:
         _configure_tk_dpi_awareness()
         root = Tk()
