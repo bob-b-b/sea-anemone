@@ -11,33 +11,6 @@ import numpy as np
 import os
 import re
 
-# def compute_lm_scaling(dataframe, base_factor=20.0, gate_threshold=27):
-#     """
-#     Determine LM scaling factor depending on number of gates per site.
-#     """
-
-#     if dataframe is None or len(dataframe) == 0:
-#         return base_factor
-
-#     if "gate_id" not in dataframe.columns:
-#         return base_factor
-
-#     gates_per_site = (
-#         dataframe[dataframe["site_id"] > -1]
-#         .groupby("site_id")["gate_id"]
-#         .nunique()
-#     )
-
-#     if len(gates_per_site) == 0:
-#         return base_factor
-
-#     max_gates = gates_per_site.max()
-
-#     if max_gates > gate_threshold:
-#         return base_factor * 70
-
-#     return base_factor
-
 # Define a custom template
 custom_template = {
     "layout": {

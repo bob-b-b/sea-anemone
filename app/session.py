@@ -1,22 +1,12 @@
-import sys
-sys.path.insert(0, 'C:/Users/au646858/OneDrive - Aarhus Universitet/Documents/_repositories/sea-anemone/app')
-
-from panels import dbdtSoundingSettings
-from map import MapSettings
 from typing import List
 from pandas import DataFrame
 import json_numpy
 from anemone.forwards import Forward
 from temframe import TEMframe
 from nosj import nosj
+from basepanel import PanelSettings
 
 from numpy import nan as np_nan
-
-@nosj
-class SessionSettings:
-    map: MapSettings
-    sounding: dbdtSoundingSettings
-    linked_settings: List[str] = None
 
 import pandas as pd
 def rounded_nanmean(x):
@@ -25,17 +15,17 @@ def rounded_nanmean(x):
 
 @nosj
 class Session:
-    data:     TEMframe  = None
-    models:   DataFrame = None
-    site:     DataFrame = None
-    lines:    DataFrame = None
+    data:      TEMframe  = None
+    models:    DataFrame = None
+    site:      DataFrame = None
+    lines:     DataFrame = None
     boreholes: DataFrame = None
     rock_map : dict      = None
-    forwards: List[Forward] = None
-    settings: SessionSettings = None
-    save_dir: str = None
-    dem_path: str = None
-    dem_name: str = None
+    forwards:  List[Forward] = None
+    settings:  List[PanelSettings] = None
+    save_dir:  str = None
+    dem_path:  str = None
+    dem_name:  str = None
 
     def save(self, folder=None, binary_threshold=100):
         self.update_site_table()
@@ -100,8 +90,6 @@ class Session:
             self.data = TEMframe.from_pandas(pd.read_csv(self.save_dir+self.data), forward_operators=fwd_list)
             self.forwards = fwd_list
             self.data.forward_operators = fwd_list
-            self.data.dmfwr = self.forwards[0]+self.forwards[1]
-            self.data.dmfwr = self.data.dmfwr.logify()
         
         if self.models is not None and isinstance(self.models, str):
             self.models = pd.read_csv(self.save_dir+self.models)

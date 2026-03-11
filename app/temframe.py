@@ -34,6 +34,7 @@ class TEMframe(DataFrame):
     forward_operators = []
     history = []
     track_history = True
+    _dmfwr=None
 
     def __init__(self, *args, **kwargs):
         if 'forward_operators' in kwargs:
@@ -400,6 +401,12 @@ class TEMframe(DataFrame):
     #     finally:
     #         self.track_history = original
 
+    @property
+    def dmfwr(self):
+        if self._dmfwr is None:
+            self._dmfwr = (self.forward_operators[0]+self.forward_operators[1]).logify()
+        return self._dmfwr
+
     def invert_individually(self, res_start, vc=0.4, hc=0.4, max_iterations=50):
 #        res_start = LogResistivity.smooth(torch.ones(31)*40., torch.logspace(0, 2.1, 30))
         self._record_op()
@@ -589,7 +596,6 @@ class TEMframe(DataFrame):
             results.append(row_meta.to_dict())
             print(f'Inversion for data_id {i:02d} completed.')
         df_data['misfit'] = (((df_data['dbdt'] - df_data['dbdt_syn'])**2/(np.log1p(df_data['dbdt'].values*df_data['error'].values/100.)**2))**0.5)
-        df_data.dmfwr = self.dmfwr
 
         df_overview = df_data.overview()
         df_overview['doi'] = doi
