@@ -67,10 +67,10 @@ pio.templates["custom"] = custom_template
 pio.templates.default = "custom"
 
 def cdist(lat1,lon1,lat2,lon2):
-    lat1rad = lat1/(180./np.pi)
-    lon1rad = lon1/(180./np.pi)
-    lat2rad = lat2/(180./np.pi)
-    lon2rad = lon2/(180./np.pi)
+    lat1rad = lat1*np.pi/180.
+    lon1rad = lon1*np.pi/180.
+    lat2rad = lat2*np.pi/180.
+    lon2rad = lon2*np.pi/180.
     d = 3963. * np.arccos((np.sin(lat1rad)*np.sin(lat2rad))+ \
             np.cos(lat1rad)*np.cos(lat2rad)*np.cos(lon2rad-lon1rad)) * \
             1.609344 * 1000.
@@ -83,7 +83,7 @@ class MapSettings(PanelSettings):
     color: str = '#ff0000'
     color_data: str = '#000000'
     highlight_color: str= '#ffff00'  # Default highlight color
-    plot_by: Literal['misfit', 'doi', 'date'] = 'date'
+    plot_by: Literal['', 'misfit', 'doi', 'date'] = ''
     buffer_color: str= '#ffffff'  # Default buffer color
 
 class Map(Panel):
@@ -114,13 +114,10 @@ class Map(Panel):
         zoom = self.view['map.zoom'] if self.view is not None else self.settings.zoom
         center = self.view['map.center'] if self.view is not None else None      
         
-        
-        from __main__ import sesh
-        # if sesh.models is not None:
-        if sesh.models is not None and self.settings.plot_by in sesh.models.columns:
+        if self.settings.plot_by in df_plot.columns and self.settings.plot_by!='':
 
             fig = px.scatter_map(
-                sesh.models,
+                df_plot,
                 lat="latitude",
                 lon="longitude",
                 zoom=zoom,
@@ -146,21 +143,8 @@ class Map(Panel):
             if self.settings.plot_by == 'misfit':
                 fig.update_coloraxes(cmin=0, cmax=3)
             elif self.settings.plot_by == 'doi':
-                fig.update_coloraxes(cmin=10, cmax=sesh.models['doi'].max())
-            data_trace = px.scatter_map(
-                df_plot,
-                lat="latitude",
-                lon="longitude",
-                zoom=zoom,
-                center=center,
-                color_discrete_sequence=[self.settings.color_data],
-                custom_data=["site_id"]   # <-- ADD THIS
-            )
-            data_trace.update_traces(marker={'size': 8})
-            for trace in data_trace.data:
-                fig.add_trace(trace)
+                fig.update_coloraxes(cmin=10, cmax=df_plot['doi'].max())
         else:
-            # fig = px.scatter_map(df_plot, lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.color])
             fig = px.scatter_map(
                 df_plot,
                 lat="latitude",
@@ -170,7 +154,6 @@ class Map(Panel):
                 color_discrete_sequence=[self.settings.color],
                 custom_data=["site_id"]   
             )
-        
         fig.update_traces(marker={'size': 8})
         
         if self.buffer_sites is not None and len(self.buffer_sites) > 0 and self.dataframe is not None and 'site_id' in self.dataframe.columns:
@@ -191,27 +174,17 @@ class Map(Panel):
 
                 for trace in buffer_trace.data:
                     fig.add_trace(trace)
-                if sesh.models is not None and self.settings.plot_by in sesh.models.columns:
-                    fig.data = (fig.data[2], fig.data[1], fig.data[0])
-                else:
-                    fig.data = (fig.data[1], fig.data[0])
+                fig.data = (fig.data[-1],)+fig.data[:-1]
 
-
-        fig.update_layout(
-            map_style="white-bg",
-            map_layers=[
-                {
+        map_layers = [{
                     "below": "traces",
                     "sourcetype": "raster",
                     "sourceattribution": "Google Earth (C)",
                     "source": ["https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"]
-                }
-            ]
-        )
+                }]
 
         if self.tiff_layer is not None:
             left, bottom, right, top = self.tiff_layer["bounds"]
-
             tiff_overlay = {
                 "below": "traces",
                 "sourcetype": "image",
@@ -223,20 +196,11 @@ class Map(Panel):
                     [left, bottom]
                 ]
             }
-            fig.update_layout(
-                    map_layers=[
-                        {
-                            "below": "traces",
-                            "sourcetype": "raster",
-                            "source": ["https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"]
-                        },
-                        tiff_overlay
-                    ]
-                )
+            map_layers.append(tiff_overlay)
+
+        fig.update_layout(map_style="white-bg", map_layers=map_layers)
         
-        if self.highlighted is not None:
-            # highlight_trace = px.scatter_map(df_plot[df_plot.index == self.highlighted], lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.highlight_color])
-            
+        if self.highlighted is not None:            
             highlight_trace = px.scatter_map(
                 df_plot[df_plot['site_id'] == self.highlighted],
                 lat="latitude",
@@ -248,18 +212,7 @@ class Map(Panel):
             )
             highlight_trace.update_traces(marker=dict(size=14))
             for trace in highlight_trace.data:
-                fig.add_trace(
-                    trace)
-        else:
-            highlight_trace = px.scatter_map(
-                df_plot,
-                lat="latitude",
-                lon="longitude",
-                zoom=zoom,
-                center=center,
-                color_discrete_sequence=[self.settings.color],
-                # custom_data=["site_id"],   # <-- ADD THIS
-            )
+                fig.add_trace(trace)
 
         # if self.lines is not None:
         #     fig2 = px.line_map(self.lines, lat='latitude', lon='longitude', line_group='line', color='line',  zoom=zoom, center=center, hover_name='line')
@@ -316,10 +269,6 @@ class Map(Panel):
 
                 for trace in hover_trace.data:
                     fig.add_trace(trace)
-            
-        if self.boreholes:
-            from Sections_plotting import add_boreholes_to_map_fig
-            fig = add_boreholes_to_map_fig(fig, self.boreholes)
 
 
         tools_to_add = ['drawline', 'drawopenpath'] if is_last_tab else []
@@ -2106,143 +2055,6 @@ class ModelSection(Panel):
 
 
 import dash_bootstrap_components as dbc
-
-@nosj
-class StartingModelSettings(PanelSettings):
-    line_color: str='#ff0000'
-
-from anemone.inversion import LogResistivity
-
-class StartingModel(ModelGraph):
-    
-    misfit = None
-    def __init__(self, data, **kwargs):
-        starting_model = kwargs.pop('starting_rho', 10.)
-        settings = StartingModelSettings(id='starting_model', **kwargs)
-        super().__init__(id='starting_model', settings=settings, starting_rho=starting_model)
-        self.dataframe = data
-
-    def misfit_render(self):
-        fig = px.line(self.misfit)
-        return fig
-
-
-    def render(self):
-        fig = px.line(self.dataframe,
-            x='resistivity',
-            y='depth',
-            markers=True,
-            color_discrete_sequence=[self.settings.line_color, self.settings.line_color],
-            hover_data={'resistivity': ':.2f Ω⋅m', 'depth': False},
-        )
-
-        fig.update_layout(
-            title='Inversion Starting Model',
-            xaxis_title='resistivity [Ω⋅m]',
-            yaxis_title='depth [m]',
-            xaxis_type='log', 
-            yaxis_type='linear',
-            yaxis=dict(autorange='reversed'),
-            xaxis=dict(range=[-0.1,3.1]),  
-            showlegend=True,
-            modebar=dict(remove=['toImage', 'zoom', 'zoomIn', 'zoomOut', 'pan', 'select']),
-        )
-        fig.add_shape(type='line', x0=self.starting_rho, x1=self.starting_rho,
-                      y0=self.dataframe['depth'].min(), y1=self.dataframe['depth'].max(),
-                      xref='x1', yref='y1',
-                      line=dict(color=self.settings.line_color, dash='dash'),
-                      editable=True)
-
-        return fig
-    
-    def initialize(self):
-        init = html.Div([dbc.Container([
-                dbc.Row([
-                    dbc.Col(
-                        dcc.Graph(figure=self.render(), id=self.id, mathjax=True, 
-                                    config=dict(edits={'shapePosition':True}, displayModeBar=False)),
-                            width=10),
-                             dbc.Tooltip('The sounding panel shows the selected data', target='invert_selected_button')
-                ], style={'height':'100%'})], style={'height':'95%', 'padding':'25px'}),
-                 gear_maker(self.id)], style={'height': '100%', 'overflow': 'hidden'},
-                  )
-        return init
-                            
-    
-    def add_callbacks(self, app):
-        super().add_callbacks(app)
-
-        @app.callback(
-            Output(self.id, 'figure', allow_duplicate=True),
-            Input(self.id, 'relayoutData'),
-            prevent_initial_call=True
-        )
-        def update_starting_model(relayoutData):
-            self.starting_rho = int(relayoutData.get('shapes[0].x0', self.starting_rho))
-            self.dataframe['resistivity'] = self.starting_rho
-            return self.render()
-        
-
-    @classmethod
-    def standard(cls, rho=40.):
-        df = pd.DataFrame({
-            'resistivity': [rho] * 31,  # Default resistivity values
-            'depth': np.cumsum(np.logspace(0, 1.3, 31)).tolist()  # Example depth values from 0 to 300 meters
-            })
-        return cls(data=df)
-    
-
-class PyInterpretter(Panel):
-    def __init__(self):
-        super().__init__(id='pyinterp')
-
-    def initialize(self):
-        init = html.Div([
-            html.H2("Python Interpreter"),
-            dcc.Textarea(
-                id='code-input',
-                placeholder='Type Python code here...',
-                style={'width': '100%', 'height': 200}
-            ),
-            html.Br(),
-            html.Button('Run Code', id='run-btn', n_clicks=0),
-            html.H4("Output:"),
-            html.Pre(id='code-output', style={'backgroundColor': '#f4f4f4', 'padding': '10px'})
-        ])
-        return init
-    # def add_callbacks(self, app):
-    #     import sys
-    #     import io
-    #     import traceback
-    #     import numpy as np        
-    #     @app.callback(
-    #         Output('code-output', 'children'),
-    #         Input('run-btn', 'n_clicks'),
-    #         State('code-input', 'value')
-    #     )
-    #     def run_python_code(n_clicks, code):
-    #         if not code:
-    #             return "No code entered."
-
-    #         # Redirect stdout and stderr
-    #         old_stdout = sys.stdout
-    #         old_stderr = sys.stderr
-    #         redirected_output = sys.stdout = io.StringIO()
-    #         redirected_error = sys.stderr = io.StringIO()
-
-    #         try:
-    #             # Execute the code in a restricted namespace
-    #             exec(code)#, {"__builtins__": __builtins__}, {})
-    #             output = redirected_output.getvalue()
-    #             errors = redirected_error.getvalue()
-    #             return output + errors if output or errors else "Code executed successfully (no output)."
-    #         except Exception:
-    #             return traceback.format_exc()
-    #         finally:
-    #             # Restore stdout and stderr
-    #             sys.stdout = old_stdout
-    #             sys.stderr = old_stderr
-
 
 class HotKeyReminder(Panel):
     javascript =     """
