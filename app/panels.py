@@ -116,7 +116,7 @@ class Map(Panel):
             if self.settings.plot_by == 'misfit':
                 fig.update_coloraxes(cmin=0, cmax=3)
             elif self.settings.plot_by == 'doi':
-                fig.update_coloraxes(cmin=10, cmax=df_plot['doi'].max())
+                fig.update_coloraxes(cmin=df_plot['doi'].min()*0.5, cmax=df_plot['doi'].max())
         else:
             fig = px.scatter_map(
                 df_plot,
@@ -950,7 +950,7 @@ class dbdtSection(Panel):
             x_vals = x_vals[x_vals > -1]
 
         n_sites = len(x_vals)
-        self.buffer_start +=1
+        # self.buffer_start +=1
         plot_start = max(0, self.buffer_start)
         plot_end   = min(n_sites, self.buffer_start + self.buffer_len)
 

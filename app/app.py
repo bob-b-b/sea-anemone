@@ -2187,6 +2187,7 @@ def handle_url_hash(url_hash, model):
             
         if sesh.data is not None:
             buffer_length = 50
+            start = 0
             dbdt1.dataframe = sesh.data.copy()    
             # dbdt2.dataframe = sesh.data.copy()    
             m1.dataframe    = sesh.overview.copy()
@@ -2200,7 +2201,9 @@ def handle_url_hash(url_hash, model):
             dbdt2.dataframe = full_df          # keep full section view
             rhoa.dataframe  = buffered_df
             m1.buffer_sites = initial_sites.tolist()
-            dbdt2.buffer_sites = initial_sites.tolist()
+            # dbdt2.buffer_sites = initial_sites.tolist()
+            dbdt2.buffer_start = start
+            dbdt2.buffer_len   = buffer_length
 
 
             # rhoa.dataframe  = sesh.data.copy()    
