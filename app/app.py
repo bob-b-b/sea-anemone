@@ -812,6 +812,7 @@ def update_model_section_from_buffer(buffer_data):
         dbdt1.dataframe = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
         rhoa.dataframe  = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
     m1.buffer_sites = buffer_sites
+    m1.is_last_tab = False
     # rhoa.dataframe = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
     # dbdt1.buffer_sites = buffer_sites
     if buffer_data.get("source") == "buffer_button":
@@ -819,7 +820,7 @@ def update_model_section_from_buffer(buffer_data):
         mod2.highlighted = None
         m1.highlighted = None
         dbdt2.highlighted = None
-    return mod2.render(), dbdt2.render(), dbdt1.render(), m1.render(is_last_tab=False), mod1.render(), rhoa.render()
+    return mod2.render(), dbdt2.render(), dbdt1.render(), m1.render(), mod1.render(), rhoa.render()
 
 @app.callback(
     Output('data-buffer', 'data'),
@@ -991,7 +992,6 @@ def highlight_change(n1, n2, invert_layout_color, model, buffer_data):
     dbdt2.highlighted = highlighted
     dbdt1.dataframe = df_data[df_data['site_id'] == highlighted]
     rhoa.dataframe  = df_data[df_data['site_id'] == highlighted]
-
     # --- NEW: slide buffer only if highlight exits current buffer window ---
     new_buffer = no_update
     if buffer_data is not None and dbdt2.dataframe is not None:
@@ -1029,10 +1029,10 @@ def highlight_change(n1, n2, invert_layout_color, model, buffer_data):
                 buffer_data["start_site"] = start
                 buffer_data["source"] = "site_nav"
                 new_buffer = buffer_data
-
+    m1.is_last_tab = False
     return (
         ctx.triggered_id,
-        m1.render(is_last_tab=False),
+        m1.render(),
         mod1.render(),
         dbdt1.render(),
         Multi_inv.render(),
@@ -1083,7 +1083,8 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color,re
     dbdt2.highlighted = site_id
     dbdt1.dataframe   = df_data[df_data['site_id'] == site_id]
     rhoa.dataframe    = df_data[df_data['site_id'] == site_id]
-    return m1.render(is_last_tab=False), mod1.render(), dbdt1.render(), mod2.render(), dbdt2.render(), rhoa.render()
+    m1.is_last_tab = False
+    return m1.render(), mod1.render(), dbdt1.render(), mod2.render(), dbdt2.render(), rhoa.render()
 
 @app.callback(
     Output("starting-model", "data", allow_duplicate=True),
@@ -1299,8 +1300,8 @@ def upload_borehole(contents, filename):
     n_bh = len(bh_data)
     bh_ids = ', '.join(b['id'] for b in bh_data)
     msg = f"Loaded {n_bh} borehole(s): {bh_ids}"
-
-    return html.Div(msg), True, m1.render(is_last_tab=False), True, f"Loaded {n_bh} borehole(s)"
+    m1.is_last_tab = False
+    return html.Div(msg), True, m1.render(), True, f"Loaded {n_bh} borehole(s)"
 
 
 @app.callback(
@@ -2055,11 +2056,10 @@ def update_layout(model, active_idx,
         "interpret_layout": 'secondary'
     }
     colors[button_id] = 'primary'
-
+    m1.current_idx = active_idx
     # 🔥 ONE render only
+    m1.is_last_tab = is_interpret
     map_fig = m1.render(
-        current_idx=active_idx,
-        is_last_tab=is_interpret
     )
 
     if button_id == "upload_layout":
@@ -2079,7 +2079,7 @@ def update_layout(model, active_idx,
 
 
 layout_output_list = [
-        m1.output, dbdt1.output, dbdt2.output, rhoa.output, mod2.output,
+        m1.output, dbdt1.output, dbdt2.output, rhoa.output, Multi_inv.output, Sing_inv.output, mod2.output,
         
         Output('flex-layout',    'model', allow_duplicate=True),
 
@@ -2174,8 +2174,8 @@ def handle_url_hash(url_hash, model):
                     html.Br(), # Adds a line break to keep it tidy
                     html.Small("Upload a new .bor file below to overwrite existing data.", style={'color': '#6c757d', 'fontStyle': 'italic', 'fontSize': '0.85rem'})])
             res[-2] = {'display': 'block', 'marginTop': '10px'} # container style
-            
-            res[0] = m1.render(is_last_tab=False)
+            m1.is_last_tab = False
+            res[0] = m1.render()
         else:
             # If no boreholes, ensure UI reflects that
             res[-4] = False
@@ -2210,39 +2210,42 @@ def handle_url_hash(url_hash, model):
             Multi_inv.dataframe = sesh.data.copy()
             Sing_inv.dataframe = sesh.data.copy()
             profile.dataframe= sesh.models.copy()  if sesh.models is not None else None
-            res[0] = m1.render(is_last_tab=False)
+            m1.is_last_tab = False
+            res[0] = m1.render()
             res[1] = dbdt1.render()
             res[2] = dbdt2.render()
             res[3] = rhoa.render()
+            res[4] = Multi_inv.render()
+            res[5] = Sing_inv.render()
         
         if sesh.models is not None:
             mod1.dataframe  = sesh.models.copy()
             mod2.dataframe  = sesh.models.copy()
-            res[4] = mod2.render()
+            res[6] = mod2.render()
 
-            res[6]   = 'secondary'
-            res[7]   = 'secondary'
-            res[8]   = 'secondary'
-            res[9]   = 'success'
-            res[10]  = 'secondary'
-            res[11]  = False
-            res[12]  = False
-            res[13]  = False
-            res[14]  = False
-            res[15]  = False
-        else:
-
-            res[6]   = 'success'
-            res[7]   = 'secondary'
             res[8]   = 'secondary'
             res[9]   = 'secondary'
             res[10]   = 'secondary'
-
-            res[11]  = False
-            res[12]  = False
+            res[11]   = 'success'
+            res[12]  = 'secondary'
             res[13]  = False
-            res[14]  = True
-            res[15]  = True
+            res[14]  = False
+            res[15]  = False
+            res[16]  = False
+            res[17]  = False
+        else:
+
+            res[8]   = 'success'
+            res[9]   = 'secondary'
+            res[10]   = 'secondary'
+            res[11]   = 'secondary'
+            res[12]   = 'secondary'
+
+            res[13]  = False
+            res[14]  = False
+            res[15]  = False
+            res[16]  = True
+            res[17]  = True
             
     res[-1] = ''
     return res
@@ -2475,7 +2478,8 @@ def manage_windows(click_data, n_closes, current_windows, combined_state,all_lin
 def update_map_hover(hoverData, active_idx):
     if not hoverData or 'points' not in hoverData or not hoverData['points']:
         m1.hover_marker = None
-        return m1.render(is_last_tab=True)
+        m1.is_last_tab = True
+        return m1.render()
 
     try:
         point = hoverData['points'][0]
@@ -2524,8 +2528,8 @@ def update_map_hover(hoverData, active_idx):
         m1.hover_marker = {
             "latitude": lat,
             "longitude": lon}
-        
-        return m1.render(is_last_tab=True)
+        m1.is_last_tab = True
+        return m1.render()
 
     except Exception as e:
         print(f"Hover Sync Error: {e}")
@@ -2647,21 +2651,24 @@ def master_line_controller(url_hash,relayout, disable_n, enable_n, highlight_nex
 
         if num_profiles == 0:
             current_idx = 0
-            updated_map = m1.render(is_last_tab=True)
+            m1.is_last_tab = True
+            updated_map = m1.render()
             updated_map.update_layout(shapes=[])
             return 0, updated_map
         else:
             # keep index valid
             current_idx = min(current_idx, num_profiles - 1)
-            updated_map = m1.render(current_idx=current_idx, is_last_tab=True)
+            # m1.current_idx = current_idx
+            # updated_map = m1.render(is_last_tab=True)
 
     num_profiles = len(unique_ids)
     
     prev_disabled = (current_idx <= 0) or (num_profiles == 0)
     next_disabled = (current_idx >= num_profiles - 1) or (num_profiles == 0)
     
-
-    updated_map = m1.render(current_idx=current_idx,is_last_tab=True)
+    m1.current_idx = current_idx
+    m1.is_last_tab=True
+    updated_map = m1.render()
     updated_map.update_layout(shapes=[])
 
     rows = []
