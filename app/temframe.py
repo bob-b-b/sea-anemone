@@ -13,12 +13,6 @@ def silence(s):
 from anemone.inversion import LogResistivity
 from anemone.inversion import fastJac, SCI
 
-iteration_cap = 10
-if iteration_cap<50:
-    import warnings
-    warnings.warn("The default iteration cap for TEMframe inversion has been reduced to 10 to speed up testing. Change it back to 50 for production runs.", UserWarning)
-
-
 def make_log():
     from __main__ import sesh
     sesh.inv_status = []
