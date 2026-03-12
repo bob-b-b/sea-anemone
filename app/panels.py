@@ -69,13 +69,15 @@ class Map(Panel):
     boreholes : dict = None
     rock_color_map = None
     tiff_layer = None
+    current_idx = None
+    is_last_tab = False
 
     def __init__(self, data, **kwargs):
         settings = MapSettings(id='map', **kwargs)
         super().__init__(id='map', settings=settings)
         self.dataframe = data
 
-    def render(self, current_idx=None, is_last_tab = False):
+    def render(self):
         if self.dataframe is None: return self.empty_render()
         df_plot = self.dataframe
         # if 'site_id' in df_plot.columns:
@@ -116,7 +118,7 @@ class Map(Panel):
             if self.settings.plot_by == 'misfit':
                 fig.update_coloraxes(cmin=0, cmax=3)
             elif self.settings.plot_by == 'doi':
-                fig.update_coloraxes(cmin=10, cmax=df_plot['doi'].max())
+                fig.update_coloraxes(cmin=df_plot['doi'].min()*0.5, cmax=df_plot['doi'].max())
         else:
             fig = px.scatter_map(
                 df_plot,
@@ -202,8 +204,8 @@ class Map(Panel):
             # Identify the actual ID of the active line
             # (Handling case where current_idx might be out of range)
             active_line_id = None
-            if current_idx is not None and 0 <= current_idx < len(unique_ids):
-                active_line_id = unique_ids[current_idx]
+            if self.current_idx is not None and 0 <= self.current_idx < len(unique_ids):
+                active_line_id = unique_ids[self.current_idx]
 
             # --- Trace 1: Inactive Lines (Yellow, Width 5) ---
             inactive_df = self.lines[self.lines['line'] != active_line_id]
@@ -244,21 +246,20 @@ class Map(Panel):
                     fig.add_trace(trace)
 
 
-        tools_to_add = ['drawline', 'drawopenpath'] if is_last_tab else []
-        tools_to_remove = ['select2d','lasso2d','zoomIn', 'zoomOut'] if is_last_tab else []
+        tools_to_add = ['drawline', 'drawopenpath'] if self.is_last_tab else []
+        tools_to_remove = ['select2d','lasso2d','zoomIn', 'zoomOut'] if self.is_last_tab else []
 
         # 2. Update the layout dynamically
         fig.update_layout(
             margin={"r":0,"t":0,"l":0,"b":0},
             # uirevision=str(is_last_tab),
-            uirevision=f"mode-{is_last_tab}",
+            uirevision=f"mode-{self.is_last_tab}",
             modebar=dict(add=tools_to_add, remove=tools_to_remove),
             newshape=dict(line_color='cyan', line_width=4, line_dash='dash'),
             dragmode='pan', 
             showlegend=False,
             map=dict(bearing=0, pitch=0)
         )
-        # print("is last tab", is_last_tab)
 
         return fig    
     
@@ -418,6 +419,7 @@ class Map(Panel):
                     from __main__ import sesh
                     sesh.lines = self.lines
                     del relayout_data['shapes']
+                    self.is_last_tab = False
                     fig = self.render()
             return relayout_data, fig
 
@@ -950,7 +952,7 @@ class dbdtSection(Panel):
             x_vals = x_vals[x_vals > -1]
 
         n_sites = len(x_vals)
-        self.buffer_start +=1
+        # self.buffer_start +=1
         plot_start = max(0, self.buffer_start)
         plot_end   = min(n_sites, self.buffer_start + self.buffer_len)
 

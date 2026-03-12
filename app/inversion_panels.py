@@ -336,7 +336,8 @@ class MultiInversion(Panel):
                 [Output('review_layout', 'disabled', allow_duplicate=True),
                 Output('interpret_layout', 'disabled', allow_duplicate=True),
                 Output("multi_inv", "figure", allow_duplicate=True),
-                Output("review_layout","color", allow_duplicate=True)],
+                Output("review_layout","color", allow_duplicate=True),
+                Output("map_plot_by",'value', allow_duplicate=True)],
             Input('invert_all_button', 'n_clicks'),
             State('review_layout', 'n_clicks'),  # Add this state to get current value
             State("vc-level", "data"),
@@ -382,10 +383,11 @@ class MultiInversion(Panel):
                 sesh.models, sesh.data, self.site = sesh.data.invert(res_start,vc = Vert, hc = Horz)
                 #sesh.update_site_table()
                 m1.dataframe = sesh.overview.copy()
+                # m1.settings.plot_by = 'misfit'
                 self.title = "Inversion Finished!!!"
                 new_review_clicks = (current_review_clicks or 0) + 1
                 # layouts.invert = layouts.invert_multi_first
-                return False, False, self.render(), "success"#,new_review_clicks,  0mod2.render(), dbdt1.render(), 
+                return False, False, self.render(), "success","misfit"#,new_review_clicks,  0mod2.render(), dbdt1.render(), 
             raise PreventUpdate
         
         @app.callback(

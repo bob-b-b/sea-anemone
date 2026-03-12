@@ -120,8 +120,8 @@ class Session:
 
     @property
     def overview(self):
-        if self.site is not None:
-            return self.site
+        # if self.site is not None:
+        #     return self.site
         self.update_site_table()
         return self.site        
 
