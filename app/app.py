@@ -313,9 +313,8 @@ def build_gps_dem_summary():
 
 if os.path.exists(session_tracker):
     with open(session_tracker, 'rt') as f:
-        session_files = f.readlines()
-        session_files = [x for x in session_files if os.path.exists(x)]
-    session_files = list(set([line.strip() for line in session_files if line.strip() != '']))
+        session_files = [x.strip() for x in f.readlines() if os.path.exists(x.strip())]
+    session_files = list(set(session_files))
 
 else:
     session_files = []
@@ -2684,6 +2683,8 @@ def master_line_controller(url_hash,relayout, disable_n, enable_n, highlight_nex
 import signal
 @app.server.route("/shutdown", methods=["POST"])
 def shutdown():
+    print('closing app, saving data to zip...')
+    sesh.save()    
     os.kill(os.getpid(), signal.SIGINT)  # Send a signal to the process to terminate
 
 
@@ -2695,4 +2696,5 @@ if __name__ == "__main__":
     finally:
         print('closing app, saving data to zip...')
         sesh.save()
+        os.kill(os.getpid(), signal.SIGINT)  # Send a signal to the process to terminate
 #start msedge --app=http://127.0.0.1:8050/
