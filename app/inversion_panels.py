@@ -355,7 +355,7 @@ class MultiInversion(Panel):
             prevent_initial_call=True
         )
         def launch_inversion(n_clicks, current_review_clicks, vc_level,hc_level,starting_model):
-            from __main__ import sesh
+            from __main__ import sesh,m1
             if n_clicks:
                 from torch import from_numpy, tensor
                 print('starting model:', starting_model["rho"])
@@ -380,7 +380,8 @@ class MultiInversion(Panel):
                     Horz = 0.1
                 res_start                        = LogResistivity.smooth(rho,z) 
                 sesh.models, sesh.data, self.site = sesh.data.invert(res_start,vc = Vert, hc = Horz)
-                # sesh.site = sesh.data.overview()
+                #sesh.update_site_table()
+                m1.dataframe = sesh.overview.copy()
                 self.title = "Inversion Finished!!!"
                 new_review_clicks = (current_review_clicks or 0) + 1
                 # layouts.invert = layouts.invert_multi_first
@@ -879,18 +880,6 @@ class Single_site(Panel):
             self.curves = None
             return self.render()
 
-        # @app.callback(
-        #     Output("selected-site-id", "data"),
-        #     Input("map", "clickData"),
-        #     prevent_initial_call=True
-        # )
-        # def select_site_from_map(click_data):
-        #     if not click_data or "points" not in click_data:
-        #         raise PreventUpdate
-
-        #     site_id = int(click_data["points"][0]["pointNumber"])
-        #     return site_id
-        
         @app.callback(
             Output("vc-single-levels", "data"),
             Output("vc_sing_loose_button", "color"),

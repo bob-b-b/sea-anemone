@@ -838,7 +838,6 @@ def update_buffer(next_clicks, prev_clicks, beginning_clicks, buffer_data):
 
     length = buffer_data["length"]
     start  = buffer_data["start_site"]
-
     # Get total number of sites from models (safer than tTEM)
     if dbdt2.dataframe is None:
         raise PreventUpdate
@@ -916,11 +915,10 @@ def update_model_on_interpret(_, invert_color):
     [Output('output-click', 'children', allow_duplicate=True),
     Output('session-save-complete', 'data', allow_duplicate=True),],
     Input('saveButton', 'n_clicks'),
-    Input('saveButton-profiles', 'n_clicks'),
     prevent_initial_call=True,
     allow_duplicate=True
 )
-def save_session(n1,n2):
+def save_session(n1):
     if sesh.save_dir is None:
         _configure_tk_dpi_awareness()
         root = Tk()
@@ -1022,9 +1020,9 @@ def highlight_change(n1, n2, invert_layout_color, model, buffer_data):
 
                 # slide buffer when highlight exits window
                 if idx-1 < start:
-                    start = idx-1
+                    start = idx-5
                 elif idx > start + length:
-                    start = idx - length
+                    start = idx - length+4
 
                 # clamp
                 start = max(0, min(start, max(0, len(x_vals) - length)))
@@ -1074,7 +1072,7 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color,re
         site_id = mod2.dataframe.query(f'{mod2.settings.x_axis} == @x_value')['site_id'].iloc[0]
     elif trigger_id == 'map':
         x_value,y_value = click_data['points'][0]['lon'],click_data['points'][0]['lat']
-        all_dist = cdist(m1.dataframe.latitude, m1.dataframe.longitude, y_value, x_value)
+        all_dist = cdist(m1.dataframe.latitude, m1.dataframe.longitude, y_value+0.00000002, x_value+0.000000002)
         site_id = m1.dataframe.loc[np.argmin(all_dist), 'site_id']
         if m1.boreholes is not None:
             print('check the boreholes man!')
@@ -1199,11 +1197,13 @@ def upload_file(contents, current_process_clicks):
     # dbdt1.dataframe = sesh.data.copy()
     # buffer_sites = 
     # m1.dataframe    = sesh.overview
-    m1.dataframe = sesh.data.copy()
+    m1.dataframe    = sesh.overview.copy()
     
     buffer_length = 50
     # unique_sites = np.sort(sesh.data['site_id'].unique())
-    unique_sites = np.sort(sesh.data.loc[sesh.data['site_id'] != -1, 'site_id'].unique())
+    # unique_sites = np.sort(sesh.data.loc[sesh.data['site_id'] != -1, 'site_id'].unique())
+    unique_sites = np.sort(sesh.site['site_id'].dropna().unique())
+    unique_sites = unique_sites#[unique_sites != -1]
     initial_sites = unique_sites[:buffer_length]
 
     m1.buffer_sites = initial_sites.tolist()
@@ -1997,68 +1997,7 @@ def update_profile_callback(relayout, mode, selected_idx, global_cbar_data, view
     return fig, {"type": "select", "tabId": "tab-profile-plot-content_2"},# mod2.render()
 
 
-# --------------------- SAVE PROFILE AS PNG AND KMZ ---------------------
-@app.callback(
-    Output("export-message-container", "children"),
-    #Input("btn-export-profile", "n_clicks"),
-    Input("enableButton",'n_clicks'),
-    State("profile_plot_main", "figure"), 
-    State("selected-line-index", "data"),
-    State("interpret_layout",'color'),
-    prevent_initial_call=True
-)
-def trigger_export(n_clicks, fig_data, current_idx, interpret_color):
-    # 1. Validation
-    if interpret_color != 'primary':
-        raise PreventUpdate
-    if not n_clicks:
-        return no_update
 
-    # Access the lines from your m1 instance (Map class)
-    if m1.lines is None or m1.lines.empty:
-        return dbc.Alert("Error: No profile lines found to export!", color="warning")
-
-    # 2. Setup Directory
-    target_dir = getattr(sesh, 'save_dir', None)
-    if target_dir is None:
-        target_dir = os.getcwd()
-
-    try:
-        # 3. Get specific line data
-        unique_ids = sorted(m1.lines['line'].unique())
-        if current_idx >= len(unique_ids):
-            return dbc.Alert("Error: Selected line index out of range.", color="danger")
-            
-        line_id = unique_ids[current_idx]
-        # Filter the dataframe for just the coordinates of the current profile
-        current_line_df = m1.lines[m1.lines['line'] == line_id]
-        
-        # Convert to list of dicts or whatever GIS_helpers expects
-        current_coords = current_line_df.to_dict('records')
-
-
-        # 4. Execute Save logic
-        # Passing fig_data, coords, and the ID to your helper
-        kmz_full_path, png_full_path = GIS_helpers.save_profile_data(
-            fig_data, 
-            current_coords, 
-            line_id, 
-            target_dir
-        )
-        
-        kmz_name = os.path.basename(kmz_full_path)
-        png_name = os.path.basename(png_full_path)
-
-        return dbc.Alert(
-            f"✅ Successfully saved {kmz_name} and {png_name} to {target_dir}",
-            color="success",
-            duration=4000, 
-            dismissable=True
-        )
-                    
-    except Exception as e:
-        print(f"Export Error: {e}")
-        return dbc.Alert(f"Export Failed: {str(e)}", color="danger")
 
 @app.callback(
     Output('dem-upload-container', 'style'),
@@ -2248,14 +2187,24 @@ def handle_url_hash(url_hash, model):
             m1.lines = sesh.lines.copy()
             
         if sesh.data is not None:
+            buffer_length = 50
             dbdt1.dataframe = sesh.data.copy()    
-            dbdt2.dataframe = sesh.data.copy()    
+            # dbdt2.dataframe = sesh.data.copy()    
             m1.dataframe    = sesh.overview.copy()
-            # unique_sites = np.sort(sesh.data.loc[sesh.data['site_id'] != -1, 'site_id'].unique())
-            # initial_sites = unique_sites[:buffer_length]
+            full_df = sesh.data.copy()
+            unique_sites = np.sort(sesh.site['site_id'].dropna().unique())
+            unique_sites = unique_sites[unique_sites != -1]
+            initial_sites = unique_sites[:buffer_length]
+            buffered_df = full_df[full_df['site_id'].isin(initial_sites)].copy()
 
-            # m1.buffer_sites = initial_sites.tolist()
-            rhoa.dataframe  = sesh.data.copy()    
+            dbdt1.dataframe = buffered_df
+            dbdt2.dataframe = full_df          # keep full section view
+            rhoa.dataframe  = buffered_df
+            m1.buffer_sites = initial_sites.tolist()
+            dbdt2.buffer_sites = initial_sites.tolist()
+
+
+            # rhoa.dataframe  = sesh.data.copy()    
             Multi_inv.dataframe = sesh.data.copy()
             Sing_inv.dataframe = sesh.data.copy()
             profile.dataframe= sesh.models.copy()  if sesh.models is not None else None
@@ -2602,21 +2551,20 @@ def show_zoom_warning(relayout_data):
     Output("map", "figure", allow_duplicate=True),
     Input("url", "hash"),
     Input("map", "relayoutData"),           
-    Input("disableButton", "n_clicks"), 
+    Input("disableButton", "n_clicks"),
+    Input("enableButton", "n_clicks"), 
     Input("highlight_next", "n_clicks"),
-    Input("highlight_prev", "n_clicks"),
-    Input({"type": "view-line-btn", "index": ALL}, "n_clicks"),       
+    Input("highlight_prev", "n_clicks"),     
     State("selected-line-index", "data"),
+    State("profile_plot_main", "figure"), 
     State("interpret_layout", "color"),
     prevent_initial_call=True
 )
-def master_line_controller(url_hash,relayout, disable_n, highlight_next_n, highlight_prev_n, view_clicks, current_idx, interpret_color):
+def master_line_controller(url_hash,relayout, disable_n, enable_n, highlight_next_n, highlight_prev_n, current_idx, fig_data, interpret_color):
     if interpret_color != 'primary':
         raise PreventUpdate
-    ctx = callback_context
     if not ctx.triggered:
         return no_update
-    
     if url_hash and '#load' in url_hash:
         # from __main__ import sesh
         # If the session has lines, make sure m1 has them
@@ -2652,7 +2600,32 @@ def master_line_controller(url_hash,relayout, disable_n, highlight_next_n, highl
         if num_lines == 0:
             raise PreventUpdate
         current_idx = min(num_lines - 1, current_idx + 1)
+    elif "enableButton" in trigger_id:
+        unique_ids = sorted(m1.lines['line'].unique())
+        if current_idx >= len(unique_ids):
+            return dbc.Alert("Error: Selected line index out of range.", color="danger")
+            
+        line_id = unique_ids[current_idx]
+        # Filter the dataframe for just the coordinates of the current profile
+        current_line_df = m1.lines[m1.lines['line'] == line_id]
+        
+        # Convert to list of dicts or whatever GIS_helpers expects
+        current_coords = current_line_df.to_dict('records')
 
+        target_dir = getattr(sesh, 'save_dir', None)
+        if target_dir is None:
+            target_dir = os.getcwd()
+        # 4. Execute Save logic
+        # Passing fig_data, coords, and the ID to your helper
+        kmz_full_path, png_full_path = GIS_helpers.save_profile_data(
+            fig_data, 
+            current_coords, 
+            line_id, 
+            target_dir
+        )
+        
+        kmz_name = os.path.basename(kmz_full_path)
+        png_name = os.path.basename(png_full_path)
     # --- ACTION: CLEAR SELECTED ---
     elif "disableButton" in trigger_id:
         if num_lines == 0:
@@ -2674,7 +2647,7 @@ def master_line_controller(url_hash,relayout, disable_n, highlight_next_n, highl
             current_idx = 0
             updated_map = m1.render(is_last_tab=True)
             updated_map.update_layout(shapes=[])
-            return [], 0, True, True, updated_map
+            return 0, updated_map
         else:
             # keep index valid
             current_idx = min(current_idx, num_profiles - 1)

@@ -687,6 +687,9 @@ class rhoaSounding(dbdtSounding):
     @staticmethod
     def to_rhoa(time, dbdt, area=1., current=1.):
         from numpy import pi
+        from __main__ import sesh
+        x = sesh.data.dmfwr.source.x
+        area = (x.max() - x.min())**2
         mu0 = 4 * pi * 1e-7
         if dbdt.ndim > time.ndim:
             t = time[np.newaxis, :]
