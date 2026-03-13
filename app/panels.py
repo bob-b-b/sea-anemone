@@ -430,7 +430,7 @@ class dbdtSoundingSettings(PanelSettings):
     hm_color: str = '#ff0000'
     lm_factor: int = 20
     hm_factor: int = 1
-    plot_error: bool = False
+    # plot_error: bool = False
     x_axis: Literal['time', 'gate_id'] = 'time'  # or 'site_id', 'longitude', 'latitude'
     dbdt_max: float = -3
     dbdt_min: float = -12
@@ -445,9 +445,9 @@ class dbdtSounding(Panel):
         for key, value in kwargs.items():
             setattr(self, key, value)
         
-        # if self.dataframe is not None:
-        #     self.settings.dbdt_min = np.abs(self.dataframe['dbdt'].values).min()
-        #     self.settings.dbdt_max = np.abs(self.dataframe['dbdt'].values).max()
+        if self.dataframe is not None:
+            self.settings.dbdt_min = np.abs(self.dataframe['dbdt'].values).min()
+            self.settings.dbdt_max = np.abs(self.dataframe['dbdt'].values).max()
 
     def compare_synthetic(self):
 
@@ -705,8 +705,6 @@ class rhoaSounding(dbdtSounding):
         super().__init__(id='rhoa', settings=settings)
         for key, value in kwargs.items():
             setattr(self, key, value)
-        self.settings.dbdt_min = 0
-        self.settings.dbdt_max = 3
 
 
     def compare_synthetic(self):
@@ -1895,7 +1893,8 @@ class ModelSection(Panel):
 
         fig.update_layout(yaxis2=dict(title=dict(text="Misfit",standoff=10),overlaying="y",side="right",showgrid=False)
 )
-        doi_df = (df_layers_long.groupby(self.settings.x_axis)["doi"].first().reset_index())
+        doi_df = (df_layers_long.groupby(self.settings.x_axis)["doi"].first().reset_index()).dropna()
+        # doi_df = doi_df.loc['doi' ]
         if not doi_df.empty:
             x_min = min(x_slice)
             x_max = max(x_slice)
@@ -1910,10 +1909,10 @@ class ModelSection(Panel):
                         [x_min]
                     ]),
                     y=np.concatenate([
-                        [y_max + 50],
+                        [y_max + 5000],
                         doi_df["doi"].values,
-                        [y_max + 50],
-                        [y_max + 50]
+                        [y_max + 5000],
+                        [y_max + 5000]
                     ]),
                     fill="toself",
                     fillcolor="rgba(255,255,255,0.6)",
@@ -2162,7 +2161,7 @@ class HotKeyReminder(Panel):
                     dbc.ButtonGroup([
                         dbc.Button("Save session [ctrl+s]", id='saveButton'),
                     ]),
-                    html.Div(style={'width':'30px'}),
+                    # html.Div(style={'width':'30px'}),
                     dbc.Tooltip("Save the current session to the default location or select a folder", target='saveButton', placement='top'),
                     dbc.Tooltip("Used to disable noisy data or data which cannot be fitted in inversions.", target='disableButton', placement='top'),
                     dbc.Tooltip("Used to enable previously disabled data.", target='enableButton', placement='top'),

@@ -408,23 +408,23 @@ app.layout = html.Div([
     }),
     html.Div([flex_layout], style={'marginTop': '60px'}),  # Push content below fixed header
     html.Div(id='output-click'),
-    dbc.Button(
-        "?",
-        id='help-fab',
-        color='primary',
-        style={
-            'position': 'fixed',
-            'right': '24px',
-            'bottom': '24px',
-            'width': '56px',
-            'height': '56px',
-            'borderRadius': '50%',
-            'fontSize': '24px',
-            'zIndex': 3000,
-            'boxShadow': '0 6px 16px rgba(0,0,0,0.2)'
-        }
-    ),
-    html.Div(id='help-window')
+    # dbc.Button(
+    #     "?",
+    #     id='help-fab',
+    #     color='primary',
+    #     style={
+    #         'position': 'fixed',
+    #         'right': '24px',
+    #         'bottom': '24px',
+    #         'width': '56px',
+    #         'height': '56px',
+    #         'borderRadius': '50%',
+    #         'fontSize': '24px',
+    #         'zIndex': 3000,
+    #         'boxShadow': '0 6px 16px rgba(0,0,0,0.2)'
+    #     }
+    # ),
+    # html.Div(id='help-window')
 ])
 
 for panel in panels:

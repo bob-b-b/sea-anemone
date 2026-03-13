@@ -380,8 +380,7 @@ class MultiInversion(Panel):
                 elif hc_level == "tight":
                     Horz = 0.1
                 res_start                        = LogResistivity.smooth(rho,z) 
-                sesh.models, sesh.data, self.site = sesh.data.invert(res_start,vc = Vert, hc = Horz)
-                #sesh.update_site_table()
+                sesh.models, sesh.data, _ = sesh.data.invert(res_start,vc = Vert, hc = Horz)               
                 m1.dataframe = sesh.overview.copy()
                 # m1.settings.plot_by = 'misfit'
                 self.title = "Inversion Finished!!!"

@@ -221,12 +221,6 @@ class PanelSettings:
                     )
                 )
             form_items.append(dbc.Row(row_children, className='mb-2'))
-        form_items.append(dbc.Button(
-            "Apply Settings",
-            id=f'{self.id}_apply_settings',
-            n_clicks=0,
-            style={'margin': '10px'}
-        ))
         return html.Div([dbc.Form(form_items, style={'margin': '10px'}), 
                          gear_maker(self.id+'_settings')], style={'width':'95%'})
 
@@ -329,67 +323,39 @@ class Panel:
     def add_callbacks(self, app):
         if self.settings is not None:
             self.settings.add_callbacks(app)
-
-            if not self.settings.flat_keys:
-                        return
-    
-            def update_render(global_data, current_attr, *args):
-                # 1. Update from Global Store (vmin, vmax, log)
-                if global_data and current_attr in global_data:
-                    config = global_data[current_attr]
-                    for attr in ['vmin', 'vmax', 'log']:
-                        if hasattr(self.settings, attr) and attr in config:
-                            setattr(self.settings, attr, config[attr])
-
-                # 2. Update all other settings from the UI
-                # IMPORTANT: args must align 1:1 with flat_keys
+            def update_render(*args):
                 for key, arg in zip(self.settings.flat_keys, args):
-                    # Handle Dash Color Picker dicts
                     if isinstance(arg, dict) and 'hex' in arg:
                         arg = arg['hex']
                     
                     if hasattr(self.settings, key):
-                        # Get expected type from Pydantic/PanelSettings schema
-                        prop_info = self.settings.schema['properties'].get(key, {})
-                        prop_type = prop_info.get('type')
-                        try:
-                            if prop_type == 'integer' and arg is not None:
-                                # float conversion first handles cases like '20.0'
-                                arg = int(float(arg)) 
-                            elif prop_type == 'number' and arg is not None:
-                                arg = float(arg)
-                            elif prop_type == 'boolean':
-                                # Handles string 'true' or actual boolean True
-                                arg = (str(arg).lower() == 'true' or arg is True)
-                            
-                            # If type is None (common for Literals) or 'string', 
-                            # we leave it as a string (e.g., 'longitude', '#ff0000')
-                            setattr(self.settings, key, arg)
-                            
-                        except (ValueError, TypeError) as e:
-                            print(f"Type Mismatch on {key}: cannot convert {arg} to {prop_type}")
+                        if self.settings.schema['properties'][key].get('type')=='integer':
+                            arg = int(arg)
+                        elif self.settings.schema['properties'][key].get('type')=='number':
+                            arg = float(arg)
+                        elif self.settings.schema['properties'][key].get('type')=='boolean':
+                            arg = (arg=='true' or arg is True)
+                        setattr(self.settings, key, arg)
+                    elif '-' in key:
+                        basekey,index = key.split('-')
+                        if hasattr(self.settings, basekey):
+                            arg = (arg=='true' or arg is True)
+                            exec(f'self.settings.{basekey}[{index}] = arg')
+                return self.render()        
+            update_render = app.callback(Output(self.id, self.childname),
+                        [Input({'type': f'settings-{self.id}', 'key': x}, 'value') for x in self.settings.flat_keys])(update_render)
 
-                return self.render()
-
-
-        if self.settings is None:
-            return    
-        # self.settings.add_callbacks(app)
-        if self.childname != "figure":
-            return
-
-        @app.callback(
-            Output(self.id, self.childname, allow_duplicate=True),
-            Input(f"{self.id}_apply_settings", "n_clicks"),
-            [State({'type': f'settings-{self.id}', 'key': k}, 'value')
-                for k in self.settings.flat_keys],
-            prevent_initial_call=True
-        )
-        def apply_settings(n, *values):
-            if not n:
-                raise PreventUpdate
-            update_render(None, None, *values)
-            return self.render()
+        # @app.callback(
+        #     Output(self.id, self.childname, allow_duplicate=True),
+        #     Input(f"{self.id}_apply_settings", "n_clicks"),
+        #     [State({'type': f'settings-{self.id}', 'key': k}, 'value') for k in self.settings.flat_keys],
+        #     prevent_initial_call=True
+        # )
+        # def apply_settings(n, *values):
+        #     if not n:
+        #         raise PreventUpdate
+        #     update_render(None, None, *values)
+        #     return self.render()
 
             
     def initialize(self):

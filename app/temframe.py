@@ -587,6 +587,7 @@ class TEMframe(DataFrame):
             row_meta['resistivity'] = rho.detach().cpu().numpy().tolist()
             row_meta['thickness'] = thick.detach().cpu().numpy().tolist()
             # row_meta['misfit'] = df_data.loc[data_id, 'misfit'].mean()
+            row_meta['doi'] = doi[i]
             
             results.append(row_meta.to_dict())
             print(f'Inversion for data_id {i:02d} completed.')
