@@ -360,6 +360,7 @@ app.layout = html.Div([
     dcc.Store(id='data-buffer',data={"length": 50, "start_site":0}),
     dcc.Store(id="dem-applied", data=False),
     dcc.Store(id="dem-downloaded", data=False),
+    html.Div(id="export-message-container",style={"position": "fixed","top": "80px","right": "20px","zIndex": 9999}),
     dcc.Store(id="dem-api-keys", data=[], storage_type="local"),
     dcc.Store(id="borehole-loaded", data=False),
     html.Div([dbc.Toast(
@@ -2558,7 +2559,7 @@ def show_zoom_warning(relayout_data):
     Input("url", "hash"),
     Input("map", "relayoutData"),           
     Input("disableButton", "n_clicks"),
-    Input("enableButton", "n_clicks"), 
+    # Input("enableButton", "n_clicks"), 
     Input("highlight_next", "n_clicks"),
     Input("highlight_prev", "n_clicks"),     
     State("selected-line-index", "data"),
@@ -2566,7 +2567,7 @@ def show_zoom_warning(relayout_data):
     State("interpret_layout", "color"),
     prevent_initial_call=True
 )
-def master_line_controller(url_hash,relayout, disable_n, enable_n, highlight_next_n, highlight_prev_n, current_idx, fig_data, interpret_color):
+def master_line_controller(url_hash,relayout, disable_n, highlight_next_n, highlight_prev_n, current_idx, fig_data, interpret_color):
     if interpret_color != 'primary':
         raise PreventUpdate
     if not ctx.triggered:
@@ -2606,33 +2607,7 @@ def master_line_controller(url_hash,relayout, disable_n, enable_n, highlight_nex
         if num_lines == 0:
             raise PreventUpdate
         current_idx = min(num_lines - 1, current_idx + 1)
-    elif "enableButton" in trigger_id:
-        unique_ids = sorted(m1.lines['line'].unique())
-        if current_idx >= len(unique_ids):
-            return dbc.Alert("Error: Selected line index out of range.", color="danger")
-            
-        line_id = unique_ids[current_idx]
-        # Filter the dataframe for just the coordinates of the current profile
-        current_line_df = m1.lines[m1.lines['line'] == line_id]
-        
-        # Convert to list of dicts or whatever GIS_helpers expects
-        current_coords = current_line_df.to_dict('records')
 
-        target_dir = getattr(sesh, 'save_dir', None)
-        if target_dir is None:
-            target_dir = os.getcwd()
-        # 4. Execute Save logic
-        # Passing fig_data, coords, and the ID to your helper
-        kmz_full_path, png_full_path = GIS_helpers.save_profile_data(
-            fig_data, 
-            current_coords, 
-            line_id, 
-            target_dir
-        )
-        
-        kmz_name = os.path.basename(kmz_full_path)
-        png_name = os.path.basename(png_full_path)
-    # --- ACTION: CLEAR SELECTED ---
     elif "disableButton" in trigger_id:
         if num_lines == 0:
             raise PreventUpdate
@@ -2690,6 +2665,59 @@ def master_line_controller(url_hash,relayout, disable_n, enable_n, highlight_nex
         ))
     return current_idx, updated_map
 
+@app.callback(
+    Output("export-message-container", "children"),
+    Input("enableButton", "n_clicks"),
+    State("profile_plot_main", "figure"),
+    State("selected-line-index", "data"),
+    State("interpret_layout", "color"),
+    prevent_initial_call=True,
+)
+def export_profile(n_clicks, fig_data, current_idx, interpret_color):
+
+    if m1.lines is None or m1.lines.empty:
+        return dbc.Toast(
+            "No profile lines found to export.",
+            header="Export Error",
+            icon="danger",
+            is_open=True,
+            duration=4000,
+        )
+
+    target_dir = getattr(sesh, 'save_dir', None) or os.getcwd()
+
+    unique_ids = sorted(m1.lines['line'].unique())
+
+    if current_idx >= len(unique_ids):
+        return dbc.Toast(
+            "Selected line index out of range.",
+            header="Export Error",
+            icon="danger",
+            is_open=True,
+            duration=4000,
+        )
+
+    line_id = unique_ids[current_idx]
+    current_line_df = m1.lines[m1.lines['line'] == line_id]
+    current_coords = current_line_df.to_dict('records')
+
+    kmz_full_path, png_full_path = GIS_helpers.save_profile_data(
+        fig_data,
+        current_coords,
+        line_id,
+        target_dir
+    )
+
+    kmz_name = os.path.basename(kmz_full_path)
+    png_name = os.path.basename(png_full_path)
+
+    return dbc.Toast(
+        f"Saved {kmz_name} and {png_name}",
+        header="Export Complete",
+        icon="success",
+        is_open=True,
+        duration=4000,
+    )
 import signal
 @app.server.route("/shutdown", methods=["POST"])
 def shutdown():
