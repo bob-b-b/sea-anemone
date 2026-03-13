@@ -261,7 +261,7 @@ class Profile(Panel):
             dcc.Store(id="selected-line-index", data=0),
             dcc.Store(id="map-hover-marker-store", data=None),
             dcc.Store(id="map-settings-store", data={}),
-            dcc.Store(id='global-color-map-store', data=None),#color_master_map if self.dataframe is not None else None),
+            # dcc.Store(id='global-color-map-store', data=None),#color_master_map if self.dataframe is not None else None),
             dcc.Store(id="points-available-attrs-store", data=None),# if self.dataframe is not None else 'date'),
             dcc.Store(id="profile-busy-store", data=False),
             dcc.Store(id="profile-load-trigger", data=0),

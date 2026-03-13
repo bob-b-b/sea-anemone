@@ -375,15 +375,7 @@ app.layout = html.Div([
                 ),
             ], id="toast-container"),
 
-    dcc.Store(id='global-colorbar-store', data={
-            'resistivity': {'vmin': 1, 'vmax': 300, 'log': True},
-            'DOI': {'vmin': 0, 'vmax': 500, 'log': False},
-            'misfit': {'vmin': 0, 'vmax': 10, 'log': False},
-            'number of gates': {'vmin': 0, 'vmax': 50, 'log': False},
-            'date': {'vmin': 20240101, 'vmax': 20260101, 'log': False},
-            'elevation': {'vmin': -100, 'vmax': 1000, 'log': False},
-            'daytime': {'vmin': 0, 'vmax': 24, 'log': False},
-            }), 
+
     html.Div([
         dbc.ButtonGroup([
             dbc.Button("1. Load Data",  id="upload_layout",    color="primary"),
@@ -1974,19 +1966,13 @@ def manage_section_mode(toggle_n, option_clicks, current_style, current_mode):
     Input("map", "relayoutData"), 
     Input("section-mode-store", "data"),
     Input("selected-line-index", "data"),
-    Input('global-colorbar-store', 'data'),
     State("map-view-store", "data"),
     prevent_initial_call=True
 )
-def update_profile_callback(relayout, mode, selected_idx, global_cbar_data, view):
+def update_profile_callback(relayout, mode, selected_idx, view):
     ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
-
-    # Sync colorbars as before
-    if global_cbar_data and 'resistivity' in global_cbar_data:
-        res_config = global_cbar_data['resistivity']
-        profile.settings.update_attributes(res_config)
     
     fig = profile.render(
         lines=m1.lines, 
