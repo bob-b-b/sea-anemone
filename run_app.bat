@@ -1,4 +1,4 @@
-@echo off
+@echo on
 setlocal enabledelayedexpansion
 
 rem Set the path to the embedded Python interpreter
@@ -8,7 +8,12 @@ rem Launch the Dash application in the background using the PID wrapper
 start "" "%PYTHON_PATH%" app\app.py
 
 rem Wait for the server to start and PID file to be created
-timeout /t 10 /nobreak > nul
+@echo off
+:loop
+timeout 1
+netstat -na | findstr "8050" | findstr "127.0.0.1" | findstr "LISTENING" || goto :loop
+echo Server is ready!
+
 
 rem Get default browser and launch in app mode
 set URL=http://127.0.0.1:8050/
