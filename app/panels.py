@@ -428,8 +428,8 @@ class Map(Panel):
 class dbdtSoundingSettings(PanelSettings):
     lm_color: str = '#2D81FF'
     hm_color: str = '#ff0000'
-    lm_factor: float = 20.0
-    hm_factor: float = 1.0
+    lm_factor: int = 20
+    hm_factor: int = 1
     plot_error: bool = False
     x_axis: Literal['time', 'gate_id'] = 'time'  # or 'site_id', 'longitude', 'latitude'
     dbdt_max: float = -3
@@ -617,7 +617,6 @@ class dbdtSounding(Panel):
         
         vals = np.abs(self.dataframe["dbdt"].values)
         vals = vals[np.isfinite(vals) & (vals > 0)]
-
         if len(vals) > 0:
             logvals = np.log10(vals)
             ymin = np.floor(logvals.min()) - 0.2
@@ -905,8 +904,8 @@ class rhoaSounding(dbdtSounding):
 class dbdtSectionSettings(PanelSettings):
     lm_color: str = '#2D81FF'
     hm_color: str = '#ff0000'
-    lm_factor: float = 20.0
-    hm_factor: float = 1.0
+    lm_factor: int = 20
+    hm_factor: int = 1
     x_axis: Literal['daytime', 'site_id', 'longitude', 'latitude', 'distance'] = 'site_id'
     y_axis: str = 'dbdt_syn'
     plot_disabled: bool = True
@@ -1239,7 +1238,7 @@ class dbdtSection(Panel):
                     x0=x_value - dx,
                     x1=x_value + dx,
                     y0=self.dataframe["dbdt"].abs().min() * 0.5,
-                    y1=self.dataframe["dbdt"].max()*self.settings.lm_factor *4,
+                    y1=self.dataframe["dbdt"].max()*self.settings.lm_factor *2,
                     line=dict(color="rgba(0,0,0,0.8)", width=1.5),
                     fillcolor="rgba(0,0,0,0.0)",
                 )

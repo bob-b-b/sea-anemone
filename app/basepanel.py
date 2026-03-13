@@ -352,7 +352,6 @@ class Panel:
                         # Get expected type from Pydantic/PanelSettings schema
                         prop_info = self.settings.schema['properties'].get(key, {})
                         prop_type = prop_info.get('type')
-                        
                         try:
                             if prop_type == 'integer' and arg is not None:
                                 # float conversion first handles cases like '20.0'
@@ -382,11 +381,14 @@ class Panel:
         @app.callback(
             Output(self.id, self.childname, allow_duplicate=True),
             Input(f"{self.id}_apply_settings", "n_clicks"),
+            [State({'type': f'settings-{self.id}', 'key': k}, 'value')
+                for k in self.settings.flat_keys],
             prevent_initial_call=True
         )
-        def apply_settings(n):
+        def apply_settings(n, *values):
             if not n:
                 raise PreventUpdate
+            update_render(None, None, *values)
             return self.render()
 
             
