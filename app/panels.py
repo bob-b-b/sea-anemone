@@ -2163,8 +2163,8 @@ class HotKeyReminder(Panel):
                     ]),
                     # html.Div(style={'width':'30px'}),
                     dbc.Tooltip("Save the current session to the default location or select a folder", target='saveButton', placement='top'),
-                    dbc.Tooltip("Used to disable noisy data or data which cannot be fitted in inversions.", target='disableButton', placement='top'),
-                    dbc.Tooltip("Used to enable previously disabled data.", target='enableButton', placement='top'),
+                    dbc.Tooltip(id="disable-tooltip",children="Used to disable noisy data or data which cannot be fitted in inversions.",target="disableButton",placement="top",),
+                    dbc.Tooltip(id="enable-tooltip",children="Used to enable previously disabled data.",target="enableButton",placement="top",),
                     dbc.Tooltip("Go to the first collected data site.", target='beginning-buffer', placement='top'),
                     dbc.Tooltip("Go to the previous buffer of sites.", target='prev-buffer', placement='top'),
                     dbc.Tooltip("Go to the next buffer of sites.", target='next-buffer', placement='top'),
@@ -2222,7 +2222,8 @@ class HotKeyReminder(Panel):
         @app.callback(
             Output("disableButton", "children"),
             Output("enableButton", "children"),
-
+            Output("disable-tooltip", "children"),
+            Output("enable-tooltip", "children"),
             Output("beginning-buffer", "style"),
             Output("prev-buffer", "style"),
             Output("next-buffer", "style"),
@@ -2248,6 +2249,8 @@ class HotKeyReminder(Panel):
                 return (
                 "Disable [ctrl+d]",
                 "Enable [ctrl+e]",
+                "Used to disable noisy data or data which cannot be fitted in inversions.",
+                "Used to enable previously disabled data.",
                 shown,  # beginning-buffer
                 shown,  # prev-buffer
                 shown,  # next-buffer
@@ -2258,16 +2261,19 @@ class HotKeyReminder(Panel):
                 shown,  # buffer-progress-text
                 shown,  # buffer-length-label
             )
-            return (
-                "Delete",
-                "Export",
-                hidden,  # beginning-buffer
-                hidden,  # prev-buffer
-                hidden,  # next-buffer
-                "Previous profile",  # highlight_prev
-                "Next profile",  # highlight_next
-                hidden,  # buffer-length-input
-                hidden,  # buffer-progress
-                hidden,  # buffer-progress-text
-                hidden,  # buffer-length-label
-            )
+            else:
+                return (
+                    "Delete",
+                    "Export",
+                    "Used to delete unwanted profiles.",
+                    "Export profile to kml file and png",
+                    hidden,  # beginning-buffer
+                    hidden,  # prev-buffer
+                    hidden,  # next-buffer
+                    "Previous profile",  # highlight_prev
+                    "Next profile",  # highlight_next
+                    hidden,  # buffer-length-input
+                    hidden,  # buffer-progress
+                    hidden,  # buffer-progress-text
+                    hidden,  # buffer-length-label
+                )
