@@ -2311,12 +2311,15 @@ def manage_windows(click_data, n_closes, current_windows, combined_state,all_lin
             else:
                 try:
                     row_data = None
-                    if idx in df_up_map.index:
-                        row_data = df_up_map.loc[idx] if idx in df_up_map.index else df_up_map.iloc[int(idx)]
-                    else:
-                        int_idx = int(idx)
-                        if 0 <= int_idx < len(df_up_map):
-                            row_data = df_up_map.iloc[int_idx]
+                    # Convert idx to match the column type (usually int for site_id)
+                    search_val = int(idx) if str(idx).isdigit() else idx
+                    print("idx for alt",idx)
+                    
+                    # Find the row where site_id matches our clicked index
+                    mask = df_up_map['site_id'] == search_val
+                    if mask.any():
+                        row_data = df_up_map[mask].iloc[0]
+
                 except (ValueError, TypeError):
                     row_data = None
 
@@ -2342,7 +2345,6 @@ def manage_windows(click_data, n_closes, current_windows, combined_state,all_lin
             windows.append(create_draggable_window(new_id, title, content, width=width_step, height=height_step))
             return windows, combined_state
         
-        
         # B) CTRL+ALT: Add to Comparison Window
         else:
             if not combined_state.get("window_id"):
@@ -2359,6 +2361,7 @@ def manage_windows(click_data, n_closes, current_windows, combined_state,all_lin
 
             if len(bh_ids) == 0:
                 # 1. Build the combined Resistivity plot
+                print(tem_ids)
                 fig_combined_step = build_combined_step_figure(df_up_map, tem_ids, use_elevation=True)
                 
                 # 2. Build the combined dB/dt plot
