@@ -1115,17 +1115,24 @@ def generate_res_step_graph_elev(row, row_index, label=None, elevation=None,step
 def build_combined_step_figure(df, indices,use_elevation=True):
     fig = go.Figure()
     
-    # 1. Define custom color list: Red first, then the rest of the Plotly palette
-    # We remove 'red' (or similar hex) from the standard list to prevent duplicates
     standard_colors = [c for c in px.colors.qualitative.Plotly if c.lower() != '#ef553b'] # #ef553b is Plotly Red
     colors = ['red'] + standard_colors
-    
-    # colors = px.colors.qualitative.Plotly
-    
-    for count,idx in enumerate(indices):
-        # IMPORTANT: df_index vs iloc mismatch handled
-        i = int(idx) if str(idx).isdigit() else idx
-        row = df.loc[i] if i in df.index else df.iloc[int(i)]
+
+    for count, idx in enumerate(indices):
+        try:
+            # Convert idx to match the column type (usually int for site_id)
+            search_val = int(idx) if str(idx).isdigit() else idx
+            
+            # Find the row where site_id matches our clicked index
+            mask = df['site_id'] == search_val
+            if mask.any():
+                row = df[mask].iloc[0]
+            else:
+                print(f"Warning: Site ID {search_val} not found in current dataframe.")
+                continue
+        except Exception as e:
+            print(f"Error locating Site {idx}: {e}")
+            continue
 
         elev_val = row.get('elevation') if use_elevation else None
 
