@@ -2660,7 +2660,8 @@ def master_line_controller(url_hash,relayout, disable_n, highlight_next_n, highl
     prevent_initial_call=True,
 )
 def export_profile(n_clicks, fig_data, current_idx, interpret_color):
-
+    if interpret_color!= "primary":
+        raise PreventUpdate
     if m1.lines is None or m1.lines.empty:
         return dbc.Toast(
             "No profile lines found to export.",

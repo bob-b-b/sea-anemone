@@ -78,6 +78,7 @@ class Map(Panel):
         self.dataframe = data
 
     def render(self):
+
         if self.dataframe is None: return self.empty_render()
         df_plot = self.dataframe
         # if 'site_id' in df_plot.columns:
@@ -88,7 +89,7 @@ class Map(Panel):
 
         zoom = self.view['map.zoom'] if self.view is not None else self.settings.zoom
         center = self.view['map.center'] if self.view is not None else None      
-        
+
         if self.settings.plot_by in df_plot.columns and self.settings.plot_by!='':
 
             fig = px.scatter_map(
@@ -355,10 +356,10 @@ class Map(Panel):
         )
         def update_plotby(value):
             from __main__ import sesh
-            if sesh.models is None:
-                raise PreventUpdate
-            if value not in sesh.models.columns:
-                raise PreventUpdate
+            # if sesh.models is None:
+                # raise PreventUpdate
+            if value not in self.dataframe.columns and value != '':
+                value = ''
             self.settings.plot_by = value
             return self.render()  
 
@@ -1881,7 +1882,8 @@ class ModelSection(Panel):
             mode="lines",
             line=dict(color="rgba(0,0,0,0.7)", dash="dash"),
             showlegend=False,
-            yaxis='y2'
+            yaxis='y2',
+            hoverinfo='skip'
         ))
 
 
@@ -2165,9 +2167,9 @@ class HotKeyReminder(Panel):
                     dbc.Tooltip("Save the current session to the default location or select a folder", target='saveButton', placement='top'),
                     dbc.Tooltip(id="disable-tooltip",children="Used to disable noisy data or data which cannot be fitted in inversions.",target="disableButton",placement="top",),
                     dbc.Tooltip(id="enable-tooltip",children="Used to enable previously disabled data.",target="enableButton",placement="top",),
-                    dbc.Tooltip("Go to the first collected data site.", target='beginning-buffer', placement='top'),
-                    dbc.Tooltip("Go to the previous buffer of sites.", target='prev-buffer', placement='top'),
-                    dbc.Tooltip("Go to the next buffer of sites.", target='next-buffer', placement='top'),
+                    dbc.Tooltip(id = "beginning-tooltip",children="Go to the first collected data site.", target='beginning-buffer', placement='top'),
+                    dbc.Tooltip(id = "prev-buffer-tooltip",children="Go to the previous buffer of sites.", target='prev-buffer', placement='top'),
+                    dbc.Tooltip(id = "next-buffer-tooltip",children="Go to the next buffer of sites.", target='next-buffer', placement='top'),
                     dbc.Tooltip("Go to previous.", target='highlight_prev', placement='top'),
                     dbc.Tooltip("Go to next", target='highlight_next', placement='top'),
                 ], style={'padding': '10px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between'}
@@ -2235,6 +2237,9 @@ class HotKeyReminder(Panel):
             Output("buffer-progress", "style"),
             Output("buffer-progress-text", "style"),
             Output('buffer-length-label', 'style'),
+            Output("beginning-tooltip","style"),
+            Output("prev-buffer-tooltip","style"),
+            Output("next-buffer-tooltip","style"),
 
             Input("interpret_layout", "color"),
             prevent_initial_call=True
@@ -2244,6 +2249,8 @@ class HotKeyReminder(Panel):
             hidden = {"opacity": 0}
             shown = {"opacity": 1}
 
+            shown_tooltip = {}
+            hidden_tooltip = {"display": "none"}
 
             if color != "primary":
                 return (
@@ -2260,6 +2267,9 @@ class HotKeyReminder(Panel):
                 shown,  # buffer-progress
                 shown,  # buffer-progress-text
                 shown,  # buffer-length-label
+                shown_tooltip,
+                shown_tooltip,
+                shown_tooltip,
             )
             else:
                 return (
@@ -2276,4 +2286,7 @@ class HotKeyReminder(Panel):
                     hidden,  # buffer-progress
                     hidden,  # buffer-progress-text
                     hidden,  # buffer-length-label
+                    hidden_tooltip,
+                    hidden_tooltip,
+                    hidden_tooltip,
                 )
