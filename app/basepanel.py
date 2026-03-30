@@ -174,9 +174,17 @@ class PanelSettings:
                 value=eval(f'self.{key}'),
                 style={'margin': '5px'}
             )
+        bool_check = lambda key,prop: prop.get('type') == 'boolean'
+        def bool_render(key,prop):
+            return dbc.Checkbox(
+                        id={'type': f'settings-{self.id}', 'key': key},
+                        value=eval(f'self.{key}'),
+                        style={'marginLeft': '5px'}
+                        )
         return [
-            (color_check, color_render),
-            (enum_check,  enum_render)
+            (enum_check,  enum_render),
+            (bool_check, bool_render),
+            (color_check, color_render)
         ]
 
     def render(self):
@@ -203,8 +211,6 @@ class PanelSettings:
                 input_type = 'text'
                 if prop.get('type') == 'number':
                     input_type = 'number'
-                elif prop.get('type') == 'boolean':
-                    input_type = 'checkbox'
                 row_children.append(
                     dbc.Input(
                         type=input_type,
@@ -215,21 +221,6 @@ class PanelSettings:
                     )
                 )
             form_items.append(dbc.Row(row_children, className='mb-2'))
-        # Add a save button
-        form_items.append(dbc.Button(
-            "Save Settings",
-            id=f'{self.id}_settings_save',
-            n_clicks=0,
-            style={'margin': '10px'}
-        ))
-        # Add a load button
-        form_items.append(dbc.Button(
-            "Load Settings",
-            id=f'{self.id}_settings_load',
-            n_clicks=0,
-            style={'margin': '10px'}
-        ))
-
         return html.Div([dbc.Form(form_items, style={'margin': '10px'}), 
                          gear_maker(self.id+'_settings')], style={'width':'95%'})
 
@@ -284,69 +275,8 @@ class PanelSettings:
             'name': f'{self.id.lower()} settings',
         }
     
-    def save_settings(self, fname):
-        import json
-        with open(fname, 'w') as f:
-            json.dump(self.settings, f, indent=4)
-    
-    def load_settings(self, fname):
-        import json
-        with open(fname, 'r') as f:
-            settings = json.load(f)
-        for key, value in settings.items():
-            if hasattr(self, key):
-                setattr(self, key, value)
-
     def add_callbacks(self, app):
-        @app.callback(
-            Output(f'{self.id}_settings_save', 'n_clicks'),
-            [Input(f'{self.id}_settings_save', 'n_clicks')],
-            prevent_initial_call=True
-        )
-        def save_settings(n_clicks):
-            if n_clicks:
-                root = tk.Tk()
-                root.withdraw()  # Hide the root window
-                root.attributes('-topmost', True)
-                root.lift()
-                root.focus_force()
-                root.update()
-                
-                fname = filedialog.asksaveasfilename(
-                    title="Save Settings",
-                    defaultextension=".json",
-                    filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
-                    initialfile=f"{self.id}_settings.json",
-                    parent=root
-                )
 
-                if fname:
-                    self.save_settings(fname)
-                root.destroy()
-            return n_clicks
-        
-        @app.callback(
-            Output(f'tab-{self.id}_settings', 'children'),
-            [Input(f'{self.id}_settings_load', 'n_clicks')],
-            prevent_initial_call=True
-        )
-        def load_settings(n_clicks):
-            if n_clicks:
-                root = tk.Tk()
-                root.withdraw()
-                root.attributes('-topmost', True)
-                root.lift()
-                root.focus_force()
-                root.update()
-                fname = filedialog.askopenfilename(
-                    title="Load Settings",
-                    filetypes=[("JSON files", "*.json"), ("All files", "*.*")],
-                    parent=root
-                )
-                if fname:
-                    self.load_settings(fname)
-                root.destroy()
-            return self.render()
         
         @app.callback(
             Output('flex-layout', 'model', allow_duplicate=True),
@@ -472,43 +402,33 @@ class Panel:
                         arg = arg['hex']
                     
                     if hasattr(self.settings, key):
-                        # Get expected type from Pydantic/PanelSettings schema
-                        prop_info = self.settings.schema['properties'].get(key, {})
-                        prop_type = prop_info.get('type')
-                        
-                        try:
-                            if prop_type == 'integer' and arg is not None:
-                                # float conversion first handles cases like '20.0'
-                                arg = int(float(arg)) 
-                            elif prop_type == 'number' and arg is not None:
-                                arg = float(arg)
-                            elif prop_type == 'boolean':
-                                # Handles string 'true' or actual boolean True
-                                arg = (str(arg).lower() == 'true' or arg is True)
-                            
-                            # If type is None (common for Literals) or 'string', 
-                            # we leave it as a string (e.g., 'longitude', '#ff0000')
-                            setattr(self.settings, key, arg)
-                            
-                        except (ValueError, TypeError) as e:
-                            print(f"Type Mismatch on {key}: cannot convert {arg} to {prop_type}")
+                        if self.settings.schema['properties'][key].get('type')=='integer':
+                            arg = int(arg)
+                        elif self.settings.schema['properties'][key].get('type')=='number':
+                            arg = float(arg)
+                        elif self.settings.schema['properties'][key].get('type')=='boolean':
+                            arg = (arg=='true' or arg is True)
+                        setattr(self.settings, key, arg)
+                    elif '-' in key:
+                        basekey,index = key.split('-')
+                        if hasattr(self.settings, basekey):
+                            arg = (arg=='true' or arg is True)
+                            exec(f'self.settings.{basekey}[{index}] = arg')
+                return self.render()        
+            update_render = app.callback(Output(self.id, self.childname),
+                        [Input({'type': f'settings-{self.id}', 'key': x}, 'value') for x in self.settings.flat_keys])(update_render)
 
-                return self.render()
-
-            # --- The Callback Definition ---
-            # Crucial: The order of Inputs here MUST match the arguments above
-            # update_render = app.callback(
-            #     Output(self.id, self.childname),
-            #     [
-            #         Input('global-colorbar-store', 'data'), # Maps to global_data
-            #         Input('points-attr', 'value')            # Maps to current_attr
-            #     ] + [
-            #         # These all map into the *args tuple
-            #         Input({'type': f'settings-{self.id}', 'key': x}, 'value') 
-            #         for x in self.settings.flat_keys
-            #     ]
-            # )(update_render)
-
+        # @app.callback(
+        #     Output(self.id, self.childname, allow_duplicate=True),
+        #     Input(f"{self.id}_apply_settings", "n_clicks"),
+        #     [State({'type': f'settings-{self.id}', 'key': k}, 'value') for k in self.settings.flat_keys],
+        #     prevent_initial_call=True
+        # )
+        # def apply_settings(n, *values):
+        #     if not n:
+        #         raise PreventUpdate
+        #     update_render(None, None, *values)
+        #     return self.render()
 
             
     def initialize(self):

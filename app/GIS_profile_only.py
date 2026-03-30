@@ -1,25 +1,25 @@
-from dataclasses import field
+# from dataclasses import field
 from basepanel import *
 #from database_panel import DatabasePanel
-from dash import dash_table
+# from dash import dash_table
 import numpy as np
 from nosj import nosj
 
-import plotly.io as pio
-from typing import Literal
+# import plotly.io as pio
+# from typing import Literal
 import plotly.express as px
 import plotly.graph_objects as go
 
-import matplotlib.pyplot as plt
-from rasterio.warp import calculate_default_transform, reproject, Resampling
-from rasterio.plot import reshape_as_image
+# import matplotlib.pyplot as plt
+# from rasterio.warp import calculate_default_transform, reproject, Resampling
+# from rasterio.plot import reshape_as_image
 
-from dash import Dash, html, dcc, Input, Output, State, no_update, callback_context
-from dash.dependencies import Input, Output, State, ALL, MATCH
+from dash import html, dcc #Dash, html, dcc, Input, Output, State, no_update, callback_context
+# from dash.dependencies import Input, Output, State, ALL, MATCH
 
-from pydantic import Field
+# from pydantic import Field
 
-from Map_external_layers import GIS_helpers
+# from Map_external_layers import GIS_helpers
 from Sections_plotting import *
 
 # from borehole_utils import *
@@ -72,7 +72,7 @@ class Profile(Panel):
 
     def empty_figure(self, msg="No profile selected."):
         fig = go.Figure()
-        fig.add_annotation(text=msg, showarrow=False, font=dict(size=16, color="gray"))
+        fig.add_annotation(text=msg, showarrow=False, font=dict(size=16, color="black"))
         # fig.update_layout(xaxis=dict(visible=False), yaxis=dict(visible=False), margin=dict(t=0,b=0,l=0,r=0))
         return fig
     
@@ -188,8 +188,8 @@ class Profile(Panel):
        
         fig.update_layout(
             title=dict(text=dynamic_title, x=0.5, xanchor='center'), 
-            xaxis=dict(range=[x_min - padding, x_max + padding], title="Distance (m)"),
-            yaxis=dict(title="Elevation (m)"),
+            xaxis=dict(range=[x_min - padding, x_max + padding], title="Distance [m]",color="#2a3f5f"),
+            yaxis=dict(title="Elevation [m]",color="#2a3f5f"),
             hovermode='closest',
             template="plotly_white",
         )
@@ -234,8 +234,8 @@ class Profile(Panel):
                             cmax=log_vmax,
                             color=[log_vmin, log_vmax],
                             colorbar=dict(
-                                # title="Resistivity (Ωm)",
-                                orientation='h',x=0.5, xanchor='center',y=-0.2,yanchor='top',thickness=20,len=0.95,
+                                title=dict(text="Resistivity [Ωm]", side='bottom'),
+                                orientation='h',x=0.5, xanchor='center',y=-0.1,yanchor='top',thickness=20,len=0.95,
                                 tickmode='array',  tickvals=list(tick_vals), ticktext=tick_text,)),
                         hoverinfo='none',showlegend=False))
 
@@ -261,7 +261,7 @@ class Profile(Panel):
             dcc.Store(id="selected-line-index", data=0),
             dcc.Store(id="map-hover-marker-store", data=None),
             dcc.Store(id="map-settings-store", data={}),
-            dcc.Store(id='global-color-map-store', data=None),#color_master_map if self.dataframe is not None else None),
+            # dcc.Store(id='global-color-map-store', data=None),#color_master_map if self.dataframe is not None else None),
             dcc.Store(id="points-available-attrs-store", data=None),# if self.dataframe is not None else 'date'),
             dcc.Store(id="profile-busy-store", data=False),
             dcc.Store(id="profile-load-trigger", data=0),
@@ -279,8 +279,8 @@ class Profile(Panel):
                              # --- Section Mode Button ---
                             html.Div(
                                 style={"position": "relative"},
-                                children=[
-                                    html.Button("Section ▼", id="section-toggle", style={"padding": "5px 10px"}),
+                                children=[html.Div(style={'width':'60px'}),
+                                    html.Button("Visualisation ▼", id="section-toggle", style={"padding": "5px 10px"}),
                                     html.Div(
                                         id="section-panel",
                                         style={"display": "none", "position": "absolute", "background": "white", "padding": "8px", "borderRadius": "6px", "boxShadow": "0 2px 6px rgba(0,0,0,0.25)", "marginTop": "4px", "minWidth": "140px"},
@@ -290,6 +290,10 @@ class Profile(Panel):
                                             html.Div("Combined", id={"type": "section-option", "mode": "combined"}, style={"padding": "6px", "cursor": "pointer"}),
                                         ],
                                     ),
+                                    dbc.Tooltip(
+                                        "Choose how to visualize the profile data. Interpolated shows a smooth section, Column Bar(s) shows discrete columns for each station, and Combined shows both together.",
+                                        target="section-toggle",
+                                        placement="bottom")
                                 ]
                             ),                                                    
                         ],

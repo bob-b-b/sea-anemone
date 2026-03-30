@@ -2,8 +2,6 @@ import sys, os
 import base64
 from tkinter import filedialog, Tk
 import threading
-print(f"Callback is running on thread: {threading.current_thread().name}")
-import copy
 
 fpath = os.path.dirname(os.path.abspath(__file__))
 if fpath not in sys.path:
@@ -11,9 +9,23 @@ if fpath not in sys.path:
 
 import session
 global sesh
-sesh = session.Session()
+sesh = None
 
-session_tracker = fpath+'/recent_projects.txt'
+# if len(sys.argv) == 2:
+#     if sys.argv[1].endswith('session.json'):
+#         sesh = session.Session.load(sys.argv[1])
+#         sesh.load_dataframes()
+#     else:
+#         print('invalid path provided, must provide a session.json file for a project')
+
+if sesh is None:
+    sesh = session.Session()
+
+from tempfile import NamedTemporaryFile
+with NamedTemporaryFile() as f:
+    tempdir = os.path.dirname(f.name)
+session_tracker = os.path.join(tempdir, 'anemone_projects.txt')
+
 
 from panels import *
 from inversion_panels import *
@@ -50,13 +62,6 @@ _PYWEBVIEW_REFS = {'webview': None}
 @app.server.route('/help/<path:filename>')
 def serve_help_docs(filename):
     return send_from_directory(docs_root, filename)
-
-
-
-
-# df_overview = pd.DataFrame(columns=['date', 'daytime', 'latitude', 'longitude', 'elevation', 'utm_x', 'utm_y', 'distance'])
-
-
 
 
 def _sanitize_filename(name: str, fallback: str = "dem.tif") -> str:
@@ -129,7 +134,6 @@ def _sample_dem_at_points(lons, lats, dem_path):
 def _export_kml_points(df, output_path):
     if df is None or df.empty:
         return "No data to export."
-
     required = {'longitude', 'latitude'}
     if not required.issubset(df.columns):
         return "Missing longitude/latitude columns."
@@ -313,8 +317,8 @@ def build_gps_dem_summary():
 
 if os.path.exists(session_tracker):
     with open(session_tracker, 'rt') as f:
-        session_files = f.readlines()
-    session_files = list(set([line.strip() for line in session_files if line.strip() != '']))
+        session_files = [x.strip() for x in f.readlines() if os.path.exists(x.strip())]
+    session_files = list(set(session_files))
 
 else:
     session_files = []
@@ -333,44 +337,12 @@ Multi_inv = MultiInversion( dataframe=sesh.data )
 profile = Profile(sesh.models)
 
 
-profile_controls = html.Div([
-    # dcc.Markdown('### Profile Management'),
-    html.Div(
-        id="profile-buttons-container",
-        children=[
-            dbc.ButtonGroup([
-                dbc.Button("← Previous \nProfile", id="btn-prev-line", color="primary", outline=True, disabled=True),
-                dbc.Button("Next \nProfile →", id="btn-next-line", color="primary", outline=True, disabled=True),
-                            ]),
-                html.Div(id="profile-list-container", style={
-                # "maxHeight": "200px", 
-                "flex": "1",
-                "overflowY": "auto", "width": "100%", "marginTop": "10px"
-                        }),
-            dbc.ButtonGroup([
-                dbc.Button("Clear Selected", id="btn-clear-sel", color="warning", outline=True),
-                dbc.Button("Clear All", id="btn-clear-all", color="danger", outline=True),
-                dbc.Button("Export Selected as PNG/KMZ", id="btn-export-profile", color="success", outline=True),
-                dbc.Button("Save Session [ctrl+s]", id='saveButton-profiles', color="info"), 
-                            ]),
-        ], 
-        style={'padding': '10px', 'display': 'flex', 'flexDirection': 'column', 'gap': '10px','height': '100%',}
-    ),
-    html.Div(id="export-message-container"),
-    dcc.Download(id="download-profile-files"),
-], id='profile-buttons', style={"height": "85%"})
-
-
-#stmod = StartingModel.standard(rho=10.)F
-
-# Inv_it = Inversion_iterations.standard(misfit=None,rho=10.)
-
 Sing_inv = Single_site( dataframe=sesh.data, rho=10 )
 
 hkr = HotKeyReminder()
 
 panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, Multi_inv, Sing_inv, rhoa, hkr, profile] #,gis
-nodes = [node for panel in panels for node in panel.to_nodes()]+[dfl.Tab(id=f'tab-profile-buttons', children=[profile_controls])] #dfl.Tab(id=f'tab-processing_buttons', children=[x]),
+nodes = [node for panel in panels for node in panel.to_nodes()]#+[dfl.Tab(id=f'tab-profile-buttons', children=[profile_controls])] #dfl.Tab(id=f'tab-processing_buttons', children=[x]),
 
 
 html_header = html.H1('Sea Anemone', style={'width': '100%'})
@@ -386,15 +358,15 @@ flex_layout = dfl.FlexLayout(
 app.layout = html.Div([
     dcc.Location(id='url', refresh='callback-nav'),
     dcc.Interval(id= "inv-log-poll", interval=1000, n_intervals=0, disabled=True),  # Poll every 2 seconds
-
+    dcc.Store(id="session-save-complete"),
     dcc.Store(id="starting-model", data={"rho": 10.0,"depth": np.cumsum(np.logspace(0, 1.3, 31)).tolist()}),
     dcc.Store(id='starting-model-selected',data=[]),
     dcc.Store(id='data-buffer',data={"length": 50, "start_site":0}),
     dcc.Store(id="dem-applied", data=False),
     dcc.Store(id="dem-downloaded", data=False),
+    html.Div(id="export-message-container",style={"position": "fixed","top": "80px","right": "20px","zIndex": 9999}),
     dcc.Store(id="dem-api-keys", data=[], storage_type="local"),
     dcc.Store(id="borehole-loaded", data=False),
-    dcc.Store(id="dem-loaded", data=False),
     html.Div([dbc.Toast(
                     "⛔ Please Zoom or Pan in the map.",
                     id="zoom-toast",
@@ -407,15 +379,7 @@ app.layout = html.Div([
                 ),
             ], id="toast-container"),
 
-    dcc.Store(id='global-colorbar-store', data={
-            'resistivity': {'vmin': 1, 'vmax': 300, 'log': True},
-            'DOI': {'vmin': 0, 'vmax': 500, 'log': False},
-            'misfit': {'vmin': 0, 'vmax': 10, 'log': False},
-            'number of gates': {'vmin': 0, 'vmax': 50, 'log': False},
-            'date': {'vmin': 20240101, 'vmax': 20260101, 'log': False},
-            'elevation': {'vmin': -100, 'vmax': 1000, 'log': False},
-            'daytime': {'vmin': 0, 'vmax': 24, 'log': False},
-            }), 
+
     html.Div([
         dbc.ButtonGroup([
             dbc.Button("1. Load Data",  id="upload_layout",    color="primary"),
@@ -440,23 +404,23 @@ app.layout = html.Div([
     }),
     html.Div([flex_layout], style={'marginTop': '60px'}),  # Push content below fixed header
     html.Div(id='output-click'),
-    dbc.Button(
-        "?",
-        id='help-fab',
-        color='primary',
-        style={
-            'position': 'fixed',
-            'right': '24px',
-            'bottom': '24px',
-            'width': '56px',
-            'height': '56px',
-            'borderRadius': '50%',
-            'fontSize': '24px',
-            'zIndex': 3000,
-            'boxShadow': '0 6px 16px rgba(0,0,0,0.2)'
-        }
-    ),
-    html.Div(id='help-window')
+    # dbc.Button(
+    #     "?",
+    #     id='help-fab',
+    #     color='primary',
+    #     style={
+    #         'position': 'fixed',
+    #         'right': '24px',
+    #         'bottom': '24px',
+    #         'width': '56px',
+    #         'height': '56px',
+    #         'borderRadius': '50%',
+    #         'fontSize': '24px',
+    #         'zIndex': 3000,
+    #         'boxShadow': '0 6px 16px rgba(0,0,0,0.2)'
+    #     }
+    # ),
+    # html.Div(id='help-window')
 ])
 
 for panel in panels:
@@ -560,7 +524,10 @@ function(selectedLineIdx, sectionMode, profileFig) {
             overlay.style.display = 'flex';
             overlay.style.position = 'fixed';
             overlay.style.top = '320px';
-            overlay.style.left = '12px';
+            overlay.style.left = '50%';
+            overlay.style.width = '200px';
+            overlay.style.marginLeft = '-100px';  // half the width to center
+            overlay.style.textAlign = 'center';
             overlay.style.zIndex = '10000';
         } else {
             console.log("JS: Value is identical. Message stays hidden.");
@@ -577,7 +544,10 @@ function(selectedLineIdx, sectionMode, profileFig) {
             overlay.style.display = 'flex';
             overlay.style.position = 'fixed';
             overlay.style.top = '320px';
-            overlay.style.left = '12px';
+            overlay.style.left = '50%';
+            overlay.style.width = '200px';
+            overlay.style.marginLeft = '-100px';  // half the width to center
+            overlay.style.textAlign = 'center';
             overlay.style.zIndex = '10000';
             console.log("JS: Section mode changed - showing overlay");
         }
@@ -686,54 +656,6 @@ app.clientside_callback(
     Input("disableButton", "id")
 )
 
-app.clientside_callback(
-    """
-        function(n_clicks) {
-            if (n_clicks) {
-                if (window.pywebview && window.pywebview.api) {
-                    window.pywebview.api.open_help();
-                } else {
-                    window.open(
-                        '/help/index.html',
-                        '_blank',
-                        'width=1100,height=800,menubar=no,toolbar=no,location=no,status=no,scrollbars=yes,resizable=yes'
-                    );
-                }
-            }
-            return window.dash_clientside.no_update;
-        }
-    """,
-    Output("help-fab", "title"),
-    Input("help-fab", "n_clicks"),
-    prevent_initial_call=True
-)
-
-# PROFILE BUTTONS  
-app.clientside_callback(
-    """
-    function(id) {
-        document.addEventListener("keydown", function(event) {
-            const isInput = document.activeElement && 
-                (document.activeElement.tagName === 'INPUT' || 
-                 document.activeElement.tagName === 'TEXTAREA');
-
-            if (!isInput && event.altKey) {
-                if (event.key.toLowerCase() === 'c') {
-                    const btn = document.getElementById('btn-clear-sel');
-                    if (btn) btn.click();
-                }
-                if (event.key.toLowerCase() === 'a') {
-                    const btn = document.getElementById('btn-clear-all');
-                    if (btn) btn.click();
-                }
-            }
-        });
-        return window.dash_clientside.no_update;
-    }
-    """,
-    Output("profile-buttons", "id"),
-    Input("profile-buttons", "id")
-)
 
 # DRAGGABLE WINDOW FOR CTRL + ALT + LEFT CLICK
 app.clientside_callback(
@@ -786,8 +708,23 @@ app.clientside_callback(
     prevent_initial_call=True
 )
 
-
-
+app.clientside_callback(
+    """
+        function(n_clicks) {
+            if (n_clicks) {
+                window.open(
+                    '/help/index.html',
+                    '_blank',
+                    'width=1100,height=800,menubar=no,toolbar=no,location=no,status=no,scrollbars=yes,resizable=yes'
+                );
+            }
+            return window.dash_clientside.no_update;
+        }
+    """,
+    Output("help-fab", "title"),
+    Input("help-fab", "n_clicks"),
+    prevent_initial_call=True
+)
 
 @app.callback(
     dbdt1.output, dbdt2.output, rhoa.output,
@@ -796,10 +733,12 @@ app.clientside_callback(
     State("tTEM", "selectedData"),
     State("sounding", "selectedData"),
     State("rhoa", "selectedData"),
+    State('interpret_layout','color'),
     prevent_initial_call=True,
 )
-def show_value(n1, n2, ttem_selected, sounding_selected, rhoa_selected):
-
+def show_value(n1, n2, ttem_selected, sounding_selected, rhoa_selected, interpret_layout_color):
+    if interpret_layout_color == 'primary':
+        raise PreventUpdate
     if str(ctx.triggered_id) == 'disableButton':
         inuse = False
     elif str(ctx.triggered_id) == 'enableButton':
@@ -819,49 +758,11 @@ def show_value(n1, n2, ttem_selected, sounding_selected, rhoa_selected):
     df_data = sesh.data
     
     df_data.loc[df_data['data_id'].isin(data_ids), 'inuse_manual'] = inuse
-    df_data['include'] = df_data['inuse_manual'].astype(bool, copy=False).fillna(df_data['inuse_auto'])
+    df_data['include'] = df_data['inuse_manual'].astype(bool, copy=True).fillna(df_data['inuse_auto'])
     dbdt1.dataframe = df_data[df_data['site_id'].isin(dbdt1.dataframe['site_id'].unique())]
     dbdt2.dataframe = df_data[df_data['site_id'].isin(dbdt2.dataframe['site_id'].unique())]
     rhoa.dataframe  = df_data[df_data['site_id'].isin(rhoa.dataframe['site_id'].unique())]
     return dbdt1.render(), dbdt2.render(), rhoa.render()
-
-@app.callback(
-    Output('data-buffer', 'data', allow_duplicate=True),
-    Input('next-buffer', 'n_clicks'),
-    Input('prev-buffer', 'n_clicks'),
-    Input('beginning-buffer', 'n_clicks'),
-    State('data-buffer', 'data'),
-    prevent_initial_call=True
-)
-def update_buffer(next_clicks, prev_clicks, beginning_clicks, buffer_data):
-    if not ctx.triggered:
-        raise PreventUpdate
-
-    trigger = ctx.triggered_id
-
-    length = buffer_data["length"]
-    start  = buffer_data["start_site"]
-
-    # Get total number of sites from models (safer than tTEM)
-    if dbdt2.dataframe is None:
-        raise PreventUpdate
-
-    x_axis = dbdt2.settings.x_axis
-    x_vals = np.sort(dbdt2.dataframe[x_axis].dropna().unique())
-    n_sites = len(x_vals)
-
-    if trigger == "next-buffer":
-        start += length
-    elif trigger == "prev-buffer":
-        start -= length
-    elif trigger == "beginning-buffer":
-        start = 0
-
-    # Clamp safely
-    start = max(0, min(start, max(0, n_sites - length)))
-
-    buffer_data["start_site"] = start
-    return buffer_data
 
 @app.callback(
     mod2.output, dbdt2.output, dbdt1.output, m1.output, mod1.output, rhoa.output,
@@ -877,6 +778,7 @@ def update_model_section_from_buffer(buffer_data):
     mod2.buffer_len   = length
     mod1.buffer_start = start
     mod1.buffer_len   = length
+    
 
     # Update tTEM buffer
     dbdt2.buffer_start = start
@@ -886,32 +788,46 @@ def update_model_section_from_buffer(buffer_data):
     x_axis = dbdt2.settings.x_axis
     df = dbdt2.dataframe
 
-    x_vals = np.sort(df[x_axis].dropna().unique())
+    df_buf = dbdt2.dataframe.copy()
+    if x_axis == "site_id":
+        df_buf = df_buf[df_buf["site_id"] != -1]
+    x_vals = np.sort(df_buf[x_axis].dropna().unique())
 
     x_slice = x_vals[start:start+length]
 
     buffer_sites = (
-        df[df[x_axis].isin(x_slice)]["site_id"]
-        .dropna()
-        .unique()
-    )
+            df[
+                (df[x_axis].isin(x_slice)) &
+                (df["site_id"] != -1)
+            ]["site_id"]
+            .dropna()
+            .unique()
+        )
 
 
-    dbdt1.dataframe = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
+    if buffer_data.get("source") == "buffer_button":
+        dbdt1.dataframe = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
+        rhoa.dataframe  = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
     m1.buffer_sites = buffer_sites
-    rhoa.dataframe = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
+    m1.is_last_tab = False
+    # rhoa.dataframe = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
     # dbdt1.buffer_sites = buffer_sites
-
-    return mod2.render(), dbdt2.render(), dbdt1.render(), m1.render(is_last_tab=False), mod1.render(), rhoa.render()
+    if buffer_data.get("source") == "buffer_button":
+        mod1.highlighted = None
+        mod2.highlighted = None
+        m1.highlighted = None
+        dbdt2.highlighted = None
+    return mod2.render(), dbdt2.render(), dbdt1.render(), m1.render(), mod1.render(), rhoa.render()
 
 @app.callback(
     Output('data-buffer', 'data'),
+    Input('beginning-buffer', 'n_clicks'),
     Input('next-buffer', 'n_clicks'),
     Input('prev-buffer', 'n_clicks'),
     State('data-buffer', 'data'),
     prevent_initial_call=True
 )
-def update_buffer(next_clicks, prev_clicks, buffer_data):
+def update_buffer(next_clicks, prev_clicks, beginning_clicks, buffer_data):
     if not ctx.triggered:
         raise PreventUpdate
 
@@ -919,24 +835,31 @@ def update_buffer(next_clicks, prev_clicks, buffer_data):
 
     length = buffer_data["length"]
     start  = buffer_data["start_site"]
-
     # Get total number of sites from models (safer than tTEM)
     if dbdt2.dataframe is None:
         raise PreventUpdate
 
     x_axis = dbdt2.settings.x_axis
-    x_vals = np.sort(dbdt2.dataframe[x_axis].dropna().unique())
+    df = dbdt2.dataframe
+
+    if x_axis == "site_id":
+        df = df[df["site_id"] != -1]
+
+    x_vals = np.sort(df[x_axis].dropna().unique())
     n_sites = len(x_vals)
 
     if trigger == "next-buffer":
         start += length
     elif trigger == "prev-buffer":
         start -= length
+    elif trigger == "beginning-buffer":
+        start = 0
 
     # Clamp safely
     start = max(0, min(start, max(0, n_sites - length)))
 
     buffer_data["start_site"] = start
+    buffer_data['source'] = "buffer_button"
     return buffer_data
 
 @app.callback(
@@ -986,7 +909,8 @@ def update_model_on_interpret(_, invert_color):
 
 
 @app.callback(
-    Output('output-click', 'children', allow_duplicate=True),
+    [Output('output-click', 'children', allow_duplicate=True),
+    Output('session-save-complete', 'data', allow_duplicate=True),],
     Input('saveButton', 'n_clicks'),
     Input('saveButton-profiles', 'n_clicks'),
     prevent_initial_call=True,
@@ -1032,71 +956,98 @@ def save_session(n1,n2):
     except Exception as exc:
         kml_msg = f"KML export failed: {exc}"
 
+    message = f"Session saved to {sesh.save_dir}"
     if kml_msg:
-        return f"Session saved to {sesh.save_dir}. {kml_msg}"
-    return f'Session saved to {sesh.save_dir}'
+        message = f"{message}. {kml_msg}"
+
+    return message, {"dir": sesh.save_dir}
 
 @app.callback(
     Output("output-click", "children", allow_duplicate=True),
-    # Output("selected-site-id", "data", allow_duplicate=True),
     m1.output, mod1.output, dbdt1.output, Multi_inv.output, mod2.output, dbdt2.output, rhoa.output,
+    Output("data-buffer", "data", allow_duplicate=True),   # <-- ADD
     Input('highlight_prev', 'n_clicks'),
     Input('highlight_next', 'n_clicks'),
     State('invert_layout',  'color'),
     State('flex-layout', 'model'),
+    State("data-buffer", "data"),                          # <-- ADD
     prevent_initial_call=True,
 )
-def highlight_change(n1, n2, invert_layout_color,model):
-    # ctx = callback_context
+def highlight_change(n1, n2, invert_layout_color, model, buffer_data):
     if not ctx.triggered:
         raise PreventUpdate
     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
 
     highlighted = m1.highlighted
     if trigger_id == 'highlight_prev':
-        highlight_change = -1
+        step = -1
     elif trigger_id == 'highlight_next':
-        highlight_change = 1
+        step = 1
+    else:
+        raise PreventUpdate
 
     if highlighted is None:
-        PreventUpdate
-    else:
-        highlighted += highlight_change
+        raise PreventUpdate
+
+    highlighted = highlighted + step
+
+    # --- your existing updates ---
     df_data = sesh.data
     m1.highlighted = highlighted
     mod1.highlighted = highlighted
     mod2.highlighted = highlighted
     dbdt2.highlighted = highlighted
     dbdt1.dataframe = df_data[df_data['site_id'] == highlighted]
-    rhoa.dataframe = df_data[df_data['site_id'] == highlighted]
-    print('invert layout color:', invert_layout_color)
-    def get_active_tab_id(model):
-        if model is None:
-            return None
+    rhoa.dataframe  = df_data[df_data['site_id'] == highlighted]
+    # --- NEW: slide buffer only if highlight exits current buffer window ---
+    new_buffer = no_update
+    if buffer_data is not None and dbdt2.dataframe is not None:
+        start  = buffer_data["start_site"]
+        length = buffer_data["length"]
 
-        def search(node):
-            if node.get("type") == "tabset":
-                return node.get("selected")
-            for child in node.get("children", []):
-                result = search(child)
-                if result:
-                    return result
-            return None
+        x_axis = dbdt2.settings.x_axis
+        df = dbdt2.dataframe
 
-        return search(model.get("layout", {}))
+        # sorted axis positions
+        # df_buf = dbdt2.dataframe.copy()
+        if x_axis == "site_id":
+            df_buf = df[df["site_id"] != -1]
+        x_vals = np.sort(df[x_axis].dropna().unique())
+        # x_vals = np.sort(df[x_axis].dropna().unique())
 
-    active_tab = get_active_tab_id(model)
-    # print()
-    # if active_tab == 1:
-        # Sing_inv.invert_single_site(df_data[df_data['site_id'] == highlighted])
-        # print('here?')
-    # if invert_layout_color == 'primary':
-    #     print('will launch an inversion next time')
-        
-    
-    
+        # find index of highlighted site
+        sel = df[df["site_id"] == highlighted]
+        if not sel.empty:
+            x_val = sel[x_axis].iloc[0]
 
-    return ctx.triggered_id, m1.render(is_last_tab=False), mod1.render(), dbdt1.render(), Multi_inv.render(), mod2.render(), dbdt2.render(), rhoa.render()
+            idx = np.where(x_vals == x_val)[0]
+            if len(idx) > 0:
+                idx = int(idx[0])
+
+                # slide buffer when highlight exits window
+                if idx-1 < start:
+                    start = idx-5
+                elif idx > start + length:
+                    start = idx - length+4
+
+                # clamp
+                start = max(0, min(start, max(0, len(x_vals) - length)))
+
+                buffer_data["start_site"] = start
+                buffer_data["source"] = "site_nav"
+                new_buffer = buffer_data
+    m1.is_last_tab = False
+    return (
+        ctx.triggered_id,
+        m1.render(),
+        mod1.render(),
+        dbdt1.render(),
+        Multi_inv.render(),
+        mod2.render(),
+        dbdt2.render(),
+        rhoa.render(),
+        new_buffer,   # <-- return updated buffer only when needed
+    )
 
 
 @app.callback(
@@ -1106,15 +1057,17 @@ def highlight_change(n1, n2, invert_layout_color,model):
     Input('map', 'clickData'),
     State('invert_layout',  'color'),
     State('review_layout', 'color'),
+    State('interpret_layout', 'color'),
     State('data-buffer', 'data'),
     prevent_initial_call=True
 )
-def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color,review_layout_color, buffer_data):
-    # ctx = callback_context
+def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color,review_layout_color, interpret_layout_color, buffer_data):
     if not ctx.triggered:
         raise PreventUpdate
     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
     click_data = ctx.triggered[0]['value']
+    site_id = None
+
     if not click_data or 'points' not in click_data:
         raise PreventUpdate
     if trigger_id == 'tTEM':
@@ -1126,32 +1079,21 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color,re
     # elif trigger_id == 'map':
     #     site_id = sesh.data['site_id'].iloc[click_data['points'][0]['pointNumber']]
     elif trigger_id == 'map':
-        pt = click_data['points'][0]
-        cd = pt.get('customdata')
-        if cd and isinstance(cd, list) and len(cd) >= 3 and cd[2] == 'borehole':
-            raise PreventUpdate
-        if review_layout_color != 'primary':
-            site_id = sesh.data['site_id'].iloc[click_data['points'][0]['pointNumber']]
-        else:
-            site_id = sesh.models['site_id'].iloc[click_data['points'][0]['pointNumber']]
+        x_value,y_value = click_data['points'][0]['lon'],click_data['points'][0]['lat']
+        all_dist = cdist(m1.dataframe.latitude, m1.dataframe.longitude, y_value+0.00000002, x_value+0.000000002)
+        site_id = m1.dataframe.loc[np.argmin(all_dist), 'site_id']
+        if m1.boreholes is not None:
+            print('check the boreholes man!')
 
-    else:
-        site_id = None
     df_data = sesh.data
-    # Sing_inv.dataframe = df_data[df_data['site_id'] == site_id]
-    m1.highlighted = site_id
-    mod1.highlighted = site_id
-    mod2.highlighted = site_id
+    m1.highlighted    = site_id
+    mod1.highlighted  = site_id
+    mod2.highlighted  = site_id
     dbdt2.highlighted = site_id
-    dbdt1.dataframe = df_data[df_data['site_id'] == site_id]
-    rhoa.dataframe  = df_data[df_data['site_id'] == site_id]
-    # if invert_layout_color == 'primary':
-    #     # df_layers, df_site, _ = df_data.invert_site(site_id)
-    #     # if mod1.dataframe is not None:
-    #     #     df_layers = pd.concat([mod1.dataframe[df_data['site_id'] != site_id], df_layers], ignore_index=True)
-    #     mod1.dataframe = df_layers
-    #     dbdt1.dataframe = df_site
-    return m1.render(is_last_tab=False), mod1.render(), dbdt1.render(), mod2.render(), dbdt2.render(), rhoa.render()
+    dbdt1.dataframe   = df_data[df_data['site_id'] == site_id]
+    rhoa.dataframe    = df_data[df_data['site_id'] == site_id]
+    m1.is_last_tab = False
+    return m1.render(), mod1.render(), dbdt1.render(), mod2.render(), dbdt2.render(), rhoa.render()
 
 @app.callback(
     Output("starting-model", "data", allow_duplicate=True),
@@ -1204,7 +1146,7 @@ def reset_polling(n):
 @app.callback(
     [Output('output-data-upload', 'children'),
 
-     m1.output, dbdt1.output, dbdt2.output, rhoa.output,
+     m1.output, dbdt1.output, dbdt2.output, rhoa.output,Multi_inv.output, Sing_inv.output,
 
      Output('output-data-summary', 'children', allow_duplicate=True),
      Output('upload-toast', 'is_open'),
@@ -1220,6 +1162,7 @@ def reset_polling(n):
      Output('dem-bbox-maxlat', 'value', allow_duplicate=True),
      Output('dem-options-container', 'style', allow_duplicate=True),
      Output('borehole-options-container', 'style', allow_duplicate=True),
+     
     ],
     Input('upload-data', 'contents'),
     State('process_layout', 'n_clicks'),
@@ -1235,24 +1178,41 @@ def upload_file(contents, current_process_clicks):
         codec,info = contents[0].split(';')[1].split(',')
         sesh_str = base64.b64decode(info).decode().replace('null', 'None')
         sesh_dict = dict(eval(sesh_str))
-        save_dir = sesh_dict['save_dir']
-        filepath = save_dir.replace(' ', '%20')
-        return [no_update]*5 + [html.Div(f"File: {save_dir}"), f"#load={filepath}"]
-    
+        filepath = sesh_dict['save_dir'].replace(' ', '%20')
+        return [no_update]*5 + [html.Div(f'File: {sesh_dict['save_dir']}'), f"#load={filepath}"]
     warning_msg = None
     if sesh.save_dir is None:
         warning_msg = "No working directory selected. You can still explore data; choose Save to set one."
-    sesh.data            = TEMframe.from_zip_content(contents[0])
+    if contents[0].startswith('data:application/x-zip'):
+        try:
+            sesh.data            = TEMframe.from_zip_content(contents[0])
+        except Exception as e:
+            return (html.Div("Upload failed."),no_update,no_update,no_update,no_update,no_update,no_update,build_data_summary(),True,f"Upload failed: Only one geometry is supported at a time",True,True,no_update,no_update,no_update,no_update,no_update,{'display': 'block'}, {'display': 'block'})
     sesh.data.history    = ['df_data = TEMframe.from_zip_content("uploaded_data_zip.txt")']
-    sesh.data['include'] = sesh.data['inuse_manual'].astype(bool, copy=False).fillna(sesh.data['inuse_auto'])
+    sesh.site = sesh.overview
+    sesh.data['include'] = sesh.data['inuse_manual'].astype(bool, copy=True).fillna(sesh.data['inuse_auto'])
     sesh.models          = None
+    toast_tiff = ""
+    if contents[0].startswith("data:application/tiff") or contents[0].startswith("data:image/tiff"):
+        import base64
+        content_type, content_string = contents[0].split(",")
+        decoded = base64.b64decode(content_string)
 
+        tiff_info = GIS_helpers.load_tiff_from_bytes(decoded)
+        left, bottom, right, top = tiff_info["bounds"]
+
+        m1.tiff_layer = tiff_info
+        toast_tiff = "\n Loaded Tiff for Backgroundmap"
     # dbdt1.dataframe = sesh.data.copy()
     # buffer_sites = 
     # m1.dataframe    = sesh.overview
-    m1.dataframe = sesh.data.copy()
+    m1.dataframe    = sesh.overview.copy()
+    
     buffer_length = 50
-    unique_sites = np.sort(sesh.data['site_id'].unique())
+    # unique_sites = np.sort(sesh.data['site_id'].unique())
+    # unique_sites = np.sort(sesh.data.loc[sesh.data['site_id'] != -1, 'site_id'].unique())
+    unique_sites = np.sort(sesh.site['site_id'].dropna().unique())
+    unique_sites = unique_sites#[unique_sites != -1]
     initial_sites = unique_sites[:buffer_length]
 
     m1.buffer_sites = initial_sites.tolist()
@@ -1260,7 +1220,6 @@ def upload_file(contents, current_process_clicks):
     mod1.buffer_sites = initial_sites.tolist()
     mod2.dataframe  = sesh.models
 
-    # gis.dataframe   = sesh.models
     profile.dataframe = sesh.models
     full_df = sesh.data.copy()
 
@@ -1281,7 +1240,7 @@ def upload_file(contents, current_process_clicks):
         toast_count = int(sesh.data.loc[sesh.data['site_id'] != -1, 'site_id'].nunique())
     else:
         toast_count = int(len(sesh.data))
-    toast_msg = f"Uploaded {toast_count} sites."
+    toast_msg = f"Uploaded {toast_count} sites."+toast_tiff
 
     bbox_vals = (no_update, no_update, no_update, no_update)
     if 'longitude' in sesh.data.columns and 'latitude' in sesh.data.columns:
@@ -1296,7 +1255,7 @@ def upload_file(contents, current_process_clicks):
     if warning_msg:
         upload_msg = f"{upload_msg} {warning_msg}"
 
-    return html.Div(upload_msg), m1.render(), dbdt1.render(), dbdt2.render(), rhoa.render(), summary, True, toast_msg, False, False, new_process_clicks, *bbox_vals, {'display': 'block'}, {'display': 'block'}
+    return html.Div(upload_msg), m1.render(), dbdt1.render(), dbdt2.render(), rhoa.render(), Multi_inv.render(), Sing_inv.render(), summary, True, toast_msg, False, False, new_process_clicks, *bbox_vals, {'display': 'block'}, {'display': 'block'}
 
 
 @app.callback(
@@ -1350,8 +1309,8 @@ def upload_borehole(contents, filename):
     n_bh = len(bh_data)
     bh_ids = ', '.join(b['id'] for b in bh_data)
     msg = f"Loaded {n_bh} borehole(s): {bh_ids}"
-
-    return html.Div(msg), True, m1.render(is_last_tab=False), True, f"Loaded {n_bh} borehole(s)"
+    m1.is_last_tab = False
+    return html.Div(msg), True, m1.render(), True, f"Loaded {n_bh} borehole(s)"
 
 
 @app.callback(
@@ -1556,7 +1515,7 @@ def upload_dem(contents, filename, use_dem):
     sesh.dem_path = dem_path
     sesh.dem_name = safe_name
 
-    return html.Div(f"DEM uploaded: {safe_name}"), build_data_summary(), False, True
+    return html.Div(f"DEM uploaded: {safe_name}"), build_data_summary(), False
 
 @app.callback(
     Output('output-dem-download', 'children'),
@@ -1701,7 +1660,7 @@ def download_dem(n_clicks, use_dem, source, api_key, min_lon, min_lat, max_lon, 
     sesh.dem_path = dem_path
     sesh.dem_name = safe_name
 
-    return html.Div(f"DEM downloaded: {safe_name}"), build_data_summary(), True, True
+    return html.Div(f"DEM downloaded: {safe_name}"), build_data_summary(), True
 
 @app.callback(
     Output('save-dem', 'disabled'),
@@ -2025,19 +1984,13 @@ def manage_section_mode(toggle_n, option_clicks, current_style, current_mode):
     Input("map", "relayoutData"), 
     Input("section-mode-store", "data"),
     Input("selected-line-index", "data"),
-    Input('global-colorbar-store', 'data'),
     State("map-view-store", "data"),
     prevent_initial_call=True
 )
-def update_profile_callback(relayout, mode, selected_idx, global_cbar_data, view):
+def update_profile_callback(relayout, mode, selected_idx, view):
     ctx = callback_context
     if not ctx.triggered:
         raise PreventUpdate
-
-    # Sync colorbars as before
-    if global_cbar_data and 'resistivity' in global_cbar_data:
-        res_config = global_cbar_data['resistivity']
-        profile.settings.update_attributes(res_config)
     
     fig = profile.render(
         lines=m1.lines, 
@@ -2049,64 +2002,7 @@ def update_profile_callback(relayout, mode, selected_idx, global_cbar_data, view
     return fig, {"type": "select", "tabId": "tab-profile-plot-content_2"},# mod2.render()
 
 
-# --------------------- SAVE PROFILE AS PNG AND KMZ ---------------------
-@app.callback(
-    Output("export-message-container", "children"),
-    Input("btn-export-profile", "n_clicks"),
-    State("profile_plot_main", "figure"), 
-    State("selected-line-index", "data"),
-    prevent_initial_call=True
-)
-def trigger_export(n_clicks, fig_data, current_idx):
-    # 1. Validation
-    if not n_clicks:
-        return no_update
 
-    # Access the lines from your m1 instance (Map class)
-    if m1.lines is None or m1.lines.empty:
-        return dbc.Alert("Error: No profile lines found to export!", color="warning")
-
-    # 2. Setup Directory
-    target_dir = getattr(sesh, 'save_dir', None)
-    if target_dir is None:
-        target_dir = os.getcwd()
-
-    try:
-        # 3. Get specific line data
-        unique_ids = sorted(m1.lines['line'].unique())
-        if current_idx >= len(unique_ids):
-            return dbc.Alert("Error: Selected line index out of range.", color="danger")
-            
-        line_id = unique_ids[current_idx]
-        # Filter the dataframe for just the coordinates of the current profile
-        current_line_df = m1.lines[m1.lines['line'] == line_id]
-        
-        # Convert to list of dicts or whatever GIS_helpers expects
-        current_coords = current_line_df.to_dict('records')
-
-
-        # 4. Execute Save logic
-        # Passing fig_data, coords, and the ID to your helper
-        kmz_full_path, png_full_path = GIS_helpers.save_profile_data(
-            fig_data, 
-            current_coords, 
-            line_id, 
-            target_dir
-        )
-        
-        kmz_name = os.path.basename(kmz_full_path)
-        png_name = os.path.basename(png_full_path)
-
-        return dbc.Alert(
-            f"✅ Successfully saved {kmz_name} and {png_name} to {target_dir}",
-            color="success",
-            duration=4000, 
-            dismissable=True
-        )
-                    
-    except Exception as e:
-        print(f"Export Error: {e}")
-        return dbc.Alert(f"Export Failed: {str(e)}", color="danger")
 
 @app.callback(
     Output('dem-upload-container', 'style'),
@@ -2120,7 +2016,10 @@ def toggle_dem_upload(use_dem):
     sesh.dem_name = None
     return {'display': 'none', 'marginTop': '10px'}
 
-
+# @app.callback(Output('flex-layout', 'model',allow_duplicate=True), Input('flex-layout', 'model'), prevent_initial_call=True)
+# def print_flex_layout_model(model):
+#     print("Current flex-layout model:", model)
+#     return no_update
 
 @app.callback(
     [
@@ -2162,11 +2061,10 @@ def update_layout(model, active_idx,
         "interpret_layout": 'secondary'
     }
     colors[button_id] = 'primary'
-
+    m1.current_idx = active_idx
     # 🔥 ONE render only
+    m1.is_last_tab = is_interpret
     map_fig = m1.render(
-        current_idx=active_idx,
-        is_last_tab=is_interpret
     )
 
     if button_id == "upload_layout":
@@ -2186,23 +2084,21 @@ def update_layout(model, active_idx,
 
 
 layout_output_list = [
-        m1.output, dbdt1.output, dbdt2.output, rhoa.output, mod2.output,
+        m1.output, dbdt1.output, dbdt2.output, rhoa.output, Multi_inv.output, Sing_inv.output, mod2.output,
         
         Output('flex-layout',    'model', allow_duplicate=True),
 
         Output('upload_layout',  'color',  allow_duplicate=True),
         Output('process_layout', 'color', allow_duplicate=True),
         Output('invert_layout',  'color', allow_duplicate=True),
-        Output('review_layout',  'color', allow_duplicate=True), 
+        Output('review_layout',  'color', allow_duplicate=True), #Output('review_layout', 'disabled', allow_duplicate=True)
+        Output('interpret_layout',  'color', allow_duplicate=True),
         
-        Output('interpret_layout',  'color', allow_duplicate=True), 
-
         Output('upload_layout',  'disabled',  allow_duplicate=True),
         Output('process_layout', 'disabled', allow_duplicate=True),
         Output('invert_layout',  'disabled', allow_duplicate=True),
-        Output('review_layout',  'disabled', allow_duplicate=True),         
-        Output('interpret_layout',  'disabled', allow_duplicate=True), 
-
+        Output('review_layout',  'disabled', allow_duplicate=True), #Output
+        Output('interpret_layout',  'disabled', allow_duplicate=True),
         Output("current-working-directory", "children", allow_duplicate=True),
 
         Output('use-borehole', 'value', allow_duplicate=True),
@@ -2283,8 +2179,8 @@ def handle_url_hash(url_hash, model):
                     html.Br(), # Adds a line break to keep it tidy
                     html.Small("Upload a new .bor file below to overwrite existing data.", style={'color': '#6c757d', 'fontStyle': 'italic', 'fontSize': '0.85rem'})])
             res[-2] = {'display': 'block', 'marginTop': '10px'} # container style
-            
-            res[0] = m1.render(is_last_tab=False)
+            m1.is_last_tab = False
+            res[0] = m1.render()
         else:
             # If no boreholes, ensure UI reflects that
             res[-4] = False
@@ -2295,49 +2191,68 @@ def handle_url_hash(url_hash, model):
             m1.lines = sesh.lines.copy()
             
         if sesh.data is not None:
+            buffer_length = 50
+            start = 0
             dbdt1.dataframe = sesh.data.copy()    
-            dbdt2.dataframe = sesh.data.copy()    
+            # dbdt2.dataframe = sesh.data.copy()    
             m1.dataframe    = sesh.overview.copy()
-            rhoa.dataframe  = sesh.data.copy()    
+            full_df = sesh.data.copy()
+            unique_sites = np.sort(sesh.site['site_id'].dropna().unique())
+            unique_sites = unique_sites[unique_sites != -1]
+            initial_sites = unique_sites[:buffer_length]
+            buffered_df = full_df[full_df['site_id'].isin(initial_sites)].copy()
+
+            dbdt1.dataframe = buffered_df
+            dbdt2.dataframe = full_df          # keep full section view
+            rhoa.dataframe  = buffered_df
+            m1.buffer_sites = initial_sites.tolist()
+            # dbdt2.buffer_sites = initial_sites.tolist()
+            dbdt2.buffer_start = start
+            dbdt2.buffer_len   = buffer_length
+
+
+            # rhoa.dataframe  = sesh.data.copy()    
             Multi_inv.dataframe = sesh.data.copy()
             Sing_inv.dataframe = sesh.data.copy()
             profile.dataframe= sesh.models.copy()  if sesh.models is not None else None
-            res[0] = m1.render(is_last_tab=False)
+            m1.is_last_tab = False
+            res[0] = m1.render()
             res[1] = dbdt1.render()
             res[2] = dbdt2.render()
             res[3] = rhoa.render()
+            res[4] = Multi_inv.render()
+            res[5] = Sing_inv.render()
         
         if sesh.models is not None:
             mod1.dataframe  = sesh.models.copy()
             mod2.dataframe  = sesh.models.copy()
-            res[4] = mod2.render()
+            res[6] = mod2.render()
 
-            res[6]   = 'secondary'
-            res[7]   = 'secondary'
-            res[8]   = 'secondary'
-            res[9]   = 'secondary'
-            res[10]   = 'success'
-
-            res[11]  = False
-            res[12]  = False
-            res[13]  = False
-            res[14]  = False
-            res[15]  = False
-        else:
-
-            res[6]   = 'success'
-            res[7]   = 'secondary'
             res[8]   = 'secondary'
             res[9]   = 'secondary'
             res[10]   = 'secondary'
-
-            res[11]  = False
-            res[12]  = False
+            res[11]   = 'success'
+            res[12]  = 'secondary'
             res[13]  = False
-            res[14]  = True
-            res[15]  = True
-            
+            res[14]  = False
+            res[15]  = False
+            res[16]  = False
+            res[17]  = False
+        else:
 
+            res[8]   = 'success'
+            res[9]   = 'secondary'
+            res[10]   = 'secondary'
+            res[11]   = 'secondary'
+            res[12]   = 'secondary'
+
+            res[13]  = False
+            res[14]  = False
+            res[15]  = False
+            res[16]  = True
+            res[17]  = True
+            
+    res[-1] = ''
     return res
 
 
@@ -2414,12 +2329,15 @@ def manage_windows(click_data, n_closes, current_windows, combined_state,all_lin
             else:
                 try:
                     row_data = None
-                    if idx in df_up_map.index:
-                        row_data = df_up_map.loc[idx] if idx in df_up_map.index else df_up_map.iloc[int(idx)]
-                    else:
-                        int_idx = int(idx)
-                        if 0 <= int_idx < len(df_up_map):
-                            row_data = df_up_map.iloc[int_idx]
+                    # Convert idx to match the column type (usually int for site_id)
+                    search_val = int(idx) if str(idx).isdigit() else idx
+                    print("idx for alt",idx)
+                    
+                    # Find the row where site_id matches our clicked index
+                    mask = df_up_map['site_id'] == search_val
+                    if mask.any():
+                        row_data = df_up_map[mask].iloc[0]
+
                 except (ValueError, TypeError):
                     row_data = None
 
@@ -2445,7 +2363,6 @@ def manage_windows(click_data, n_closes, current_windows, combined_state,all_lin
             windows.append(create_draggable_window(new_id, title, content, width=width_step, height=height_step))
             return windows, combined_state
         
-        
         # B) CTRL+ALT: Add to Comparison Window
         else:
             if not combined_state.get("window_id"):
@@ -2462,6 +2379,7 @@ def manage_windows(click_data, n_closes, current_windows, combined_state,all_lin
 
             if len(bh_ids) == 0:
                 # 1. Build the combined Resistivity plot
+                print(tem_ids)
                 fig_combined_step = build_combined_step_figure(df_up_map, tem_ids, use_elevation=True)
                 
                 # 2. Build the combined dB/dt plot
@@ -2568,7 +2486,8 @@ def manage_windows(click_data, n_closes, current_windows, combined_state,all_lin
 def update_map_hover(hoverData, active_idx):
     if not hoverData or 'points' not in hoverData or not hoverData['points']:
         m1.hover_marker = None
-        return m1.render(is_last_tab=True)
+        m1.is_last_tab = True
+        return m1.render()
 
     try:
         point = hoverData['points'][0]
@@ -2617,8 +2536,8 @@ def update_map_hover(hoverData, active_idx):
         m1.hover_marker = {
             "latitude": lat,
             "longitude": lon}
-        
-        return m1.render(is_last_tab=True)
+        m1.is_last_tab = True
+        return m1.render()
 
     except Exception as e:
         print(f"Hover Sync Error: {e}")
@@ -2641,27 +2560,25 @@ def show_zoom_warning(relayout_data):
 
 # --------------------- MULTI LINE select profile dropdown and clear all or selected --------------------
 @app.callback(
-    Output("profile-list-container", "children"),
+    # Output("profile-list-container", "children"),
     Output("selected-line-index", "data"),
-    Output("btn-prev-line", "disabled"), 
-    Output("btn-next-line", "disabled"),
     Output("map", "figure", allow_duplicate=True),
     Input("url", "hash"),
     Input("map", "relayoutData"),           
-    Input("btn-clear-sel", "n_clicks"),  
-    Input("btn-clear-all", "n_clicks"),  
-    Input("btn-prev-line", "n_clicks"), 
-    Input("btn-next-line", "n_clicks"), 
-    Input({"type": "view-line-btn", "index": ALL}, "n_clicks"), 
-    State({"type": "del-check", "index": ALL}, "value"),        
+    Input("disableButton", "n_clicks"),
+    # Input("enableButton", "n_clicks"), 
+    Input("highlight_next", "n_clicks"),
+    Input("highlight_prev", "n_clicks"),     
     State("selected-line-index", "data"),
+    State("profile_plot_main", "figure"), 
+    State("interpret_layout", "color"),
     prevent_initial_call=True
 )
-def master_line_controller(url_hash,relayout, clear_sel_n, clear_all_n, prev_n, next_n, view_clicks, check_states, current_idx):
-    ctx = callback_context
+def master_line_controller(url_hash,relayout, disable_n, highlight_next_n, highlight_prev_n, current_idx, fig_data, interpret_color):
+    if interpret_color != 'primary':
+        raise PreventUpdate
     if not ctx.triggered:
         return no_update
-    
     if url_hash and '#load' in url_hash:
         # from __main__ import sesh
         # If the session has lines, make sure m1 has them
@@ -2681,59 +2598,59 @@ def master_line_controller(url_hash,relayout, clear_sel_n, clear_all_n, prev_n, 
     
     if "map.relayoutData" in trigger_id:
         if relayout and 'shapes' not in relayout:
-            return no_update, no_update, no_update, no_update, no_update#, False
+            return no_update, no_update#, no_update, no_update, no_update#, False
         unique_ids = sorted(m1.lines['line'].unique())
         num_lines = len(unique_ids)
         current_idx = num_lines - 1
 
     # --- ACTION: PREVIOUS ---
-    if "btn-prev-line" in trigger_id:
+    if "highlight_prev" in trigger_id:
+        if num_lines == 0:
+            raise PreventUpdate
         current_idx = max(0, current_idx - 1) 
-        print ("PREVIOUS BUTTON",current_idx)
 
     # --- ACTION: NEXT ---
-    elif "btn-next-line" in trigger_id:
+    elif "highlight_next" in trigger_id:
+        if num_lines == 0:
+            raise PreventUpdate
         current_idx = min(num_lines - 1, current_idx + 1)
-        print ("NEXT BUTTON",current_idx)
 
-    # --- ACTION: CLEAR ALL ---
-    elif "btn-clear-all" in trigger_id:
-        m1.lines = pd.DataFrame(columns=['latitude', 'longitude', 'line'])
-        sesh.lines = m1.lines.copy()
-        updated_map = m1.render(current_idx=0, is_last_tab=True)
-        updated_map.update_layout(shapes=[])
-        return [], 0, True, True, updated_map #, False
+    elif "disableButton" in trigger_id:
+        if num_lines == 0:
+            raise PreventUpdate
 
-    # --- ACTION: CLEAR SELECTED ---
-    elif "btn-clear-sel" in trigger_id:
-        ids_to_remove = [unique_ids[i] for i, val in enumerate(check_states) if val and len(val) > 0]
-        m1.lines = m1.lines[~m1.lines['line'].isin(ids_to_remove)]
+        # line currently displayed on the map
+        line_to_remove = unique_ids[current_idx]
+
+        # remove it
+        m1.lines = m1.lines[m1.lines["line"] != line_to_remove]
         sesh.lines = m1.lines.copy()
-        unique_ids = sorted(m1.lines['line'].unique())
+
+        # recompute ids
+        unique_ids = sorted(m1.lines["line"].unique())
         num_profiles = len(unique_ids)
-        # current_idx = max(0, min((current_idx or 0), num_profiles - 1))
+
+
         if num_profiles == 0:
             current_idx = 0
-            updated_map = m1.render(is_last_tab=True)
+            m1.is_last_tab = True
+            updated_map = m1.render()
             updated_map.update_layout(shapes=[])
-            return [], 0, True, True, updated_map
+            return 0, updated_map
         else:
-            current_idx = max(0, min((current_idx or 0), num_profiles - 1))
-            # Fallback to the last available profile if current one was deleted
-            updated_map = m1.render(current_idx=current_idx, is_last_tab=True)
-
-    # --- ACTION: CHANGE VIEW (EYE ICON) ---
-    elif "view-line-btn" in trigger_id:
-        btn_index = json.loads(trigger_id.split(".")[0])["index"]
-        current_idx = btn_index
+            # keep index valid
+            current_idx = min(current_idx, num_profiles - 1)
+            # m1.current_idx = current_idx
+            # updated_map = m1.render(is_last_tab=True)
 
     num_profiles = len(unique_ids)
     
     prev_disabled = (current_idx <= 0) or (num_profiles == 0)
     next_disabled = (current_idx >= num_profiles - 1) or (num_profiles == 0)
     
-
-    updated_map = m1.render(current_idx=current_idx,is_last_tab=True)
+    m1.current_idx = current_idx
+    m1.is_last_tab=True
+    updated_map = m1.render()
     updated_map.update_layout(shapes=[])
 
     rows = []
@@ -2751,119 +2668,79 @@ def master_line_controller(url_hash,relayout, clear_sel_n, clear_all_n, prev_n, 
                     "flex": 1, "fontSize": "13px", 
                     "fontWeight": "bold" if is_active else "normal"
                 }),
-                html.Button(
-                    "👁️", 
-                    id={"type": "view-line-btn", "index": i},
-                    style={
-                        "border": "none", "background": "none", "cursor": "pointer", 
-                        "fontSize": "16px", "marginRight": "10px",
-                        "opacity": "1" if is_active else "0.3"
-                    }
-                ),
-                dcc.Checklist(
-                    id={"type": "del-check", "index": i},
-                    options=[{"label": "", "value": 1}],
-                    value=[],
-                )
             ]
         ))
+    return current_idx, updated_map
 
-    return rows, current_idx, prev_disabled, next_disabled, updated_map
+@app.callback(
+    Output("export-message-container", "children"),
+    Input("enableButton", "n_clicks"),
+    State("profile_plot_main", "figure"),
+    State("selected-line-index", "data"),
+    State("interpret_layout", "color"),
+    prevent_initial_call=True,
+)
+def export_profile(n_clicks, fig_data, current_idx, interpret_color):
+    if interpret_color!= "primary":
+        raise PreventUpdate
+    if m1.lines is None or m1.lines.empty:
+        return dbc.Toast(
+            "No profile lines found to export.",
+            header="Export Error",
+            icon="danger",
+            is_open=True,
+            duration=4000,
+        )
 
+    target_dir = getattr(sesh, 'save_dir', None) or os.getcwd()
 
+    unique_ids = sorted(m1.lines['line'].unique())
+
+    if current_idx >= len(unique_ids):
+        return dbc.Toast(
+            "Selected line index out of range.",
+            header="Export Error",
+            icon="danger",
+            is_open=True,
+            duration=4000,
+        )
+
+    line_id = unique_ids[current_idx]
+    current_line_df = m1.lines[m1.lines['line'] == line_id]
+    current_coords = current_line_df.to_dict('records')
+
+    kmz_full_path, png_full_path = GIS_helpers.save_profile_data(
+        fig_data,
+        current_coords,
+        line_id,
+        target_dir
+    )
+
+    kmz_name = os.path.basename(kmz_full_path)
+    png_name = os.path.basename(png_full_path)
+
+    return dbc.Toast(
+        f"Saved {kmz_name} and {png_name}",
+        header="Export Complete",
+        icon="success",
+        is_open=True,
+        duration=4000,
+    )
+import signal
+@app.server.route("/shutdown", methods=["POST"])
+def shutdown():
+    print('closing app, saving data to zip...')
+    sesh.save()    
+    os.kill(os.getpid(), signal.SIGINT)  # Send a signal to the process to terminate
 
 
 if __name__ == "__main__":
-    # --console flag: run in browser mode (used by run_app_console.bat)
-    if "--console" in sys.argv:
-        try:
-            is_frozen = getattr(sys, "frozen", False)
-            app.run(port=8050, debug=not is_frozen, use_reloader=not is_frozen)
-        except Exception as e:
-            print(f"Error running app: {e}")
-    else:
-        # Default: launch via pywebview native window
-        import threading
-        import time as _time
-        import webview
-        import urllib.request
-
-        PORT = 8050
-        APP_URL = f'http://127.0.0.1:{PORT}/'
-
-        # Expose webview module for save dialog
-        _PYWEBVIEW_REFS['webview'] = webview
-
-        # --- JS API exposed to webview windows ---
-        class Api:
-            def open_help(self):
-                """Open the help docs in a new webview window."""
-                webview.create_window(
-                    'Sea Anemone - Help',
-                    f'{APP_URL}help/index.html',
-                    width=1100,
-                    height=800,
-                )
-
-        # --- Loading splash shown while server boots ---
-        _SPLASH_HTML = """
-        <!DOCTYPE html>
-        <html>
-        <head><meta charset="utf-8">
-        <style>
-            body { margin:0; height:100vh; display:flex; align-items:center;
-                   justify-content:center; background:#1a1a2e; font-family:Segoe UI,sans-serif; }
-            .loader { text-align:center; color:#e0e0e0; }
-            .loader h1 { font-size:28px; margin-bottom:18px; letter-spacing:1px; }
-            .spinner { width:48px; height:48px; border:4px solid rgba(255,255,255,.15);
-                       border-top-color:#4fc3f7; border-radius:50%; animation:spin .8s linear infinite;
-                       margin:0 auto 16px; }
-            @keyframes spin { to { transform:rotate(360deg); } }
-            .loader p { font-size:14px; color:#90a4ae; }
-        </style></head>
-        <body><div class="loader">
-            <h1>Sea Anemone</h1>
-            <div class="spinner"></div>
-            <p>Loading application…</p>
-        </div></body></html>
-        """
-
-        def _wait_and_navigate(window):
-            """Poll the server until it responds, then navigate the window."""
-            for _ in range(120):  # up to 60 seconds
-                try:
-                    urllib.request.urlopen(APP_URL, timeout=1)
-                    window.load_url(APP_URL)
-                    return
-                except Exception:
-                    _time.sleep(0.5)
-            # Timeout fallback
-            window.load_url(APP_URL)
-
-        try:
-            api = Api()
-
-            # Start Dash/Flask server in a daemon background thread
-            server_thread = threading.Thread(
-                target=lambda: app.run(port=PORT, debug=False, use_reloader=False),
-                daemon=True
-            )
-            server_thread.start()
-
-            # Show splash window immediately (no server wait)
-            window = webview.create_window(
-                'Sea Anemone',
-                html=_SPLASH_HTML,
-                width=1400,
-                height=900,
-                min_size=(1024, 700),
-                js_api=api,
-            )
-
-            # Once the window is shown, navigate to app as soon as server is up
-            webview.start(func=_wait_and_navigate, args=[window])
-        except Exception as e:
-            print(f"Error running app: {e}")
-        finally:
-            # Force-kill the process immediately when the window is closed
-            os._exit(0)
+    try:
+        app.run(port=8050)
+    except Exception as e:
+        print(f"Error running app: {e}")
+    finally:
+        print('closing app, saving data to zip...')
+        sesh.save()
+        os.kill(os.getpid(), signal.SIGINT)  # Send a signal to the process to terminate
+#start msedge --app=http://127.0.0.1:8050/

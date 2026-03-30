@@ -1,40 +1,36 @@
-import sys
-sys.path.insert(0, 'C:/Users/au646858/OneDrive - Aarhus Universitet/Documents/_repositories/sea-anemone/app')
-
-from panels import *
-from map import *
 from typing import List
 from pandas import DataFrame
 import json_numpy
 from anemone.forwards import Forward
-
 from temframe import TEMframe
+from nosj import nosj
+from basepanel import PanelSettings
 
-@nosj
-class SessionSettings:
-    map: MapSettings
-    sounding: dbdtSoundingSettings
-    table: TableSettings
-    linked_settings: List[str] = None
+from numpy import nan as np_nan
 
 import pandas as pd
+def rounded_nanmean(x):
+    return round(x.mean(), 2)
 
 @nosj
 class Session:
-    data:     TEMframe  = None
-    models:   DataFrame = None
-    site:     DataFrame = None
-    lines:    DataFrame = None
+    data:      TEMframe  = None
+    models:    DataFrame = None
+    site:      DataFrame = None
+    lines:     DataFrame = None
     boreholes: DataFrame = None
     rock_map : dict      = None
-    forwards: List[Forward] = None
-    settings: SessionSettings = None
-    save_dir: str = None
-    dem_path: str = None
-    dem_name: str = None
+    forwards:  List[Forward] = None
+    panel_ids: List[str] = None
+    settings:  List[PanelSettings] = None
+    save_dir:  str = None
+    dem_path:  str = None
+    dem_name:  str = None
 
     def save(self, folder=None, binary_threshold=100):
+        self.update_site_table()
         other = self.copy()
+        
         if folder is None and other.save_dir is None:
             from os import makedirs
             makedirs('anemone_backup', exist_ok=True)
@@ -94,10 +90,10 @@ class Session:
             self.data = TEMframe.from_pandas(pd.read_csv(self.save_dir+self.data), forward_operators=fwd_list)
             self.forwards = fwd_list
             self.data.forward_operators = fwd_list
-            self.data.dmfwr = self.forwards[0]+self.forwards[1]
-            self.data.dmfwr = self.data.dmfwr.logify()
+        
         if self.models is not None and isinstance(self.models, str):
             self.models = pd.read_csv(self.save_dir+self.models)
+
         if self.site is not None and isinstance(self.site, str):
             self.site = pd.read_csv(self.save_dir+self.site)
         if self.boreholes is not None and isinstance(self.boreholes, str):
@@ -110,7 +106,18 @@ class Session:
             rock_df = pd.read_csv(self.save_dir + self.rock_map)
             self.rock_map = dict(zip(rock_df['RockType'], rock_df['Color']))
         else:
-            self.site = self.data.overview()
+            self.update_site_table()
+
+        if self.boreholes is not None and isinstance(self.boreholes, str):
+            df_flat = pd.read_csv(self.save_dir + self.boreholes)            
+            from Sections_plotting import dataframe_to_boreholes
+            self.borehole_list = dataframe_to_boreholes(df_flat)
+            self.boreholes = df_flat
+        if self.rock_map is not None and isinstance(self.rock_map, str):
+            # This is the actual conversion step
+            rock_df = pd.read_csv(self.save_dir + self.rock_map)
+            self.rock_map = dict(zip(rock_df['RockType'], rock_df['Color']))
+
         if self.lines is not None and isinstance(self.lines, str):
             self.lines = pd.read_csv(self.save_dir+self.lines)
 
@@ -122,10 +129,34 @@ class Session:
 
     @property
     def overview(self):
-        if self.site is not None:
-            return self.site
+        # if self.site is not None:
+        #     return self.site
+        self.update_site_table()
+        return self.site        
 
+    def update_site_table(self):
         if self.data is not None:
-            return self.data.overview()
-        else:
-            return None
+            df = self.data.copy()
+            df['include'] = df['inuse_manual'].astype(bool, copy=True).fillna(df['inuse_auto'])
+            aggfunc = dict(                        
+                        date=('date','first'),
+                        daytime=('daytime','first'),
+                        latitude=('latitude','first'),
+                        longitude=('longitude','first'),
+                        elevation=('elevation','first'),
+                        utm_x=('utm_x','first'),
+                        utm_y=('utm_y','first'),
+                        distance=('distance','first'),
+                        )
+
+            if 'misfit' in df.columns:
+                aggfunc['misfit'] = ('misfit', rounded_nanmean)
+                aggfunc['gates_used']=('include', 'sum')
+                df.loc[df['include']==False, 'misfit'] = np_nan
+
+            site = df.groupby('site_id', as_index=False).agg(**aggfunc)
+
+            if self.models is not None:
+                doi = self.models.groupby('site_id', as_index=False).agg(doi=('doi', 'first'))
+                site = site.merge(doi, left_on='site_id', right_on='site_id')
+            self.site=site

@@ -13,31 +13,22 @@ def silence(s):
 from anemone.inversion import LogResistivity
 from anemone.inversion import fastJac, SCI
 
-iteration_cap = 10
-if iteration_cap<50:
-    import warnings
-    warnings.warn("The default iteration cap for TEMframe inversion has been reduced to 10 to speed up testing. Change it back to 50 for production runs.", UserWarning)
-
-
 def make_log():
-    """Initialize a log file by creating it empty or clearing if it exists."""
-    try:
-        with open('inversion_log.txt', 'w') as f:
-            f.write('')
-    except IOError as e:
-        print(f"Error creating log file: {e}")
+    from __main__ import sesh
+    sesh.inv_status = []
+
     
 
 def write_log(message):
-    print(message)
-    with open('inversion_log.txt', 'a') as f:
-        f.write(message+'\n')
+    from __main__ import sesh
+    sesh.inv_status.append(message)
     
 
 class TEMframe(DataFrame):
     forward_operators = []
     history = []
     track_history = True
+    _dmfwr=None
 
     def __init__(self, *args, **kwargs):
         if 'forward_operators' in kwargs:
@@ -80,6 +71,82 @@ class TEMframe(DataFrame):
         
         self.history = current_history
         return df
+    
+    def apply_slope_filter(self, threshold=1.0, min_points=8):
+        """
+        Disable datapoints after a large slope change in log-log space.
+
+        Parameters
+        ----------
+        threshold : float
+            Maximum allowed absolute change in slope between adjacent segments.
+            If exceeded, all subsequent gates are disabled.
+        min_points : int
+            Minimum number of valid points required before slope checking begins.
+        """
+
+        if 'inuse_auto' not in self.columns:
+            raise ValueError("Column 'inuse_auto' not found.")
+
+        # Work per site and system
+        grouped = self.groupby(['site_id', 'system_id'])
+
+        for (site, system), df_grp in (self[self['system_id'] == 1].groupby(['site_id', 'system_id'])):
+
+            df_grp = df_grp.sort_values('time')
+
+            # Remove invalid rows
+            df_valid = df_grp[
+                (df_grp['dbdt'] > 0) &
+                np.isfinite(df_grp['time']) &
+                np.isfinite(df_grp['dbdt'])
+            ]
+
+            if len(df_valid) < min_points:
+                continue
+
+            log_t = np.log10(df_valid['time'].values)
+            log_y = np.log10(np.abs(df_valid['dbdt'].values))
+
+            # Compute segment slopes
+            dt = np.diff(log_t)
+            dy = np.diff(log_y)
+
+            # Avoid divide-by-zero
+            valid = dt != 0
+            slopes = np.zeros_like(dy)
+            slopes[valid] = dy[valid] / dt[valid]
+
+            # Change in slope
+            dslopes = np.abs(np.diff(slopes))
+
+            # Find first large slope jump
+            start_points = 9  # start checking after this many points
+
+            # Index in dslopes corresponding to start_points
+            start_idx = max(0, start_points - 2)
+
+            # Only evaluate slope changes after enough points exist
+            bad_idx = np.where(dslopes[start_idx:] > threshold)[0]
+
+            if len(bad_idx) == 0:
+                continue
+
+            # Convert back to full index
+            bad_idx = bad_idx[0] + start_idx
+
+            # Index in original group where breakdown begins
+            cutoff_local = bad_idx + 2  # +2 due to double diff
+            cutoff_index = df_valid.index[cutoff_local]
+
+            # Disable all later points
+            mask = (self.index >= cutoff_index) & \
+                (self['site_id'] == site) & \
+                (self['system_id'] == system)
+
+            self.loc[mask, 'inuse_manual'] = False
+
+        return self
 
     def apply_slope_filter(self, threshold=1.0, min_points=5):
         """
@@ -233,7 +300,6 @@ class TEMframe(DataFrame):
         lm.location = np.pad(lm.location, ((1,0), (0,0)), mode='constant', constant_values=np.nan)
         lm.daytime  = np.pad(lm.daytime, (1,0), mode='constant', constant_values=np.nan)
 
-
         data_avg = {
             'site_id': np.concatenate([np.ones(n_gates, dtype=int)*i for i in site_id]),
             'dbdt': lm.data.flatten(),
@@ -281,6 +347,8 @@ class TEMframe(DataFrame):
         history = [f'place_holder = TEMframe.from_usf_folder(\"{folder_path}\")']
 
         df_data = cls(data_avg, forward_operators=forward_operators, history=history, track_history=track_history)
+        neg_mask = df_data['dbdt'] <= 0
+        df_data.loc[neg_mask, 'inuse_manual'] = False
         # with df_data._skip_tracking():
         df_data.sort_values(by=['site_id','system_id', 'gate_id'], inplace=True)
         df_data.reset_index(drop=True, inplace=True)
@@ -317,7 +385,6 @@ class TEMframe(DataFrame):
         df_data.forward_operators[0].source     = df_data.forward_operators[1].source
         df_data.forward_operators[0].receiver   = df_data.forward_operators[1].receiver
         df_data.forward_operators[0].filterfunc = df_data.forward_operators[1].filterfunc     
-        df_data.dmfwr = df_data.forward_operators[0]+df_data.forward_operators[1]
 
         if {'site_id','date','daytime'}.issubset(df_data.columns):
 
@@ -394,6 +461,12 @@ class TEMframe(DataFrame):
     #         yield
     #     finally:
     #         self.track_history = original
+
+    @property
+    def dmfwr(self):
+        if self._dmfwr is None:
+            self._dmfwr = (self.forward_operators[0]+self.forward_operators[1]).logify()
+        return self._dmfwr
 
     def invert_individually(self, res_start, vc=0.4, hc=0.4, max_iterations=50):
 #        res_start = LogResistivity.smooth(torch.ones(31)*40., torch.logspace(0, 2.1, 30))
@@ -551,6 +624,8 @@ class TEMframe(DataFrame):
             y_list.append(row_meta['utm_y'])
         
         inv = SCI(inv_list, x=np.array(x_list), y=np.array(y_list), log=write_log)
+        inv.vertical_smoothness = vc
+        inv.horizontal_smoothness = hc
         res_mods = inv.invert(iter_cap=max_iterations)
 
         # DOI: try to get from SCI, fall back to individual inversions, then 0
@@ -564,6 +639,7 @@ class TEMframe(DataFrame):
                     doi.append(val.item() if hasattr(val, 'item') else float(val))
                 else:
                     doi.append(0.0)
+
         for i,((id_row, row), (id_meta, row_meta)) in enumerate(zip(pivot_multi.iterrows(), df_overview.iterrows())):
             assert id_meta == id_row, "Site ID mismatch between row and metadata"
 
@@ -579,11 +655,11 @@ class TEMframe(DataFrame):
             row_meta['resistivity'] = rho.detach().cpu().numpy().tolist()
             row_meta['thickness'] = thick.detach().cpu().numpy().tolist()
             # row_meta['misfit'] = df_data.loc[data_id, 'misfit'].mean()
+            row_meta['doi'] = doi[i]
             
             results.append(row_meta.to_dict())
             print(f'Inversion for data_id {i:02d} completed.')
         df_data['misfit'] = (((df_data['dbdt'] - df_data['dbdt_syn'])**2/(np.log1p(df_data['dbdt'].values*df_data['error'].values/100.)**2))**0.5)
-        df_data.dmfwr = self.dmfwr
 
         df_overview = df_data.overview()
         df_overview['doi'] = doi

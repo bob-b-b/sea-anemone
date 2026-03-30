@@ -11,8 +11,6 @@ import numpy as np
 import os
 import re
 
-
-
 # Define a custom template
 custom_template = {
     "layout": {
@@ -42,10 +40,10 @@ pio.templates["custom"] = custom_template
 pio.templates.default = "custom"
 
 def cdist(lat1,lon1,lat2,lon2):
-    lat1rad = lat1/(180./np.pi)
-    lon1rad = lon1/(180./np.pi)
-    lat2rad = lat2/(180./np.pi)
-    lon2rad = lon2/(180./np.pi)
+    lat1rad = lat1*np.pi/180.
+    lon1rad = lon1*np.pi/180.
+    lat2rad = lat2*np.pi/180.
+    lon2rad = lon2*np.pi/180.
     d = 3963. * np.arccos((np.sin(lat1rad)*np.sin(lat2rad))+ \
             np.cos(lat1rad)*np.cos(lat2rad)*np.cos(lon2rad-lon1rad)) * \
             1.609344 * 1000.
@@ -58,7 +56,7 @@ class MapSettings(PanelSettings):
     color: str = '#ff0000'
     color_data: str = '#000000'
     highlight_color: str= '#ffff00'  # Default highlight color
-    plot_by: str = 'misfit'
+    plot_by: Literal['', 'misfit', 'doi', 'date'] = ''
     buffer_color: str= '#ffffff'  # Default buffer color
 
 class Map(Panel):
@@ -70,13 +68,17 @@ class Map(Panel):
     hover_marker: dict = None
     boreholes : dict = None
     rock_color_map = None
+    tiff_layer = None
+    current_idx = None
+    is_last_tab = False
 
     def __init__(self, data, **kwargs):
         settings = MapSettings(id='map', **kwargs)
         super().__init__(id='map', settings=settings)
         self.dataframe = data
 
-    def render(self, current_idx=None, is_last_tab = False):
+    def render(self):
+
         if self.dataframe is None: return self.empty_render()
         df_plot = self.dataframe
         # if 'site_id' in df_plot.columns:
@@ -87,14 +89,11 @@ class Map(Panel):
 
         zoom = self.view['map.zoom'] if self.view is not None else self.settings.zoom
         center = self.view['map.center'] if self.view is not None else None      
-        
-        
-        from __main__ import sesh
-        # if sesh.models is not None:
-        if sesh.models is not None and self.settings.plot_by in sesh.models.columns:
+
+        if self.settings.plot_by in df_plot.columns and self.settings.plot_by!='':
 
             fig = px.scatter_map(
-                sesh.models,
+                df_plot,
                 lat="latitude",
                 lon="longitude",
                 zoom=zoom,
@@ -120,21 +119,8 @@ class Map(Panel):
             if self.settings.plot_by == 'misfit':
                 fig.update_coloraxes(cmin=0, cmax=3)
             elif self.settings.plot_by == 'doi':
-                fig.update_coloraxes(cmin=10, cmax=sesh.models['doi'].max())
-            # data_trace = px.scatter_map(
-            #     df_plot,
-            #     lat="latitude",
-            #     lon="longitude",
-            #     zoom=zoom,
-            #     center=center,
-            #     color_discrete_sequence=[self.settings.color_data],
-            #     custom_data=["site_id"]   # <-- ADD THIS
-            # )
-            # data_trace.update_traces(marker={'size': 8})
-            # for trace in data_trace.data:
-            #     fig.add_trace(trace)
+                fig.update_coloraxes(cmin=df_plot['doi'].min()*0.5, cmax=df_plot['doi'].max())
         else:
-            # fig = px.scatter_map(df_plot, lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.color])
             fig = px.scatter_map(
                 df_plot,
                 lat="latitude",
@@ -144,12 +130,10 @@ class Map(Panel):
                 color_discrete_sequence=[self.settings.color],
                 custom_data=["site_id"]   
             )
-        
         fig.update_traces(marker={'size': 8})
         
         if self.buffer_sites is not None and len(self.buffer_sites) > 0 and self.dataframe is not None and 'site_id' in self.dataframe.columns:
             df_buffer = self.dataframe[self.dataframe["site_id"].isin(self.buffer_sites)]
-
             if not df_buffer.empty:
                 buffer_trace = px.scatter_map(
                     df_buffer,
@@ -166,20 +150,33 @@ class Map(Panel):
 
                 for trace in buffer_trace.data:
                     fig.add_trace(trace)
-                fig.data = (fig.data[1], fig.data[0])
+                fig.data = (fig.data[-1],)+fig.data[:-1]
 
-
-        fig.update_layout(map_style="white-bg",
-            map_layers=[
-                {
-                    "below": 'traces',
+        map_layers = [{
+                    "below": "traces",
                     "sourcetype": "raster",
                     "sourceattribution": "Google Earth (C)",
-                    "source": ['https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}']
-                }])
-        if self.highlighted is not None:
-            # highlight_trace = px.scatter_map(df_plot[df_plot.index == self.highlighted], lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.highlight_color])
-            
+                    "source": ["https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"]
+                }]
+
+        if self.tiff_layer is not None:
+            left, bottom, right, top = self.tiff_layer["bounds"]
+            tiff_overlay = {
+                "below": "traces",
+                "sourcetype": "image",
+                "source": self.tiff_layer["image"],
+                "coordinates": [
+                    [left, top],
+                    [right, top],
+                    [right, bottom],
+                    [left, bottom]
+                ]
+            }
+            map_layers.append(tiff_overlay)
+
+        fig.update_layout(map_style="white-bg", map_layers=map_layers)
+        
+        if self.highlighted is not None:            
             highlight_trace = px.scatter_map(
                 df_plot[df_plot['site_id'] == self.highlighted],
                 lat="latitude",
@@ -191,18 +188,7 @@ class Map(Panel):
             )
             highlight_trace.update_traces(marker=dict(size=14))
             for trace in highlight_trace.data:
-                fig.add_trace(
-                    trace)
-        else:
-            highlight_trace = px.scatter_map(
-                df_plot,
-                lat="latitude",
-                lon="longitude",
-                zoom=zoom,
-                center=center,
-                color_discrete_sequence=[self.settings.color],
-                # custom_data=["site_id"],   # <-- ADD THIS
-            )
+                fig.add_trace(trace)
 
         # if self.lines is not None:
         #     fig2 = px.line_map(self.lines, lat='latitude', lon='longitude', line_group='line', color='line',  zoom=zoom, center=center, hover_name='line')
@@ -219,8 +205,8 @@ class Map(Panel):
             # Identify the actual ID of the active line
             # (Handling case where current_idx might be out of range)
             active_line_id = None
-            if current_idx is not None and 0 <= current_idx < len(unique_ids):
-                active_line_id = unique_ids[current_idx]
+            if self.current_idx is not None and 0 <= self.current_idx < len(unique_ids):
+                active_line_id = unique_ids[self.current_idx]
 
             # --- Trace 1: Inactive Lines (Yellow, Width 5) ---
             inactive_df = self.lines[self.lines['line'] != active_line_id]
@@ -230,6 +216,8 @@ class Map(Panel):
                     line_group='line', zoom=zoom, center=center
                 )
                 inactive_fig.update_traces(line=dict(color="yellow", width=2), name="Inactive Profile")
+                for trace in inactive_fig.data:
+                    trace.update(line=dict(color="yellow", width=2), hoverinfo="skip")
                 fig.add_traces(inactive_fig.data)
 
             # --- Trace 2: Active Line (Red, Width 8) ---
@@ -240,6 +228,8 @@ class Map(Panel):
                     line_group='line', zoom=zoom, center=center
                 )
                 active_fig.update_traces(line=dict(color="red", width=4), name="Active Profile")
+                for trace in active_fig.data:
+                    trace.update(line=dict(color="red", width=4), hoverinfo="skip")
                 fig.add_traces(active_fig.data)
 
             if self.hover_marker is not None:
@@ -255,27 +245,22 @@ class Map(Panel):
 
                 for trace in hover_trace.data:
                     fig.add_trace(trace)
-            
-        if self.boreholes:
-            from Sections_plotting import add_boreholes_to_map_fig
-            fig = add_boreholes_to_map_fig(fig, self.boreholes)
 
 
-        tools_to_add = ['drawline', 'drawopenpath'] if is_last_tab else []
-        tools_to_remove = ['select2d','lasso2d','zoomIn', 'zoomOut'] if is_last_tab else []
+        tools_to_add = ['drawline', 'drawopenpath'] if self.is_last_tab else []
+        tools_to_remove = ['select2d','lasso2d','zoomIn', 'zoomOut'] if self.is_last_tab else []
 
         # 2. Update the layout dynamically
         fig.update_layout(
             margin={"r":0,"t":0,"l":0,"b":0},
             # uirevision=str(is_last_tab),
-            uirevision=f"mode-{is_last_tab}",
+            uirevision=f"mode-{self.is_last_tab}",
             modebar=dict(add=tools_to_add, remove=tools_to_remove),
             newshape=dict(line_color='cyan', line_width=4, line_dash='dash'),
             dragmode='pan', 
             showlegend=False,
             map=dict(bearing=0, pitch=0)
         )
-        # print("is last tab", is_last_tab)
 
         return fig    
     
@@ -332,9 +317,9 @@ class Map(Panel):
                         ),
 
                         dbc.Select(
-                            options=['misfit', 'doi', 'date'],
+                            options=self.settings.schema['properties']['plot_by']['enum'],
                             id=self.id+'_plot_by',
-                            value='misfit',
+                            value=self.settings.plot_by,
                             style={
                                 'position': 'absolute',
                                 'bottom': '75px',
@@ -371,10 +356,10 @@ class Map(Panel):
         )
         def update_plotby(value):
             from __main__ import sesh
-            if sesh.models is None:
-                raise PreventUpdate
-            if value not in sesh.models.columns:
-                raise PreventUpdate
+            # if sesh.models is None:
+                # raise PreventUpdate
+            if value not in self.dataframe.columns and value != '':
+                value = ''
             self.settings.plot_by = value
             return self.render()  
 
@@ -435,17 +420,18 @@ class Map(Panel):
                     from __main__ import sesh
                     sesh.lines = self.lines
                     del relayout_data['shapes']
+                    self.is_last_tab = False
                     fig = self.render()
             return relayout_data, fig
 
 
 @nosj
 class dbdtSoundingSettings(PanelSettings):
-    lm_color: str = '#ff0000'
-    hm_color: str = '#2D81FF'
-    lm_factor: float = 20.0
-    hm_factor: float = 1.0
-    plot_error: bool = False
+    lm_color: str = '#2D81FF'
+    hm_color: str = '#ff0000'
+    lm_factor: int = 20
+    hm_factor: int = 1
+    # plot_error: bool = False
     x_axis: Literal['time', 'gate_id'] = 'time'  # or 'site_id', 'longitude', 'latitude'
     dbdt_max: float = -3
     dbdt_min: float = -12
@@ -460,37 +446,42 @@ class dbdtSounding(Panel):
         for key, value in kwargs.items():
             setattr(self, key, value)
         
-        # if self.dataframe is not None:
-        #     self.settings.dbdt_min = np.abs(self.dataframe['dbdt'].values).min()
-        #     self.settings.dbdt_max = np.abs(self.dataframe['dbdt'].values).max()
+        if self.dataframe is not None:
+            self.settings.dbdt_min = np.abs(self.dataframe['dbdt'].values).min()
+            self.settings.dbdt_max = np.abs(self.dataframe['dbdt'].values).max()
 
     def compare_synthetic(self):
 
         y_axis                                             = 'dbdt_syn'
 
         df_tmp                                             = self.dataframe.sort_values(['site_id', 'system_id',  self.settings.x_axis])
-        df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto'])
-        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt_syn']  *= self.settings.lm_factor
-        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
-        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt_syn']  *= self.settings.hm_factor
-        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
+        df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=True).fillna(df_tmp['inuse_auto'])
+        # lm_factor = compute_lm_scaling(self.dataframe, self.settings.lm_factor)
+        lm_factor = self.settings.lm_factor
+        hm_factor = self.settings.hm_factor
+        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt_syn']  *= lm_factor
+        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= lm_factor
+        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt_syn']  *= hm_factor
+        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= hm_factor
         df_tmp.loc[df_tmp['site_id'] == -1, 'include']  = False
         df_tmp.loc[df_tmp['dbdt']<=0, 'dbdt'] = np.nan
 
-        df_tmp['system_id']                                = df_tmp['system_id'].map({1: 'hm', 0: 'lm'})
+        df_tmp['system_id']                                = df_tmp['system_id'].map({0: 'lm', 1: 'hm'})
 
         error_ub,error_lb = 'error_ub', 'error_lb'
         # if True:
         #     error_ub = None
         #     error_lb = None
-        
+        # title = "Sounding curve"
+        # if df_tmp['site_id'].nunique()==1:
+        #     title += f" site {df_tmp['site_id'].iloc[0]}"
         fig = px.scatter(
             df_tmp,
             x=self.settings.x_axis,
             y='dbdt',
             color_discrete_sequence=["gray", "gray"],
             color="system_id",
-            title="Sounding curve",
+            # title=title,
             custom_data=["system_id", "data_id", "site_id"],
             error_y=error_ub,
             error_y_minus=error_lb,
@@ -510,7 +501,7 @@ class dbdtSounding(Panel):
             y='dbdt',
             color_discrete_sequence=["black", "black"],
             color="system_id",
-            title="dbdt vs time by site_id",
+            # title="dbdt vs time by site_id",
             # custom_data=["system_id", "data_id"],
             error_y=error_ub,
             error_y_minus=error_lb,
@@ -524,7 +515,7 @@ class dbdtSounding(Panel):
             y='dbdt_syn',
             color="system_id",
             color_discrete_sequence=[self.settings.lm_color, self.settings.hm_color],
-            title="dbdt vs time by site_id",
+            # title="dbdt vs time by site_id",
             custom_data=["system_id", "data_id", "site_id"],
             # range_y=[self.settings.dbdt_min, self.settings.dbdt_max]
 
@@ -548,24 +539,29 @@ class dbdtSounding(Panel):
         y_axis                                             = 'dbdt_syn'
         df_tmp                                             = self.dataframe.sort_values(['site_id', 'system_id',  self.settings.x_axis])
         df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto']).astype(bool)
-        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
-        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
+        # lm_factor = compute_lm_scaling(self.dataframe, self.settings.lm_factor)
+        lm_factor = self.settings.lm_factor
+        hm_factor = self.settings.hm_factor
+        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= lm_factor
+        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= hm_factor
         df_tmp.loc[df_tmp['site_id'] == -1, 'include']  = False
 
-        df_tmp['system_id']                                = df_tmp['system_id'].map({1: 'hm', 0: 'lm'})
+        df_tmp['system_id']                                = df_tmp['system_id'].map({0: 'lm', 1: 'hm'})
 
         error_ub,error_lb = 'error_ub', 'error_lb'
         # if True:
         #     error_ub = None
         #     error_lb = None
-        
+        # title = "Sounding curve"
+        # if df_tmp['site_id'].nunique()==1:
+        #     title += f" site {df_tmp['site_id'].iloc[0]}"
         fig = px.scatter(
             df_tmp,
             x=self.settings.x_axis,
             y='dbdt',
             color_discrete_sequence=["gray", "gray"],
             color="system_id",
-            title="Sounding curve",
+            # title=title,
             custom_data=["system_id", "data_id", "site_id"],
             error_y=error_ub,
             error_y_minus=error_lb,
@@ -583,7 +579,7 @@ class dbdtSounding(Panel):
             y='dbdt',
             color_discrete_sequence=["black", "black"],
             color="system_id",
-            title="dbdt vs time by site_id",
+            # title="dbdt vs time by site_id",
             # custom_data=["system_id", "data_id"],
             error_y=error_ub,
             error_y_minus=error_lb,
@@ -595,8 +591,8 @@ class dbdtSounding(Panel):
             x=self.settings.x_axis,
             y='dbdt',
             color="system_id",
-            color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
-            title="dbdt vs time by site_id",
+            color_discrete_sequence=[self.settings.lm_color, self.settings.hm_color],
+            # title="dbdt vs time by site_id",
             custom_data=["system_id", "data_id", "site_id"],
             range_y=[self.settings.dbdt_min, self.settings.dbdt_max]
         )
@@ -619,16 +615,39 @@ class dbdtSounding(Panel):
             fig = self.compare_synthetic()
         else:
             fig = self.observed_only()
-
+        
+        vals = np.abs(self.dataframe["dbdt"].values)
+        vals = vals[np.isfinite(vals) & (vals > 0)]
+        if len(vals) > 0:
+            logvals = np.log10(vals)
+            ymin = np.floor(logvals.min()) - 0.2
+            ymax = np.ceil(logvals.max()) + 0.2 + np.log10(self.settings.lm_factor)
+        else:
+            ymin, ymax = -12, -3
+        self.settings.dbdt_min = ymin
+        self.settings.dbdt_max = ymax
         fig.update_layout(
             yaxis_type="log",
             yaxis_range=[self.settings.dbdt_min, self.settings.dbdt_max],
             xaxis_type="log" if self.settings.x_axis == 'time' else "linear",
             xaxis_title=self.settings.x_axis,
-            yaxis_title="$\\frac{dB}{dt}$ \\[V / m$^2$\\]",
-            margin={"l": 50, "r": 50, "t": 50, "b": 50},
-            dragmode='select'
-        )
+            # yaxis_title="$\\frac{dB}{dt}$ \\[V / m$^2$\\]",
+            yaxis_title = 'dB/dt [V / m²]',
+            margin={"l": 50, "r": 50, "t": 10, "b": 50},
+            dragmode='select',
+            xaxis=dict(
+            showline=True,
+            mirror=True,
+            linewidth=1,
+            linecolor="black"
+            ),
+            yaxis=dict(
+                showline=True,
+                mirror=True,
+                linewidth=1,
+                linecolor="black"
+            ))
+
         shown_groups = set()
 
         for trace in fig.data:
@@ -666,9 +685,13 @@ class dbdtSounding(Panel):
    
 
 class rhoaSounding(dbdtSounding):
+
     @staticmethod
     def to_rhoa(time, dbdt, area=1., current=1.):
         from numpy import pi
+        from __main__ import sesh
+        x = sesh.data.dmfwr.source.x
+        area = (x.max() - x.min())**2
         mu0 = 4 * pi * 1e-7
         if dbdt.ndim > time.ndim:
             t = time[np.newaxis, :]
@@ -683,8 +706,6 @@ class rhoaSounding(dbdtSounding):
         super().__init__(id='rhoa', settings=settings)
         for key, value in kwargs.items():
             setattr(self, key, value)
-        self.settings.dbdt_min = 0
-        self.settings.dbdt_max = 3
 
 
     def compare_synthetic(self):
@@ -698,20 +719,22 @@ class rhoaSounding(dbdtSounding):
         df_tmp.loc[df_tmp['site_id'] == -1, 'include']  = False
 
 
-        df_tmp['system_id']                                = df_tmp['system_id'].map({1: 'hm', 0: 'lm'})
+        df_tmp['system_id']                                = df_tmp['system_id'].map({0: 'lm', 1: 'hm'})
 
         error_ub,error_lb = 'error_ub', 'error_lb'
         # if True:
         #     error_ub = None
         #     error_lb = None
-        
+        # title = "Apparent Resistivity"
+        # if df_tmp['site_id'].nunique()==1:
+        #     title += f" site {df_tmp['site_id'].iloc[0]}"
         fig = px.scatter(
             df_tmp,
             x=self.settings.x_axis,
             y='rhoa',
             color_discrete_sequence=["gray", "gray"],
             color="system_id",
-            title="Apparent Resistivity",
+            # title=title,
             custom_data=["system_id", "data_id", "site_id"],
             error_y=error_ub,
             error_y_minus=error_lb
@@ -729,7 +752,7 @@ class rhoaSounding(dbdtSounding):
             y='rhoa',
             color_discrete_sequence=["black", "black"],
             color="system_id",
-            title="rhoa vs time",
+
             # custom_data=["system_id", "data_id"],
             error_y=error_ub,
             error_y_minus=error_lb,
@@ -740,8 +763,7 @@ class rhoaSounding(dbdtSounding):
             x=self.settings.x_axis,
             y='rhoa_syn',
             color="system_id",
-            color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
-            title="rhoa vs time",
+            color_discrete_sequence=[self.settings.lm_color, self.settings.hm_color],
             custom_data=["system_id", "data_id", "site_id"],
         )
         fig2.update_traces(line_width=2)
@@ -762,20 +784,22 @@ class rhoaSounding(dbdtSounding):
         df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto']).astype(bool)
         df_tmp.loc[df_tmp['site_id'] == -1, 'include']  = False
 
-        df_tmp['system_id']                                = df_tmp['system_id'].map({1: 'hm', 0: 'lm'})
+        df_tmp['system_id']                                = df_tmp['system_id'].map({0: 'lm', 1: 'hm'})
 
         error_ub,error_lb = 'error_ub', 'error_lb'
         # if True:
         #     error_ub = None
         #     error_lb = None
-        
+        # title = "Apparent Resistivity"
+        # if df_tmp['site_id'].nunique()==1:
+        #     title += f" site {df_tmp['site_id'].iloc[0]}"
         fig = px.scatter(
             df_tmp,
             x=self.settings.x_axis,
             y='rhoa',
             color_discrete_sequence=["gray", "gray"],
             color="system_id",
-            title="Apparent Resistivity",
+            # title=title,
             custom_data=["system_id", "data_id", "site_id"],
             error_y=error_ub,
             error_y_minus=error_lb
@@ -792,7 +816,6 @@ class rhoaSounding(dbdtSounding):
             y='rhoa',
             color_discrete_sequence=["black", "black"],
             color="system_id",
-            title="dbdt vs time by site_id",
             # custom_data=["system_id", "data_id"],
             error_y=error_ub,
             error_y_minus=error_lb,
@@ -803,8 +826,7 @@ class rhoaSounding(dbdtSounding):
             x=self.settings.x_axis,
             y='rhoa',
             color="system_id",
-            color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
-            title="dbdt vs time by site_id",
+            color_discrete_sequence=[self.settings.lm_color, self.settings.hm_color],
             custom_data=["system_id", "data_id", "site_id"],
         )
         
@@ -823,13 +845,24 @@ class rhoaSounding(dbdtSounding):
 
         fig.update_layout(
             yaxis_type="log",
-            yaxis_range=[self.settings.dbdt_min, self.settings.dbdt_max],
+            yaxis_range=[-1, 2.7],
             xaxis_type="log" if self.settings.x_axis == 'time' else "linear",
             xaxis_title=self.settings.x_axis,
-            yaxis_title="$\\rho_a$ \\[ $\\Omega$-m\\]",
-            margin={"l": 50, "r": 50, "t": 50, "b": 50},
-            dragmode='select'
-        )
+            yaxis_title=r"$\rho_a\;[\Omega\,\mathrm{m}]$",
+            margin={"l": 50, "r": 50, "t": 10, "b": 50},
+            dragmode='select',
+            xaxis=dict(
+            showline=True,
+            mirror=True,
+            linewidth=1,
+            linecolor="black"
+            ),
+            yaxis=dict(
+                showline=True,
+                mirror=True,
+                linewidth=1,
+                linecolor="black"
+            ))
 
         shown_groups = set()
 
@@ -868,10 +901,10 @@ class rhoaSounding(dbdtSounding):
 
 @nosj
 class dbdtSectionSettings(PanelSettings):
-    lm_color: str = '#ff0000'
-    hm_color: str = '#2D81FF'
-    lm_factor: float = 20.0
-    hm_factor: float = 1.0
+    lm_color: str = '#2D81FF'
+    hm_color: str = '#ff0000'
+    lm_factor: int = 20
+    hm_factor: int = 1
     x_axis: Literal['daytime', 'site_id', 'longitude', 'latitude', 'distance'] = 'site_id'
     y_axis: str = 'dbdt_syn'
     plot_disabled: bool = True
@@ -896,12 +929,15 @@ class dbdtSection(Panel):
         df_tmp                                             = df_tmp.sort_values(['gate_id', self.settings.x_axis])
         df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto'])
 
-        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt_syn']  *= self.settings.lm_factor
-        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
-        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt_syn']  *= self.settings.hm_factor
-        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
+        # lm_factor = compute_lm_scaling(self.dataframe, self.settings.lm_factor)
+        lm_factor = self.settings.lm_factor
+        hm_factor = self.settings.hm_factor
+        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt_syn']  *= lm_factor
+        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= lm_factor
+        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt_syn']  *= hm_factor
+        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= hm_factor
         df_tmp.loc[df_tmp['site_id'] ==  -1, 'include']  = False
-        df_tmp['system_id']                                = df_tmp['system_id'].map({1: 'hm', 0: 'lm'})
+        df_tmp['system_id']                                = df_tmp['system_id'].map({0: 'lm', 1: 'hm'})
 
         # x_axis = df_tmp[self.settings.x_axis].unique()#.values
         # if self.settings.x_axis == 'site_id':
@@ -914,7 +950,7 @@ class dbdtSection(Panel):
             x_vals = x_vals[x_vals > -1]
 
         n_sites = len(x_vals)
-
+        # self.buffer_start +=1
         plot_start = max(0, self.buffer_start)
         plot_end   = min(n_sites, self.buffer_start + self.buffer_len)
 
@@ -940,7 +976,6 @@ class dbdtSection(Panel):
             y='dbdt',
             color_discrete_sequence=["gray", "gray"],
             color="system_id",
-            title="dbdt vs time by site_id",
             custom_data=["system_id", "data_id", "site_id"],
             error_y=error_ub,
             error_y_minus=error_lb
@@ -958,7 +993,6 @@ class dbdtSection(Panel):
             y='dbdt',
             color_discrete_sequence=["black", "black"],
             color="system_id",
-            title="dbdt vs time by site_id",
             # custom_data=["system_id", "data_id"],
             error_y=error_ub,
             error_y_minus=error_lb,
@@ -970,7 +1004,6 @@ class dbdtSection(Panel):
             y='dbdt_syn',
             color="system_id",
             color_discrete_sequence=[self.settings.lm_color, self.settings.hm_color],
-            title="field data versus simulated data",
             custom_data=["system_id", "data_id", "site_id"],
         )
         fig2.update_traces(line_width=1.5)
@@ -1025,10 +1058,13 @@ class dbdtSection(Panel):
         df_tmp = self.dataframe[self.dataframe['gate_id']>-1]
         df_tmp                                             = df_tmp.sort_values(['gate_id', self.settings.x_axis])
         df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto']).astype(bool)
-        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= self.settings.lm_factor
-        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= self.settings.hm_factor
+        # lm_factor = compute_lm_scaling(self.dataframe, self.settings.lm_factor)
+        lm_factor = self.settings.lm_factor
+        hm_factor = self.settings.hm_factor
+        df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= lm_factor
+        df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= hm_factor
         df_tmp.loc[df_tmp['site_id'] ==  -1, 'include']  = False
-        df_tmp['system_id']                                = df_tmp['system_id'].map({1: 'hm', 0: 'lm'})
+        df_tmp['system_id']                                = df_tmp['system_id'].map({0: 'lm', 1: 'hm'})
 
         # x_axis = df_tmp[self.settings.x_axis].unique()#.values
         # if self.settings.x_axis == 'site_id':
@@ -1076,7 +1112,7 @@ class dbdtSection(Panel):
             y='dbdt',
             color_discrete_sequence=["gray", "gray"],
             color="system_id",
-            title="Manual processing",
+            # title="Manual processing",
             custom_data=["system_id", "data_id", "site_id"],
             error_y=error_ub,
             error_y_minus=error_lb,
@@ -1091,7 +1127,7 @@ class dbdtSection(Panel):
             y='dbdt',
             color_discrete_sequence=["black", "black"],
             color="system_id",
-            title="dbdt vs time by site_id",
+            # title="dbdt vs time by site_id",
             # custom_data=["system_id", "data_id"],
             error_y=error_ub,
             error_y_minus=error_lb,
@@ -1102,7 +1138,7 @@ class dbdtSection(Panel):
             x=self.settings.x_axis,
             y='dbdt',
             color="system_id",
-            color_discrete_sequence=[self.settings.hm_color, self.settings.lm_color],
+            color_discrete_sequence=[self.settings.lm_color, self.settings.hm_color],
             title="dbdt vs time by site_id",
             custom_data=["system_id", "data_id", "site_id"],
         )
@@ -1201,24 +1237,51 @@ class dbdtSection(Panel):
                     x0=x_value - dx,
                     x1=x_value + dx,
                     y0=self.dataframe["dbdt"].abs().min() * 0.5,
-                    y1=self.dataframe["dbdt"].max() * 25,
+                    y1=self.dataframe["dbdt"].max()*self.settings.lm_factor *2,
                     line=dict(color="rgba(0,0,0,0.8)", width=1.5),
                     fillcolor="rgba(0,0,0,0.0)",
                 )
+        vals = np.abs(self.dataframe["dbdt"].values)
+        vals = vals[np.isfinite(vals) & (vals > 0)]
+
+        if len(vals) > 0:
+            logvals = np.log10(vals)
+            ymin = np.floor(logvals.min()) - 0.2
+            ymax = np.ceil(logvals.max()) + 0.2 + np.log10(self.settings.lm_factor)
+        else:
+            ymin, ymax = -12, -3
+
+        self.settings.dbdt_min = ymin
+        self.settings.dbdt_max = ymax
+
         fig.update_layout(
             yaxis_type="log",
             yaxis_range=[self.settings.dbdt_min, self.settings.dbdt_max],
             xaxis_title=self.settings.x_axis,
-            yaxis_title="$\\frac{dB}{dt}$ \\[V / m$^2$\\]",
-            margin={"l": 50, "r": 50, "t": 50, "b": 50},
-            dragmode='select'
-        )
+            # yaxis_title="$\\frac{dB}{dt}$ \\[V / m$^2$\\]",
+            yaxis_title="dB/dt [V / m²]",
+            margin={"l": 55, "r": 40, "t": 10, "b": 50},
+            dragmode='select',
+            xaxis=dict(
+            showline=True,
+            mirror=True,
+            linewidth=1,
+            linecolor="black"
+            ),
+            yaxis=dict(
+                showline=True,
+                mirror=True,
+                linewidth=1,
+                linecolor="black"
+            ))
         return fig    
 
 @nosj
 class AutoProcessing(PanelSettings):
     sign_correction:  bool = False
     remove_negatives: bool = False
+    Slope_Filter: bool = False
+    Slope_Filter_threshold: int = 5
 
 
 class Upload(Panel):
@@ -1483,8 +1546,8 @@ class Upload(Panel):
             dcc.Markdown("### Upload your data to get started."),
             self.render(),
             html.Div([
-                html.Div(['working directory: '], id="current-working-directory-label", style={"marginLeft":"10px", "marginTop": "10px", 'display': 'inline-block'}),
-                html.A("select directory", href="#change_working", id="current-working-directory", style={"cursor": "pointer", "color": "blue", "textDecoration": "underline", "marginLeft":"10px", "marginTop": "10px", 'display': 'inline-block'}, title='change directory')
+                html.Div(['Working directory: '], id="current-working-directory-label", style={"marginLeft":"10px", "marginTop": "10px", 'display': 'inline-block'}),
+                html.A("Select directory", href="#change_working", id="current-working-directory", style={"cursor": "pointer", "color": "blue", "textDecoration": "underline", "marginLeft":"10px", "marginTop": "10px", 'display': 'inline-block'}, title='change directory')
             ]),
             dcc.Markdown("---"),
             dcc.Markdown(session_text),
@@ -1620,10 +1683,10 @@ class ModelGraph(Panel):
                     "resistivity": "ρ [Ω·m]",  # Unicode rho
                     "site_id": "Site ID"
                 },
-                title="1D Resistivity Profile",
+                # title="1D Resistivity Profile",
             )
         else:
-            fig = go.Figure(layout=dict(title="1D Resistivity Profile"))
+            fig = go.Figure(layout=dict())#title="1D Resistivity Profile"))
             df_highlighted = df_layers_long[df_layers_long['site_id'] == self.highlighted]
             fig.add_trace(
                 go.Scatter(
@@ -1636,16 +1699,47 @@ class ModelGraph(Panel):
                 ), 
             )
 
+            if not df_highlighted.empty:
+                doi_val = df_highlighted['doi'].iloc[0]
+                fig.add_trace(go.Scatter(
+                    x=[0.1,1000],
+                    y=[doi_val, doi_val],
+                    mode="lines",
+                    line=dict(color="black",width=2,dash="dash"),
+                    showlegend=False,
+                ))
+                fig.update_layout(dragmode=False) 
+            # fig.add_trace(
+            #     go.Scatter(
+            #         x=df_layers_long["resistivity"],
+            #         y=df_layers_long["depth"],
+            #         mode="lines",
+            #         line=dict(color='gray'),
+            #         name='All Sites'
+            #     ), 
+            # )
+
             fig.add_trace(go.Scatter(x=[0.1,1000],y=[df_highlighted['doi'].iloc[0],df_highlighted['doi'].iloc[0]],mode="lines",line=dict(color="black",width=2,dash="dash"),showlegend=False))
 
-        fig.update_xaxes(title_text='Resistivity [Ω⋅m]',type='log',range=[0, 2.7],showline=True,mirror=True           )
+
+        # Reverse y-axis so depth increases downward
+        # fig.update_yaxes(autorange="reversed")
+        # fig.update_xaxes(type="log", range=[np.log10(self.settings.rho_min), np.log10(self.settings.rho_max)])
+        fig.update_xaxes(title_text='Resistivity [Ωm]',type='log',range=[0, 2.7],            showline=True,
+            linewidth=1,
+            linecolor="black",
+            mirror=True)
 
         fig.update_yaxes(
             title_text='Depth [m]',
-            range=[180, -0.5],  # depth increasing downward
+            range=[df_layers_long['depth'].max(), -0.5],  # depth increasing downward
             showline=True,
-            mirror=True,
+            linewidth=1,
+            linecolor="black",
+            mirror=True
         )
+        fig.update_layout(
+            margin={"l": 50, "r": 30, "t": 10, "b": 50},)
         return fig        
     
 @nosj
@@ -1707,64 +1801,37 @@ class ModelSection(Panel):
         df_layers_long = df_layers_long[df_layers_long[self.settings.x_axis].isin(x_slice)]
 
 
-        vmin_ms = self.settings.__dict__.get('vmin', self.settings.vmin)
-        vmax_ms = self.settings.__dict__.get('vmax', self.settings.vmax)
-
-
-        # Check what triggered the current Dash lifecycle
-        trigger = "No active callback"
-        if ctx.triggered_id:
-            trigger = ctx.triggered_id
-            # If it's a pattern-matching ID, it might be a dict, so we convert to string
-            if isinstance(trigger, dict):
-                trigger = f"{trigger.get('type')}[{trigger.get('key')}]"
-
-
-        log_vmin = np.log10(vmin_ms)
-        log_vmax = np.log10(vmax_ms)
+        log_vmin = np.log10(self.settings.vmin)
+        log_vmax = np.log10(self.settings.vmax)
 
         tick_vals = np.linspace(log_vmin, log_vmax, self.settings.nticks)
         tick_text = [f"{10**v:.0f}" for v in tick_vals]
-
-        vmin_ms = self.settings.__dict__.get('vmin', self.settings.vmin)
-        vmax_ms = self.settings.__dict__.get('vmax', self.settings.vmax)
-
-
-        # Check what triggered the current Dash lifecycle
-        trigger = "No active callback"
-        if ctx.triggered_id:
-            trigger = ctx.triggered_id
-            # If it's a pattern-matching ID, it might be a dict, so we convert to string
-            if isinstance(trigger, dict):
-                trigger = f"{trigger.get('type')}[{trigger.get('key')}]"
-
-        # print("--- RENDER DEBUG ---")
-        # print(f"TRIGGERED BY: {trigger}")
-        # print("VMAX RENDER MODEL SECTION", vmax_ms)
-        # print("SETTINGS OBJECT ID:", id(self.settings))
-
-        log_vmin = np.log10(vmin_ms)
-        log_vmax = np.log10(vmax_ms)
-
-        tick_vals = np.linspace(log_vmin, log_vmax, self.settings.nticks)
-        tick_text = [f"{10**v:.0f}" for v in tick_vals]
-        
-        # print(tick_vals)
 
         fig = px.imshow(
             heatmap_df[x_slice],
+            x=heatmap_df[x_slice].columns,
+            y=heatmap_df.index,  # depth values
             aspect='auto',
             origin='lower',
             # color_continuous_scale=settings.cmap, #'turbo',
             color_continuous_scale=self.settings.cmap,
             labels={'x': self.settings.x_axis, 'y': 'Depth [m]'},
-            title='Resistivity Heatmap by Site and Depth',
+            # title='Resistivity Heatmap by Site and Depth',
             # zmin=heatmap_df.min().min(),
             # zmax=heatmap_df.max().max(),
             zmin=log_vmin,
             zmax=log_vmax,
         )
         fig.update_layout(hovermode="x")
+        fig.update_traces(
+            customdata=10**heatmap_df[x_slice].values,
+            hovertemplate=(
+                "Depth: %{y} m<br>"
+                "Site: %{x}<br>"
+                "Resistivity: %{customdata:.2f} Ω·m"
+                "<extra></extra>"
+            )
+        )
         fig.update_yaxes(autorange="reversed")
         fig.update_layout(yaxis2=dict(title='Misfit',overlaying='y',side='right',showgrid=False))
         
@@ -1777,16 +1844,16 @@ class ModelSection(Panel):
                     orientation='h',
                     x=0.5,
                     xanchor='center',
-                    y=-0.2,
+                    y=-0.15,
                     yanchor='top',
-                    thickness=20,
+                    thickness=15,
                     len=0.95,
                     tickmode='array',
                     tickvals=tick_vals,
                     ticktext=tick_text,
-                )
+                    title=dict(text='Resistivity [Ωm]',side='bottom'))
             ),
-            margin=dict(b=120)
+            # margin=dict(b=120)
         )
         
         # ---- Misfit only for buffered sites ----
@@ -1816,7 +1883,8 @@ class ModelSection(Panel):
             mode="lines",
             line=dict(color="rgba(0,0,0,0.7)", dash="dash"),
             showlegend=False,
-            yaxis='y2'
+            yaxis='y2',
+            hoverinfo='skip'
         ))
 
 
@@ -1828,7 +1896,8 @@ class ModelSection(Panel):
 
         fig.update_layout(yaxis2=dict(title=dict(text="Misfit",standoff=10),overlaying="y",side="right",showgrid=False)
 )
-        doi_df = (df_layers_long.groupby(self.settings.x_axis)["doi"].first().reset_index())
+        doi_df = (df_layers_long.groupby(self.settings.x_axis)["doi"].first().reset_index()).dropna()
+        # doi_df = doi_df.loc['doi' ]
         if not doi_df.empty:
             x_min = min(x_slice)
             x_max = max(x_slice)
@@ -1843,15 +1912,17 @@ class ModelSection(Panel):
                         [x_min]
                     ]),
                     y=np.concatenate([
-                        [y_max + 50],
+                        [y_max + 5000],
                         doi_df["doi"].values,
-                        [y_max + 50],
-                        [y_max + 50]
+                        [y_max + 5000],
+                        [y_max + 5000]
                     ]),
                     fill="toself",
                     fillcolor="rgba(255,255,255,0.6)",
                     line=dict(width=0),
                     name="Below DOI",
+                    hoverinfo='skip',
+                    showlegend=True
                 )
             )
 
@@ -1893,6 +1964,27 @@ class ModelSection(Panel):
             autorange=False
         )
         fig.update_layout(yaxis2=dict(range=[0, 8]))
+        fig.update_xaxes(
+            title=dict(
+                text=self.settings.x_axis,
+                standoff=5
+            )
+        )
+
+        fig.update_xaxes(
+            showline=True,
+            linewidth=1,
+            linecolor="black",
+            mirror=True
+        )
+
+        fig.update_yaxes(
+            showline=True,
+            linewidth=1,
+            linecolor="black",
+            mirror=True
+        )
+        fig.update_layout(margin = dict(l=60, r=60, t=15, b=20))
         return fig
     # def add_callbacks(self, app):
     #     super().add_callbacks(app)
@@ -1943,143 +2035,6 @@ class ModelSection(Panel):
 
 import dash_bootstrap_components as dbc
 
-@nosj
-class StartingModelSettings(PanelSettings):
-    line_color: str='#ff0000'
-
-from anemone.inversion import LogResistivity
-
-class StartingModel(ModelGraph):
-    
-    misfit = None
-    def __init__(self, data, **kwargs):
-        starting_model = kwargs.pop('starting_rho', 10.)
-        settings = StartingModelSettings(id='starting_model', **kwargs)
-        super().__init__(id='starting_model', settings=settings, starting_rho=starting_model)
-        self.dataframe = data
-
-    def misfit_render(self):
-        fig = px.line(self.misfit)
-        return fig
-
-
-    def render(self):
-        fig = px.line(self.dataframe,
-            x='resistivity',
-            y='depth',
-            markers=True,
-            color_discrete_sequence=[self.settings.line_color, self.settings.line_color],
-            hover_data={'resistivity': ':.2f Ω⋅m', 'depth': False},
-        )
-
-        fig.update_layout(
-            title='Inversion Starting Model',
-            xaxis_title='resistivity [Ω⋅m]',
-            yaxis_title='depth [m]',
-            xaxis_type='log', 
-            yaxis_type='linear',
-            yaxis=dict(autorange='reversed'),
-            xaxis=dict(range=[-0.1,3.1]),  
-            showlegend=True,
-            modebar=dict(remove=['toImage', 'zoom', 'zoomIn', 'zoomOut', 'pan', 'select']),
-        )
-        fig.add_shape(type='line', x0=self.starting_rho, x1=self.starting_rho,
-                      y0=self.dataframe['depth'].min(), y1=self.dataframe['depth'].max(),
-                      xref='x1', yref='y1',
-                      line=dict(color=self.settings.line_color, dash='dash'),
-                      editable=True)
-
-        return fig
-    
-    def initialize(self):
-        init = html.Div([dbc.Container([
-                dbc.Row([
-                    dbc.Col(
-                        dcc.Graph(figure=self.render(), id=self.id, mathjax=True, 
-                                    config=dict(edits={'shapePosition':True}, displayModeBar=False)),
-                            width=10),
-                             dbc.Tooltip('The sounding panel shows the selected data', target='invert_selected_button')
-                ], style={'height':'100%'})], style={'height':'95%', 'padding':'25px'}),
-                 gear_maker(self.id)], style={'height': '100%', 'overflow': 'hidden'},
-                  )
-        return init
-                            
-    
-    def add_callbacks(self, app):
-        super().add_callbacks(app)
-
-        @app.callback(
-            Output(self.id, 'figure', allow_duplicate=True),
-            Input(self.id, 'relayoutData'),
-            prevent_initial_call=True
-        )
-        def update_starting_model(relayoutData):
-            self.starting_rho = int(relayoutData.get('shapes[0].x0', self.starting_rho))
-            self.dataframe['resistivity'] = self.starting_rho
-            return self.render()
-        
-
-    @classmethod
-    def standard(cls, rho=40.):
-        df = pd.DataFrame({
-            'resistivity': [rho] * 31,  # Default resistivity values
-            'depth': np.cumsum(np.logspace(0, 1.3, 31)).tolist()  # Example depth values from 0 to 300 meters
-            })
-        return cls(data=df)
-    
-
-class PyInterpretter(Panel):
-    def __init__(self):
-        super().__init__(id='pyinterp')
-
-    def initialize(self):
-        init = html.Div([
-            html.H2("Python Interpreter"),
-            dcc.Textarea(
-                id='code-input',
-                placeholder='Type Python code here...',
-                style={'width': '100%', 'height': 200}
-            ),
-            html.Br(),
-            html.Button('Run Code', id='run-btn', n_clicks=0),
-            html.H4("Output:"),
-            html.Pre(id='code-output', style={'backgroundColor': '#f4f4f4', 'padding': '10px'})
-        ])
-        return init
-    # def add_callbacks(self, app):
-    #     import sys
-    #     import io
-    #     import traceback
-    #     import numpy as np        
-    #     @app.callback(
-    #         Output('code-output', 'children'),
-    #         Input('run-btn', 'n_clicks'),
-    #         State('code-input', 'value')
-    #     )
-    #     def run_python_code(n_clicks, code):
-    #         if not code:
-    #             return "No code entered."
-
-    #         # Redirect stdout and stderr
-    #         old_stdout = sys.stdout
-    #         old_stderr = sys.stderr
-    #         redirected_output = sys.stdout = io.StringIO()
-    #         redirected_error = sys.stderr = io.StringIO()
-
-    #         try:
-    #             # Execute the code in a restricted namespace
-    #             exec(code)#, {"__builtins__": __builtins__}, {})
-    #             output = redirected_output.getvalue()
-    #             errors = redirected_error.getvalue()
-    #             return output + errors if output or errors else "Code executed successfully (no output)."
-    #         except Exception:
-    #             return traceback.format_exc()
-    #         finally:
-    #             # Restore stdout and stderr
-    #             sys.stdout = old_stdout
-    #             sys.stderr = old_stderr
-
-
 class HotKeyReminder(Panel):
     javascript =     """
         function(id) {
@@ -2103,7 +2058,21 @@ class HotKeyReminder(Panel):
                         event.preventDefault()
                         event.stopPropagation()
                     }
-                    
+                    if (event.key == 'ArrowLeft') {
+                        document.getElementById('prev-buffer').click()
+                        event.preventDefault()
+                        event.stopPropagation()
+                    }
+                    if (event.key == 'ArrowRight') {
+                        document.getElementById('next-buffer').click()
+                        event.preventDefault()
+                        event.stopPropagation()
+                    }                    
+                    if (event.key == 'b') {
+                        document.getElementById('beginning-buffer').click()
+                        event.preventDefault()
+                        event.stopPropagation()
+                    }   
                     if (event.key == 's') {
                         if (event.shiftKey) {
                             document.getElementById('saveAsButton').click()
@@ -2142,26 +2111,31 @@ class HotKeyReminder(Panel):
             html.Div(
                 [
                     dbc.ButtonGroup([
-                    dbc.Button("disable [ctrl+d]", id='disableButton'),
-                    dbc.Button("enable  [ctrl+e]", id='enableButton'),
+                    dbc.Button("Disable [ctrl+d]", id='disableButton'),
+                    html.Div(style={'width':'6px'}),
+                    dbc.Button("Enable  [ctrl+e]", id='enableButton'),
                     ]),
                     dbc.ButtonGroup([
-                        dbc.Button("Beginning [<<]", id='beginning-buffer', style={"marginRight": "6px"}),
-                        dbc.Button("Previous buffer [<<-]", id='prev-buffer', style={"marginRight": "6px"}),
-                        dbc.Button("Previous [<-]", id='highlight_prev', style={"marginRight": "6px"}),
-                        dbc.Button("Next [->]", id='highlight_next', style={"marginRight": "6px"}),
-                        dbc.Button("Next buffer [->>]", id='next-buffer', style={"marginRight": "12px"}),
+                        dbc.Button("Beginning [ctrl+b]", id='beginning-buffer', style={}),
+                        html.Div(style={'width':'6px'}),
+                        dbc.Button("Previous buffer [ctrl+<-]", id='prev-buffer', style={}),
+                        html.Div(style={'width':'6px'}),
+                        dbc.Button("Previous [<-]", id='highlight_prev', style={}),
+                        html.Div(style={'width':'6px'}),
+                        dbc.Button("Next [->]", id='highlight_next', style={}),
+                        html.Div(style={'width':'6px'}),
+                        dbc.Button("Next buffer [ctrl+->]", id='next-buffer', style={}),
+                        html.Div(style={'width':'12px'}),
                         html.Div(
                             [
                                 html.Small(
                                     "Buffer length:",
                                     style={
-                                        "marginLeft": "12px",
-                                        "marginRight": "6px",
                                         "color": "#555",
                                         "fontSize": "12px",
-                                    }
+                                    }, id="buffer-length-label"
                                 ),
+                                html.Div(style={'width':'6px'}),
                                 dcc.Input(
                                     id='buffer-length-input',
                                     type='number',
@@ -2174,7 +2148,9 @@ class HotKeyReminder(Panel):
                                         "fontSize": "13px"
                                     }
                                 ),
-                            dbc.Progress(id="buffer-progress",value=0,max=100,style={"height": "18px", "marginTop": "10px", "marginLeft": "12px", "marginRight": "6px"}),
+                            html.Div(style={'width':'12px'}),
+                            dbc.Progress(id="buffer-progress",value=0,max=100,style={"height": "18px", "marginTop": "10px"}),
+                            html.Div(style={'width':'6px'}),
                             html.Div(id="buffer-progress-text", style={"fontSize": "14px"}),
                             ],
                             style={
@@ -2183,10 +2159,20 @@ class HotKeyReminder(Panel):
                             }
                         )
                     ]),
-                    
+                    html.Div(dbc.Toast(id="save-session-toast",header="Session Saved",is_open=False,dismissable=True,duration=8000,icon="success", 
+                        style={"position": "fixed","top": "80px","right": "20px","width": 350,"zIndex": 9999})),
                     dbc.ButtonGroup([
-                        dbc.Button("save [ctrl+s]", id='saveButton'),
-                    ])
+                        dbc.Button("Save session [ctrl+s]", id='saveButton'),
+                    ]),
+                    # html.Div(style={'width':'30px'}),
+                    dbc.Tooltip("Save the current session to the default location or select a folder", target='saveButton', placement='top'),
+                    dbc.Tooltip(id="disable-tooltip",children="Used to disable noisy data or data which cannot be fitted in inversions.",target="disableButton",placement="top",),
+                    dbc.Tooltip(id="enable-tooltip",children="Used to enable previously disabled data.",target="enableButton",placement="top",),
+                    dbc.Tooltip(id = "beginning-tooltip",children="Go to the first collected data site.", target='beginning-buffer', placement='top'),
+                    dbc.Tooltip(id = "prev-buffer-tooltip",children="Go to the previous buffer of sites.", target='prev-buffer', placement='top'),
+                    dbc.Tooltip(id = "next-buffer-tooltip",children="Go to the next buffer of sites.", target='next-buffer', placement='top'),
+                    dbc.Tooltip("Go to previous.", target='highlight_prev', placement='top'),
+                    dbc.Tooltip("Go to next", target='highlight_next', placement='top'),
                 ], style={'padding': '10px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between'}
                 ),
                 dcc.Location(id='url_button'),
@@ -2222,4 +2208,86 @@ class HotKeyReminder(Panel):
             end = min(start + length, total_sites)
             percent = (end / total_sites) * 100
 
-            return percent, f"{start}–{end} of {total_sites} sites"
+            return percent, f"{start+1}–{end} of {total_sites} sites"
+        @app.callback(
+            Output("save-session-toast", "is_open"),
+            Output("save-session-toast", "children"),
+            Input("session-save-complete", "data"),
+            prevent_initial_call=True
+        )
+        def show_save_toast(save_data):
+            if not save_data:
+                raise PreventUpdate
+            # from __main__ import sesh
+            # save_dir = getattr(sesh, "session_path", "unknown")
+
+            return True, f"Session saved to: {save_data.get('dir', 'unknown')}"
+        @app.callback(
+            Output("disableButton", "children"),
+            Output("enableButton", "children"),
+            Output("disable-tooltip", "children"),
+            Output("enable-tooltip", "children"),
+            Output("beginning-buffer", "style"),
+            Output("prev-buffer", "style"),
+            Output("next-buffer", "style"),
+            # Output("highlight_prev", "style"),
+            # Output("highlight_next", "style"),
+            Output("highlight_prev", "children"),
+            Output("highlight_next", "children"),
+            Output("buffer-length-input", "style"),
+            Output("buffer-progress", "style"),
+            Output("buffer-progress-text", "style"),
+            Output('buffer-length-label', 'style'),
+            Output("beginning-tooltip","style"),
+            Output("prev-buffer-tooltip","style"),
+            Output("next-buffer-tooltip","style"),
+
+            Input("interpret_layout", "color"),
+            prevent_initial_call=True
+        )
+        def interpret_mode_ui(color):
+
+            hidden = {"opacity": 0}
+            shown = {"opacity": 1}
+
+            shown_tooltip = {}
+            hidden_tooltip = {"display": "none"}
+
+            if color != "primary":
+                return (
+                "Disable [ctrl+d]",
+                "Enable [ctrl+e]",
+                "Used to disable noisy data or data which cannot be fitted in inversions.",
+                "Used to enable previously disabled data.",
+                shown,  # beginning-buffer
+                shown,  # prev-buffer
+                shown,  # next-buffer
+                'Previous',  # highlight_prev
+                'Next',  # highlight_next
+                {"width": "70px","height": "32px","fontSize": "13px"},  # buffer-length-input
+                shown,  # buffer-progress
+                shown,  # buffer-progress-text
+                shown,  # buffer-length-label
+                shown_tooltip,
+                shown_tooltip,
+                shown_tooltip,
+            )
+            else:
+                return (
+                    "Delete",
+                    "Export",
+                    "Used to delete unwanted profiles.",
+                    "Export profile to kml file and png",
+                    hidden,  # beginning-buffer
+                    hidden,  # prev-buffer
+                    hidden,  # next-buffer
+                    "Previous profile",  # highlight_prev
+                    "Next profile",  # highlight_next
+                    hidden,  # buffer-length-input
+                    hidden,  # buffer-progress
+                    hidden,  # buffer-progress-text
+                    hidden,  # buffer-length-label
+                    hidden_tooltip,
+                    hidden_tooltip,
+                    hidden_tooltip,
+                )
