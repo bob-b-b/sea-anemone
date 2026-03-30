@@ -2,30 +2,45 @@ from typing import List
 from pandas import DataFrame
 import json_numpy
 from anemone.forwards import Forward
-from temframe import TEMframe
+import temframe
 from nosj import nosj
 from basepanel import PanelSettings
 
-from numpy import nan as np_nan
+from numpy import nan as np_nan, array as np_array
 
 import pandas as pd
 def rounded_nanmean(x):
     return round(x.mean(), 2)
 
 @nosj
+class SessionSettings:
+    sub: PanelSettings = None
+
+def clean_table(df):
+    for col in df.columns:
+        if col.startswith('_line'):
+            del df[col]
+    return df
+
+@nosj
 class Session:
-    data:      TEMframe  = None
-    models:    DataFrame = None
-    site:      DataFrame = None
-    lines:     DataFrame = None
-    boreholes: DataFrame = None
-    rock_map : dict      = None
-    forwards:  List[Forward] = None
-    panel_ids: List[str] = None
-    settings:  List[PanelSettings] = None
-    save_dir:  str = None
-    dem_path:  str = None
-    dem_name:  str = None
+    data:   DataFrame = None
+    models: DataFrame = None
+    site:   DataFrame = None
+    lines:  DataFrame = None
+    forwards: List[Forward] = None
+    settings: SessionSettings = None
+    save_dir: str = None
+
+    def __post_init__(self):
+        self._dmfwr = None
+    
+    @property
+    def dmfwr(self):
+        if self._dmfwr is None:
+            self._dmfwr = self.forwards[0] + self.forwards[1]
+        return self._dmfwr
+
 
     def save(self, folder=None, binary_threshold=100):
         self.update_site_table()
@@ -41,27 +56,20 @@ class Session:
             folder = other.save_dir
 
         if other.data is not None:
+            # other.data = clean_table(other.data)
             other.data.to_csv(folder+'data.csv', index=False)
-            other.forwards = other.data.forward_operators
             other.data = 'data.csv'            
         if other.models is not None:
+            # other.models = clean_table(other.models)
             other.models.to_csv(folder+'models.csv', index=False)
             other.models = 'models.csv'
         if other.site is not None:
+            # other.site = clean_table(other.site)
             other.site.to_csv(folder+'site.csv', index=False)
             other.site = 'site.csv'                        
         if other.lines is not None:
             other.lines.to_csv(folder+'lines.csv', index=False)
             other.lines = 'lines.csv'
-        if other.boreholes is not None:
-            print("boreholes to dataframe here")
-            other.boreholes.to_csv(folder+'boreholes.csv', index=False)
-            other.boreholes = 'boreholes.csv'
-        if other.rock_map is not None:
-            # Convert dict {"Clay": "#hex"} to DataFrame for saving
-            df_rock = pd.DataFrame(list(other.rock_map.items()), columns=['RockType', 'Color'])
-            df_rock.to_csv(folder + 'rock_map.csv', index=False)
-            other.rock_map = 'rock_map.csv'
 
         if other.forwards is not None:
             for i in range(len(other.forwards)):
@@ -85,56 +93,36 @@ class Session:
             for fwd_path in self.forwards:
                 fwd = Forward.load(self.save_dir+fwd_path).logify()
                 fwd_list.append(fwd)
-
-        if self.data is not None and isinstance(self.data, str):
-            self.data = TEMframe.from_pandas(pd.read_csv(self.save_dir+self.data), forward_operators=fwd_list)
             self.forwards = fwd_list
-            self.data.forward_operators = fwd_list
         
+        if self.data is not None and isinstance(self.data, str):
+            self.data = pd.read_csv(self.save_dir+self.data)
+            self.data['inuse_manual']=self.data['inuse_manual'].astype(bool)
+            self.data['inuse_auto']=self.data['inuse_auto'].astype(bool)
+
         if self.models is not None and isinstance(self.models, str):
             self.models = pd.read_csv(self.save_dir+self.models)
 
-        if self.site is not None and isinstance(self.site, str):
-            self.site = pd.read_csv(self.save_dir+self.site)
-        if self.boreholes is not None and isinstance(self.boreholes, str):
-            df_flat = pd.read_csv(self.save_dir + self.boreholes)            
-            from Sections_plotting import dataframe_to_boreholes
-            self.borehole_list = dataframe_to_boreholes(df_flat)
-            self.boreholes = df_flat
-        if self.rock_map is not None and isinstance(self.rock_map, str):
-            # This is the actual conversion step
-            rock_df = pd.read_csv(self.save_dir + self.rock_map)
-            self.rock_map = dict(zip(rock_df['RockType'], rock_df['Color']))
-        else:
-            self.update_site_table()
-
-        if self.boreholes is not None and isinstance(self.boreholes, str):
-            df_flat = pd.read_csv(self.save_dir + self.boreholes)            
-            from Sections_plotting import dataframe_to_boreholes
-            self.borehole_list = dataframe_to_boreholes(df_flat)
-            self.boreholes = df_flat
-        if self.rock_map is not None and isinstance(self.rock_map, str):
-            # This is the actual conversion step
-            rock_df = pd.read_csv(self.save_dir + self.rock_map)
-            self.rock_map = dict(zip(rock_df['RockType'], rock_df['Color']))
-
         if self.lines is not None and isinstance(self.lines, str):
             self.lines = pd.read_csv(self.save_dir+self.lines)
+        self.update_site_table()
+
 
     @classmethod
     def from_folder(cls, folder):
         obj = cls.load(folder+'session.json')
+        obj.save_dir = folder
         obj.load_dataframes()
         return obj
 
     @property
     def overview(self):
-        # if self.site is not None:
-        #     return self.site
-        self.update_site_table()
+        self.site = self.update_site_table()
         return self.site        
 
     def update_site_table(self):
+        site = None
+
         if self.data is not None:
             df = self.data.copy()
             df['include'] = df['inuse_manual'].astype(bool, copy=True).fillna(df['inuse_auto'])
@@ -159,4 +147,25 @@ class Session:
             if self.models is not None:
                 doi = self.models.groupby('site_id', as_index=False).agg(doi=('doi', 'first'))
                 site = site.merge(doi, left_on='site_id', right_on='site_id')
-            self.site=site
+
+        self.site = site
+        self.line_update()
+        return site
+    
+    def line_update(self):
+        if self.lines is not None:
+            self.data   = clean_table(self.data)
+            self.models = clean_table(self.models)
+            self.site   = clean_table(self.site)
+            from map import Profile
+            for line_id in self.lines.line.unique():
+                c_line = self.lines[self.lines.line==line_id]
+                x_axis,y_axis = f'_line_{line_id:0.0f}_x', f'_line_{line_id:0.0f}_y'
+                lat, lon = c_line['latitude'].values, c_line['longitude'].values
+                sec = Profile(lat, lon)
+                x,y = sec(self.site['latitude'].values, self.site['longitude'].values)
+                self.site[x_axis] = x
+                self.site[y_axis] = y
+                self.data = self.data.merge(self.site[[x_axis, y_axis]], left_on='site_id', right_index=True, how='left')
+                self.models = self.models.merge(self.site[[x_axis, y_axis]], left_on='site_id', right_index=True, how='left')
+        

@@ -114,7 +114,7 @@ class ModelSection(Panel):
     
     def initialize(self):
         from __main__ import sesh
-        options=['site_id', 'daytime', 'distance', 'line 1']
+        options=['site_id', 'daytime']
         if sesh.lines is not None:
             line_id = np.unique(sesh.lines.line.values)
             options += [f'line {i:02d}' for i in line_id]
@@ -133,11 +133,14 @@ class ModelSection(Panel):
                 )
     
     def render_base(self):
+        
         if self.dataframe is None: return self.empty_render()
-        df = self.dataframe
+        df = self.dataframe.copy()
         x_axis = self.settings.x_axis
 
         if 'line' in x_axis:
+            from __main__ import sesh
+            df = sesh.models.copy()
             df = df.loc[np.abs(df[x_axis.replace('_x', '_y')])<self.settings.radius]
         
         y_axis = self.settings.y_axis
@@ -175,18 +178,26 @@ class ModelSection(Panel):
 
         if self.settings.bars:
             dx = np.abs(np.diff(x, prepend=0.))
+            dx_min = dx.min()*0.49
+            res_grid = np.repeat(res_grid, 3, axis=1)
+            x = np.repeat(x, 3)
+            x[::3] -= dx_min
+            x[2::3] += dx_min
+            
+            dx = np.abs(np.diff(x, prepend=0.))
             x_len = x.max()-x.min()
-
             needs_gap = dx>0.03*x_len
-            x_with_gaps = np.zeros(len(x)+2*sum(needs_gap))
-            x_with_gaps[:] = np.nan
-            i_x = np.arange(len(x))+np.cumsum(2*needs_gap.astype(int))
-            x_with_gaps[i_x] = x            
-            res_elev_with_gaps = np.zeros(res_grid.shape[:1]+x_with_gaps.shape)
-            res_elev_with_gaps[:,:] = np.nan
-            res_elev_with_gaps[:, i_x] = res_grid
-            x = x_with_gaps*1.
-            res_grid = res_elev_with_gaps*1.
+
+            if needs_gap.any():
+                x_with_gaps = np.zeros(len(x)+2*sum(needs_gap))
+                x_with_gaps[:] = np.nan
+                i_x = np.arange(len(x))+np.cumsum(2*needs_gap.astype(int))
+                x_with_gaps[i_x] = x            
+                res_elev_with_gaps = np.zeros(res_grid.shape[:1]+x_with_gaps.shape)
+                res_elev_with_gaps[:,:] = np.nan
+                res_elev_with_gaps[:, i_x] = res_grid
+                x = x_with_gaps*1.
+                res_grid = res_elev_with_gaps*1.
         res_grid = np.log10(res_grid)        
 
         fig = px.imshow(
@@ -194,7 +205,7 @@ class ModelSection(Panel):
             aspect='auto',
             origin='lower',
             color_continuous_scale='turbo',
-            labels={'x': x_axis.replace('_x', ''), 'y': y_axis, 'color': 'Resistivity [Ω·m]'},
+            labels={'x': x_axis.replace('_x', '').replace('_', ' ').strip(), 'y': y_axis, 'color': 'Resistivity [Ω·m]'},
             zmin=0,
             zmax=2.7,
         )
@@ -463,20 +474,6 @@ class ModelSection(Panel):
         def update_xaxis(x_axis):
             if x_axis.startswith('line'):
                 line_id = int(float(x_axis.split(' ')[-1]))
-                x_axis = f'line{line_id:02d}_x'
-                y_axis = x_axis.replace('_x', '_y')
-                if x_axis not in self.dataframe.columns:
-                    from __main__ import sesh
-                    from map import Profile
-                    c_line = sesh.lines[sesh.lines.line==line_id]
-                    sec = Profile(c_line['latitude'].values, c_line['longitude'].values)
-                    x,y = sec(sesh.site['latitude'].values, sesh.site['longitude'].values)
-                    sesh.site[x_axis] = x
-                    sesh.site[y_axis] = y
-                    self.dataframe = self.dataframe.merge(
-                        sesh.site[[x_axis, y_axis]],
-                        left_on='site_id', right_index=True, how='left'
-                    )
+                x_axis = f'_line_{line_id:0.0f}_x'
             self.settings.x_axis=x_axis
-            print('updated model axis')
             return self.render()

@@ -39,399 +39,14 @@ custom_template = {
 pio.templates["custom"] = custom_template
 pio.templates.default = "custom"
 
-def cdist(lat1,lon1,lat2,lon2):
-    lat1rad = lat1*np.pi/180.
-    lon1rad = lon1*np.pi/180.
-    lat2rad = lat2*np.pi/180.
-    lon2rad = lon2*np.pi/180.
-    d = 3963. * np.arccos((np.sin(lat1rad)*np.sin(lat2rad))+ \
-            np.cos(lat1rad)*np.cos(lat2rad)*np.cos(lon2rad-lon1rad)) * \
-            1.609344 * 1000.
-    return d
-
-
-@nosj
-class MapSettings(PanelSettings):
-    zoom: int = 14
-    color: str = '#ff0000'
-    color_data: str = '#000000'
-    highlight_color: str= '#ffff00'  # Default highlight color
-    plot_by: Literal['', 'misfit', 'doi', 'date'] = ''
-    buffer_color: str= '#ffffff'  # Default buffer color
-
-class Map(Panel):
-    dataframe: None
-    highlighted: int = None
-    buffer_sites: list = None
-    view  = None
-    lines = None
-    hover_marker: dict = None
-    boreholes : dict = None
-    rock_color_map = None
-    tiff_layer = None
-    current_idx = None
-    is_last_tab = False
-
-    def __init__(self, data, **kwargs):
-        settings = MapSettings(id='map', **kwargs)
-        super().__init__(id='map', settings=settings)
-        self.dataframe = data
-
-    def render(self):
-
-        if self.dataframe is None: return self.empty_render()
-        df_plot = self.dataframe
-        # if 'site_id' in df_plot.columns:
-            # df_plot = df_plot[df_plot['site_id'] != -1]
-
-        if 'site_id' not in df_plot.columns and df_plot.index.name == 'site_id':
-            df_plot = df_plot.reset_index()
-
-        zoom = self.view['map.zoom'] if self.view is not None else self.settings.zoom
-        center = self.view['map.center'] if self.view is not None else None      
-
-        if self.settings.plot_by in df_plot.columns and self.settings.plot_by!='':
-
-            fig = px.scatter_map(
-                df_plot,
-                lat="latitude",
-                lon="longitude",
-                zoom=zoom,
-                center=center,
-                color=self.settings.plot_by,
-                color_continuous_scale='turbo',
-                custom_data=["site_id"]
-            )
-            
-            fig.update_layout(
-                coloraxis_colorbar=dict(
-                    orientation="h", 
-                    y=-0.01,
-                    x=0.5,          
-                    xanchor="center",
-                    yanchor="top",
-                    len=0.75,
-                    thickness = 10,
-                    title=dict(
-                text='',
-                side="bottom"))
-            )
-            if self.settings.plot_by == 'misfit':
-                fig.update_coloraxes(cmin=0, cmax=3)
-            elif self.settings.plot_by == 'doi':
-                fig.update_coloraxes(cmin=df_plot['doi'].min()*0.5, cmax=df_plot['doi'].max())
-        else:
-            fig = px.scatter_map(
-                df_plot,
-                lat="latitude",
-                lon="longitude",
-                zoom=zoom,
-                center=center,
-                color_discrete_sequence=[self.settings.color],
-                custom_data=["site_id"]   
-            )
-        fig.update_traces(marker={'size': 8})
-        
-        if self.buffer_sites is not None and len(self.buffer_sites) > 0 and self.dataframe is not None and 'site_id' in self.dataframe.columns:
-            df_buffer = self.dataframe[self.dataframe["site_id"].isin(self.buffer_sites)]
-            if not df_buffer.empty:
-                buffer_trace = px.scatter_map(
-                    df_buffer,
-                    lat="latitude",
-                    lon="longitude",
-                    zoom=zoom, center=center, 
-                    custom_data=["site_id"],
-                )
-
-                buffer_trace.update_traces(
-                    marker=dict(size=15, color=self.settings.buffer_color),
-                    name="Buffer window"
-                )
-
-                for trace in buffer_trace.data:
-                    fig.add_trace(trace)
-                fig.data = (fig.data[-1],)+fig.data[:-1]
-
-        map_layers = [{
-                    "below": "traces",
-                    "sourcetype": "raster",
-                    "sourceattribution": "Google Earth (C)",
-                    "source": ["https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}"]
-                }]
-
-        if self.tiff_layer is not None:
-            left, bottom, right, top = self.tiff_layer["bounds"]
-            tiff_overlay = {
-                "below": "traces",
-                "sourcetype": "image",
-                "source": self.tiff_layer["image"],
-                "coordinates": [
-                    [left, top],
-                    [right, top],
-                    [right, bottom],
-                    [left, bottom]
-                ]
-            }
-            map_layers.append(tiff_overlay)
-
-        fig.update_layout(map_style="white-bg", map_layers=map_layers)
-        
-        if self.highlighted is not None:            
-            highlight_trace = px.scatter_map(
-                df_plot[df_plot['site_id'] == self.highlighted],
-                lat="latitude",
-                lon="longitude",
-                zoom=zoom,
-                center=center,
-                color_discrete_sequence=[self.settings.highlight_color],
-                custom_data=["site_id"],   # <-- ADD THIS
-            )
-            highlight_trace.update_traces(marker=dict(size=14))
-            for trace in highlight_trace.data:
-                fig.add_trace(trace)
-
-        # if self.lines is not None:
-        #     fig2 = px.line_map(self.lines, lat='latitude', lon='longitude', line_group='line', color='line',  zoom=zoom, center=center, hover_name='line')
-        #     fig = go.Figure(data=fig2.data+fig.data, layout=fig.layout)
-
-        # --- Borehole overlay ---
-        if self.boreholes:
-            from Sections_plotting import add_boreholes_to_map_fig
-            fig = add_boreholes_to_map_fig(fig, self.boreholes)
-
-        if self.lines is not None and not self.lines.empty:
-            unique_ids = sorted(self.lines['line'].unique())
-            
-            # Identify the actual ID of the active line
-            # (Handling case where current_idx might be out of range)
-            active_line_id = None
-            if self.current_idx is not None and 0 <= self.current_idx < len(unique_ids):
-                active_line_id = unique_ids[self.current_idx]
-
-            # --- Trace 1: Inactive Lines (Yellow, Width 5) ---
-            inactive_df = self.lines[self.lines['line'] != active_line_id]
-            if not inactive_df.empty:
-                inactive_fig = px.line_map(
-                    inactive_df, lat='latitude', lon='longitude', 
-                    line_group='line', zoom=zoom, center=center
-                )
-                inactive_fig.update_traces(line=dict(color="yellow", width=2), name="Inactive Profile")
-                for trace in inactive_fig.data:
-                    trace.update(line=dict(color="yellow", width=2), hoverinfo="skip")
-                fig.add_traces(inactive_fig.data)
-
-            # --- Trace 2: Active Line (Red, Width 8) ---
-            active_df = self.lines[self.lines['line'] == active_line_id]
-            if not active_df.empty:
-                active_fig = px.line_map(
-                    active_df, lat='latitude', lon='longitude', 
-                    line_group='line', zoom=zoom, center=center
-                )
-                active_fig.update_traces(line=dict(color="red", width=4), name="Active Profile")
-                for trace in active_fig.data:
-                    trace.update(line=dict(color="red", width=4), hoverinfo="skip")
-                fig.add_traces(active_fig.data)
-
-            if self.hover_marker is not None:
-                hover_trace = px.scatter_map(
-                    pd.DataFrame([self.hover_marker]),
-                    lat="latitude",
-                    lon="longitude",
-                    zoom=zoom,
-                    center=center,)
-                hover_trace.update_traces(
-                    marker=dict(size=16, color="red"),
-                    name="Hover position")
-
-                for trace in hover_trace.data:
-                    fig.add_trace(trace)
-
-
-        tools_to_add = ['drawline', 'drawopenpath'] if self.is_last_tab else []
-        tools_to_remove = ['select2d','lasso2d','zoomIn', 'zoomOut'] if self.is_last_tab else []
-
-        # 2. Update the layout dynamically
-        fig.update_layout(
-            margin={"r":0,"t":0,"l":0,"b":0},
-            # uirevision=str(is_last_tab),
-            uirevision=f"mode-{self.is_last_tab}",
-            modebar=dict(add=tools_to_add, remove=tools_to_remove),
-            newshape=dict(line_color='cyan', line_width=4, line_dash='dash'),
-            dragmode='pan', 
-            showlegend=False,
-            map=dict(bearing=0, pitch=0)
-        )
-
-        return fig    
-    
-    @property
-    def lat0(self):
-        return min([p[1] for p in self.view['map._derived']['coordinates']])
-    @property
-    def lat1(self):
-        return max([p[1] for p in self.view['map._derived']['coordinates']])
-    @property
-    def lon0(self):
-        return min([p[0] for p in self.view['map._derived']['coordinates']])
-    @property
-    def lon1(self):
-        return max([p[0] for p in self.view['map._derived']['coordinates']])
-        
-    def paper2latlon(self, x, y):
-        if self.view is None:
-            # raise Warning("no view, please zoom")
-            return None
-            # raise ValueError("Map coordinate system not initialized")
-        elif self.view['map.bearing']!=0 or self.view['map.pitch']!=0:
-            # raise Warning("no view, please zoom")
-            return None
-            # raise ValueError("Map coordinate system not initialized")
-        else:
-            lat = self.lat0 + (self.lat1-self.lat0)*y
-            lon = self.lon0 + (self.lon1-self.lon0)*x
-            return lat,lon
-
-
-    def initialize(self):
-        return html.Div(
-            [
-                html.Div(
-                    [
-                        html.Div(  
-                            dcc.Graph(
-                                figure=self.render(),
-                                id=self.id,
-                                mathjax=True,
-                                responsive=True,
-                                style={
-                                    'height': '100%',
-                                    'width': '100%'
-                                }
-                            ),
-                            style={
-                                'flex': '1',
-                                'minHeight': 0,
-                                'padding': '15px',     # ✅ safe margin
-                                'boxSizing': 'border-box'
-                            }
-                        ),
-
-                        dbc.Select(
-                            options=self.settings.schema['properties']['plot_by']['enum'],
-                            id=self.id+'_plot_by',
-                            value=self.settings.plot_by,
-                            style={
-                                'position': 'absolute',
-                                'bottom': '75px',
-                                'left': '50%',
-                                'transform': 'translateX(-50%)',
-                                'width': '150px'
-                            }
-                        ),
-                    ],
-                    style={
-                        'flex': '1',
-                        'minHeight': 0,
-                        'position': 'relative',
-                        'display': 'flex'
-                    }
-                ),
-                gear_maker(self.id)
-            ],
-            style={
-                'display': 'flex',
-                'flexDirection': 'column',
-                'height': '100%',
-                'minHeight': 0
-            }
-        )
-
-    def add_callbacks(self, app):
-        super().add_callbacks(app)
-
-        @app.callback(
-            self.output,
-            Input(self.id+'_plot_by', 'value'),
-            prevent_initial_call=True
-        )
-        def update_plotby(value):
-            from __main__ import sesh
-            # if sesh.models is None:
-                # raise PreventUpdate
-            if value not in self.dataframe.columns and value != '':
-                value = ''
-            self.settings.plot_by = value
-            return self.render()  
-
-        @app.callback(
-            Output('map', 'relayoutData'),
-            self.output,
-            Input('map', 'relayoutData'),
-            prevent_initial_call=True
-        )
-        def update_view(relayout_data):
-            fig=no_update
-            
-            if 'map.center' in relayout_data:
-                self.view = relayout_data
-
-            elif 'shapes' in relayout_data:
-                if self.view is None:
-                    return no_update, no_update
-
-                # 1. Get the last drawn shape
-                last_shape = relayout_data['shapes'][-1]
-                new_points = []
-
-                if 'path' in last_shape:
-                    path_str = last_shape['path']                    
-                    coords = re.findall(r"[-+]?\d*\.\d+|\d+", path_str)
-                    for i in range(0, len(coords), 2):
-                        try:
-                            lon_val = float(coords[i])
-                            lat_val = float(coords[i+1])
-                            lat, lon = self.paper2latlon(lon_val, lat_val)
-                            new_points.append({'latitude': lat, 'longitude': lon})
-                        except (IndexError, ValueError):
-                            continue
-                
-                elif 'x0' in last_shape:
-                    lat0, lon0 = self.paper2latlon(last_shape['x0'], last_shape['y0'])
-                    lat1, lon1 = self.paper2latlon(last_shape['x1'], last_shape['y1'])
-                    new_points = [
-                        {'latitude': lat0, 'longitude': lon0},
-                        {'latitude': lat1, 'longitude': lon1}
-                    ]
-                if new_points:
-                    if self.lines is None or self.lines.empty:
-                        line_id = 1.0
-                    else:
-                        last_row = self.lines.iloc[-1]
-                        last_lat, last_lon, line_id = last_row['latitude'], last_row['longitude'], last_row['line']
-                        if cdist(last_lat, last_lon, new_points[0]['latitude'], new_points[0]['longitude']) > 10:
-                            line_id += 1.0
-                    new_df = pd.DataFrame(new_points)
-                    new_df['line'] = line_id
-                    
-                    if self.lines is None or self.lines.empty:
-                        self.lines = new_df
-                    else:
-                        self.lines = pd.concat([self.lines, new_df], ignore_index=True)
-                    from __main__ import sesh
-                    sesh.lines = self.lines
-                    del relayout_data['shapes']
-                    self.is_last_tab = False
-                    fig = self.render()
-            return relayout_data, fig
-
 
 @nosj
 class dbdtSoundingSettings(PanelSettings):
     lm_color: str = '#2D81FF'
     hm_color: str = '#ff0000'
-    lm_factor: int = 20
-    hm_factor: int = 1
-    # plot_error: bool = False
+    lm_factor: float = 20.0
+    hm_factor: float = 1.0
+    plot_error: bool = False
     x_axis: Literal['time', 'gate_id'] = 'time'  # or 'site_id', 'longitude', 'latitude'
     dbdt_max: float = -3
     dbdt_min: float = -12
@@ -446,9 +61,9 @@ class dbdtSounding(Panel):
         for key, value in kwargs.items():
             setattr(self, key, value)
         
-        if self.dataframe is not None:
-            self.settings.dbdt_min = np.abs(self.dataframe['dbdt'].values).min()
-            self.settings.dbdt_max = np.abs(self.dataframe['dbdt'].values).max()
+        # if self.dataframe is not None:
+        #     self.settings.dbdt_min = np.abs(self.dataframe['dbdt'].values).min()
+        #     self.settings.dbdt_max = np.abs(self.dataframe['dbdt'].values).max()
 
     def compare_synthetic(self):
 
@@ -618,6 +233,7 @@ class dbdtSounding(Panel):
         
         vals = np.abs(self.dataframe["dbdt"].values)
         vals = vals[np.isfinite(vals) & (vals > 0)]
+
         if len(vals) > 0:
             logvals = np.log10(vals)
             ymin = np.floor(logvals.min()) - 0.2
@@ -690,8 +306,9 @@ class rhoaSounding(dbdtSounding):
     def to_rhoa(time, dbdt, area=1., current=1.):
         from numpy import pi
         from __main__ import sesh
-        x = sesh.data.dmfwr.source.x
-        area = (x.max() - x.min())**2
+        # x = sesh.data.dmfwr.source.x
+        # area = (x.max() - x.min())**2
+        area=1
         mu0 = 4 * pi * 1e-7
         if dbdt.ndim > time.ndim:
             t = time[np.newaxis, :]
@@ -706,6 +323,8 @@ class rhoaSounding(dbdtSounding):
         super().__init__(id='rhoa', settings=settings)
         for key, value in kwargs.items():
             setattr(self, key, value)
+        self.settings.dbdt_min = 0
+        self.settings.dbdt_max = 3
 
 
     def compare_synthetic(self):
@@ -903,8 +522,8 @@ class rhoaSounding(dbdtSounding):
 class dbdtSectionSettings(PanelSettings):
     lm_color: str = '#2D81FF'
     hm_color: str = '#ff0000'
-    lm_factor: int = 20
-    hm_factor: int = 1
+    lm_factor: float = 20.0
+    hm_factor: float = 1.0
     x_axis: Literal['daytime', 'site_id', 'longitude', 'latitude', 'distance'] = 'site_id'
     y_axis: str = 'dbdt_syn'
     plot_disabled: bool = True
@@ -1237,7 +856,7 @@ class dbdtSection(Panel):
                     x0=x_value - dx,
                     x1=x_value + dx,
                     y0=self.dataframe["dbdt"].abs().min() * 0.5,
-                    y1=self.dataframe["dbdt"].max()*self.settings.lm_factor *2,
+                    y1=self.dataframe["dbdt"].max()*self.settings.lm_factor *4,
                     line=dict(color="rgba(0,0,0,0.8)", width=1.5),
                     fillcolor="rgba(0,0,0,0.0)",
                 )
@@ -1556,78 +1175,78 @@ class Upload(Panel):
         )
 
 
-@nosj
-class TableSettings(PanelSettings):
-    max_rows: int = 50
-    visible_columns: list[bool] = None
+# @nosj
+# class TableSettings(PanelSettings):
+#     max_rows: int = 50
+#     visible_columns: list[bool] = None
 
-    def special_renders(self):
-        special_renders = super().special_renders()
-        vis_check = lambda key,prop: key == 'visible_columns'
-        def vis_render(key, prop):
-            checkbox_row = []
-            if hasattr(self, 'column_names'):
-                col_names = self.column_names
-            else:
-                col_names = [str(i) for i in range(self.visible_columns_len)]
+#     def special_renders(self):
+#         special_renders = super().special_renders()
+#         vis_check = lambda key,prop: key == 'visible_columns'
+#         def vis_render(key, prop):
+#             checkbox_row = []
+#             if hasattr(self, 'column_names'):
+#                 col_names = self.column_names
+#             else:
+#                 col_names = [str(i) for i in range(self.visible_columns_len)]
 
-            for i, (val, name) in enumerate(zip(self.visible_columns, col_names)):
-                checkbox_row.append(
-                    html.Div([
-                        html.Label(name, style={'fontSize': '12px', 'marginLeft': '5px'}),
-                        dbc.Checkbox(
-                            id={'type': f'settings-{self.id}', 'key': f'{key}-{i}'},
-                            #value=self.visible_columns[i] if i < len(self.visible_columns) else True,
-                            value=val,
-                            style={'margin': '5px', 'horizontalAlign': 'center', 'verticalAlign': 'middle'}
-                        ),
-                    ], style={'display': 'inline-block', 'marginRight': '15px', 'verticalAlign': 'top'})
-                )
+#             for i, (val, name) in enumerate(zip(self.visible_columns, col_names)):
+#                 checkbox_row.append(
+#                     html.Div([
+#                         html.Label(name, style={'fontSize': '12px', 'marginLeft': '5px'}),
+#                         dbc.Checkbox(
+#                             id={'type': f'settings-{self.id}', 'key': f'{key}-{i}'},
+#                             #value=self.visible_columns[i] if i < len(self.visible_columns) else True,
+#                             value=val,
+#                             style={'margin': '5px', 'horizontalAlign': 'center', 'verticalAlign': 'middle'}
+#                         ),
+#                     ], style={'display': 'inline-block', 'marginRight': '15px', 'verticalAlign': 'top'})
+#                 )
             
-            return html.Div([
-                html.Br(),
-                html.Div(checkbox_row, style={'display': 'flex', 'flexWrap': 'wrap', 'gap': '10px'}),
-                html.Br()])
+#             return html.Div([
+#                 html.Br(),
+#                 html.Div(checkbox_row, style={'display': 'flex', 'flexWrap': 'wrap', 'gap': '10px'}),
+#                 html.Br()])
         
-        special_renders.append((vis_check, vis_render))
-        return special_renders
+#         special_renders.append((vis_check, vis_render))
+#         return special_renders
     
-class Table(Panel):
-    def __init__(self, dataframe, **kwargs):
-        id = kwargs.pop('id', 'table')
-        settings = kwargs.pop('settings', TableSettings(id, visible_columns=[True for _ in dataframe.columns.tolist()]))
-        settings.column_names = dataframe.columns.tolist()
-        super().__init__(id=id, settings=settings, childname='children')
-        self.dataframe = dataframe
-        self.dashtable = None
+# class Table(Panel):
+#     def __init__(self, dataframe, **kwargs):
+#         id = kwargs.pop('id', 'table')
+#         settings = kwargs.pop('settings', TableSettings(id, visible_columns=[True for _ in dataframe.columns.tolist()]))
+#         settings.column_names = dataframe.columns.tolist()
+#         super().__init__(id=id, settings=settings, childname='children')
+#         self.dataframe = dataframe
+#         self.dashtable = None
 
-        for key, value in kwargs.items():
-            setattr(self, key, value)      
+#         for key, value in kwargs.items():
+#             setattr(self, key, value)      
 
-    def render(self):
-        # colums = 
-        self.dashtable = dash_table.DataTable(
-            data=self.dataframe.to_dict('records'),
-            columns=[{"name": name, "id": name} for i,name in enumerate(self.dataframe.columns) if self.settings.visible_columns[i]],
-            page_size=self.settings.max_rows,
-            sort_action="native",
-            style_table={'height': '400px', 'overflowY': 'auto'},
-            style_cell={'textAlign': 'left', 'padding': '5px', 'fontSize': '12px'},
-            style_header={'backgroundColor': 'rgb(230, 230, 230)', 'fontWeight': 'bold'},
-        )
-        # self.dashtable.SelectedCells = self.dashtable.SelectedCells if hasattr(self.dashtable, 'SelectedCells') else None
-        return html.Div(self.dashtable, id=self.id)
+#     def render(self):
+#         # colums = 
+#         self.dashtable = dash_table.DataTable(
+#             data=self.dataframe.to_dict('records'),
+#             columns=[{"name": name, "id": name} for i,name in enumerate(self.dataframe.columns) if self.settings.visible_columns[i]],
+#             page_size=self.settings.max_rows,
+#             sort_action="native",
+#             style_table={'height': '400px', 'overflowY': 'auto'},
+#             style_cell={'textAlign': 'left', 'padding': '5px', 'fontSize': '12px'},
+#             style_header={'backgroundColor': 'rgb(230, 230, 230)', 'fontWeight': 'bold'},
+#         )
+#         # self.dashtable.SelectedCells = self.dashtable.SelectedCells if hasattr(self.dashtable, 'SelectedCells') else None
+#         return html.Div(self.dashtable, id=self.id)
                 
-    def initialize(self):
-        if hasattr(self, 'name'):
-            name = self.name
-        else:
-            name = self.id
-        return html.Div([
-            self.render(),
-            gear_maker(self.id)],
-            style={'margin':'10px'}#,'height': 'calc(100%-30px)', 'overflow': 'hidden'} 
-        )
+#     def initialize(self):
+#         if hasattr(self, 'name'):
+#             name = self.name
+#         else:
+#             name = self.id
+#         return html.Div([
+#             self.render(),
+#             gear_maker(self.id)],
+#             style={'margin':'10px'}#,'height': 'calc(100%-30px)', 'overflow': 'hidden'} 
+#         )
 
 import pandas as pd
 @nosj
@@ -1709,22 +1328,7 @@ class ModelGraph(Panel):
                     showlegend=False,
                 ))
                 fig.update_layout(dragmode=False) 
-            # fig.add_trace(
-            #     go.Scatter(
-            #         x=df_layers_long["resistivity"],
-            #         y=df_layers_long["depth"],
-            #         mode="lines",
-            #         line=dict(color='gray'),
-            #         name='All Sites'
-            #     ), 
-            # )
 
-            fig.add_trace(go.Scatter(x=[0.1,1000],y=[df_highlighted['doi'].iloc[0],df_highlighted['doi'].iloc[0]],mode="lines",line=dict(color="black",width=2,dash="dash"),showlegend=False))
-
-
-        # Reverse y-axis so depth increases downward
-        # fig.update_yaxes(autorange="reversed")
-        # fig.update_xaxes(type="log", range=[np.log10(self.settings.rho_min), np.log10(self.settings.rho_max)])
         fig.update_xaxes(title_text='Resistivity [Ωm]',type='log',range=[0, 2.7],            showline=True,
             linewidth=1,
             linecolor="black",
@@ -1752,240 +1356,238 @@ class ModelSectionSettings(PanelSettings):
     cmap: str = 'turbo'
     nticks: int = 4
 
-class ModelSection(Panel):
-    highlighted: int = None
-    buffer_len = 50
-    buffer_start = 0
-    def __init__(self, **kwargs):
-        settings = kwargs.pop('settings', ModelSectionSettings(id='model_section'))
-        super().__init__(id='model_section', settings=settings)
-        for key, value in kwargs.items():
-            setattr(self, key, value)
+# class ModelSection(Panel):
+#     highlighted: int = None
+#     buffer_len = 50
+#     buffer_start = 0
+#     def __init__(self, **kwargs):
+#         settings = kwargs.pop('settings', ModelSectionSettings(id='model_section'))
+#         super().__init__(id='model_section', settings=settings)
+#         for key, value in kwargs.items():
+#             setattr(self, key, value)
 
-    def update_attributes(self, data_dict):
-        """Force update the __dict__ to bypass class-level defaults."""
-        for key, value in data_dict.items():
-            if hasattr(self, key):
-                if isinstance(value, str) and value.replace('.', '', 1).isdigit():
-                    value = float(value)
-                # This writes directly to this specific object's memory
-                self.__dict__[key] = value
+#     def update_attributes(self, data_dict):
+#         """Force update the __dict__ to bypass class-level defaults."""
+#         for key, value in data_dict.items():
+#             if hasattr(self, key):
+#                 if isinstance(value, str) and value.replace('.', '', 1).isdigit():
+#                     value = float(value)
+#                 # This writes directly to this specific object's memory
+#                 self.__dict__[key] = value
     
-    def render(self,**kwargs):
-        if self.dataframe is None: return self.empty_render()
-        df_layers_long = self.dataframe.melt(
-            id_vars=['site_id', 'daytime', 'longitude', 'latitude', 'date', 'elevation', 'layer', 'resistivity', 'misfit','doi'],
-            value_vars=['top_depth', 'bottom_depth'],
-            var_name='depth_type',
-            value_name='depth'
-        ).sort_values(['daytime', 'layer', 'depth'])
+#     def render(self):
+#         if self.dataframe is None: return self.empty_render()
+#         df_layers_long = self.dataframe.melt(
+#             id_vars=['site_id', 'daytime', 'longitude', 'latitude', 'date', 'elevation', 'layer', 'resistivity', 'misfit','doi'],
+#             value_vars=['top_depth', 'bottom_depth'],
+#             var_name='depth_type',
+#             value_name='depth'
+#         ).sort_values(['daytime', 'layer', 'depth'])
 
 
-        df_layers_long = df_layers_long.drop(columns=['depth_type'])
-        df_layers_long['log_resistivity'] = np.log10(df_layers_long['resistivity'])
+#         df_layers_long = df_layers_long.drop(columns=['depth_type'])
+#         df_layers_long['log_resistivity'] = np.log10(df_layers_long['resistivity'])
 
-        heatmap_df = df_layers_long.pivot_table(
-            index='depth', columns=self.settings.x_axis, values='log_resistivity'
-        )        
-        heatmap_df = heatmap_df.sort_index(ascending=True)
-        buffer_start = self.buffer_start
-        buffer_len   = self.buffer_len
+#         heatmap_df = df_layers_long.pivot_table(
+#             index='depth', columns=self.settings.x_axis, values='log_resistivity'
+#         )        
+#         heatmap_df = heatmap_df.sort_index(ascending=True)
+#         buffer_start = self.buffer_start
+#         buffer_len   = self.buffer_len
 
-        x_values = heatmap_df.columns.tolist()
-        n_sites  = len(x_values)
+#         x_values = heatmap_df.columns.tolist()
+#         n_sites  = len(x_values)
 
-        plot_start = max(0, buffer_start)
-        plot_end   = min(n_sites, buffer_start + buffer_len)
+#         plot_start = max(0, buffer_start)
+#         plot_end   = min(n_sites, buffer_start + buffer_len)
 
-        x_slice = x_values[plot_start:plot_end]
-        df_layers_long = df_layers_long[df_layers_long[self.settings.x_axis].isin(x_slice)]
+#         x_slice = x_values[plot_start:plot_end]
+#         df_layers_long = df_layers_long[df_layers_long[self.settings.x_axis].isin(x_slice)]
 
 
-        log_vmin = np.log10(self.settings.vmin)
-        log_vmax = np.log10(self.settings.vmax)
+#         log_vmin = np.log10(self.settings.vmin)
+#         log_vmax = np.log10(self.settings.vmax)
 
-        tick_vals = np.linspace(log_vmin, log_vmax, self.settings.nticks)
-        tick_text = [f"{10**v:.0f}" for v in tick_vals]
+#         tick_vals = np.linspace(log_vmin, log_vmax, self.settings.nticks)
+#         tick_text = [f"{10**v:.0f}" for v in tick_vals]
 
-        fig = px.imshow(
-            heatmap_df[x_slice],
-            x=heatmap_df[x_slice].columns,
-            y=heatmap_df.index,  # depth values
-            aspect='auto',
-            origin='lower',
-            # color_continuous_scale=settings.cmap, #'turbo',
-            color_continuous_scale=self.settings.cmap,
-            labels={'x': self.settings.x_axis, 'y': 'Depth [m]'},
-            # title='Resistivity Heatmap by Site and Depth',
-            # zmin=heatmap_df.min().min(),
-            # zmax=heatmap_df.max().max(),
-            zmin=log_vmin,
-            zmax=log_vmax,
-        )
-        fig.update_layout(hovermode="x")
-        fig.update_traces(
-            customdata=10**heatmap_df[x_slice].values,
-            hovertemplate=(
-                "Depth: %{y} m<br>"
-                "Site: %{x}<br>"
-                "Resistivity: %{customdata:.2f} Ω·m"
-                "<extra></extra>"
-            )
-        )
-        fig.update_yaxes(autorange="reversed")
-        fig.update_layout(yaxis2=dict(title='Misfit',overlaying='y',side='right',showgrid=False))
+#         fig = px.imshow(
+#             heatmap_df[x_slice],
+#             x=heatmap_df[x_slice].columns,
+#             y=heatmap_df.index,  # depth values
+#             aspect='auto',
+#             origin='lower',
+#             # color_continuous_scale=settings.cmap, #'turbo',
+#             color_continuous_scale=self.settings.cmap,
+#             labels={'x': self.settings.x_axis, 'y': 'Depth [m]'},
+#             # title='Resistivity Heatmap by Site and Depth',
+#             # zmin=heatmap_df.min().min(),
+#             # zmax=heatmap_df.max().max(),
+#             zmin=log_vmin,
+#             zmax=log_vmax,
+#         )
+#         fig.update_layout(hovermode="x")
+#         fig.update_traces(
+#             customdata=10**heatmap_df[x_slice].values,
+#             hovertemplate=(
+#                 "Depth: %{y} m<br>"
+#                 "Site: %{x}<br>"
+#                 "Resistivity: %{customdata:.2f} Ω·m"
+#                 "<extra></extra>"
+#             )
+#         )
+#         fig.update_yaxes(autorange="reversed")
+#         fig.update_layout(yaxis2=dict(title='Misfit',overlaying='y',side='right',showgrid=False))
         
-        fig.update_layout(
-            coloraxis=dict(
-                cmin=log_vmin,
-                cmax=log_vmax,
-                colorscale=self.settings.cmap,
-                colorbar=dict(
-                    orientation='h',
-                    x=0.5,
-                    xanchor='center',
-                    y=-0.15,
-                    yanchor='top',
-                    thickness=15,
-                    len=0.95,
-                    tickmode='array',
-                    tickvals=tick_vals,
-                    ticktext=tick_text,
-                    title=dict(text='Resistivity [Ωm]',side='bottom'))
-            ),
-            # margin=dict(b=120)
-        )
+#         fig.update_layout(
+#             coloraxis=dict(
+#                 cmin=log_vmin,
+#                 cmax=log_vmax,
+#                 colorscale=self.settings.cmap,
+#                 colorbar=dict(
+#                     orientation='h',
+#                     x=0.5,
+#                     xanchor='center',
+#                     y=-0.15,
+#                     yanchor='top',
+#                     thickness=15,
+#                     len=0.95,
+#                     tickmode='array',
+#                     tickvals=tick_vals,
+#                     ticktext=tick_text,
+#                     title=dict(text='Resistivity [Ωm]',side='bottom'))
+#             ),
+#             # margin=dict(b=120)
+#         )
         
-        # ---- Misfit only for buffered sites ----
-        misfit_df = (
-            df_layers_long
-            .groupby(self.settings.x_axis)['misfit']
-            .first()
-            .reset_index()
-        )
+#         # ---- Misfit only for buffered sites ----
+#         misfit_df = (
+#             df_layers_long
+#             .groupby(self.settings.x_axis)['misfit']
+#             .first()
+#             .reset_index()
+#         )
 
-        misfit_trace = go.Scatter(
-            x=misfit_df[self.settings.x_axis],
-            y=misfit_df['misfit'],
-            mode='lines',
-            line=dict(color='black', width=2),
-            name='Misfit',
-            yaxis='y2'
-        )
+#         misfit_trace = go.Scatter(
+#             x=misfit_df[self.settings.x_axis],
+#             y=misfit_df['misfit'],
+#             mode='lines',
+#             line=dict(color='black', width=2),
+#             name='Misfit',
+#             yaxis='y2'
+#         )
 
-        y_dashed = misfit_df['misfit'].copy()
-        y_dashed[y_dashed <= 8] = np.nan
-        y_dashed[y_dashed > 8] = 7.95
+#         y_dashed = misfit_df['misfit'].copy()
+#         y_dashed[y_dashed <= 8] = np.nan
+#         y_dashed[y_dashed > 8] = 7.95
 
-        fig.add_trace(go.Scatter(
-            x=misfit_df[self.settings.x_axis],
-            y=y_dashed,
-            mode="lines",
-            line=dict(color="rgba(0,0,0,0.7)", dash="dash"),
-            showlegend=False,
-            yaxis='y2',
-            hoverinfo='skip'
-        ))
+#         fig.add_trace(go.Scatter(
+#             x=misfit_df[self.settings.x_axis],
+#             y=y_dashed,
+#             mode="lines",
+#             line=dict(color="rgba(0,0,0,0.7)", dash="dash"),
+#             showlegend=False,
+#             yaxis='y2'
+#         ))
 
 
-        fig.add_trace(misfit_trace)
+#         fig.add_trace(misfit_trace)
 
-        fig.update_layout(
-        legend=dict(x=0.89, y=0.2,xanchor="left",yanchor="top",bgcolor="rgba(255,255,255,0.8)")
-            )
+#         fig.update_layout(
+#         legend=dict(x=0.89, y=0.2,xanchor="left",yanchor="top",bgcolor="rgba(255,255,255,0.8)")
+#             )
 
-        fig.update_layout(yaxis2=dict(title=dict(text="Misfit",standoff=10),overlaying="y",side="right",showgrid=False)
-)
-        doi_df = (df_layers_long.groupby(self.settings.x_axis)["doi"].first().reset_index()).dropna()
-        # doi_df = doi_df.loc['doi' ]
-        if not doi_df.empty:
-            x_min = min(x_slice)
-            x_max = max(x_slice)
-            y_max = df_layers_long["depth"].max()
+#         fig.update_layout(yaxis2=dict(title=dict(text="Misfit",standoff=10),overlaying="y",side="right",showgrid=False)
+# )
+#         doi_df = (df_layers_long.groupby(self.settings.x_axis)["doi"].first().reset_index())
+#         if not doi_df.empty:
+#             x_min = min(x_slice)
+#             x_max = max(x_slice)
+#             y_max = df_layers_long["depth"].max()
 
-            fig.add_trace(
-                go.Scatter(
-                    x=np.concatenate([
-                        [x_min],
-                        doi_df[self.settings.x_axis].values,
-                        [x_max],
-                        [x_min]
-                    ]),
-                    y=np.concatenate([
-                        [y_max + 5000],
-                        doi_df["doi"].values,
-                        [y_max + 5000],
-                        [y_max + 5000]
-                    ]),
-                    fill="toself",
-                    fillcolor="rgba(255,255,255,0.6)",
-                    line=dict(width=0),
-                    name="Below DOI",
-                    hoverinfo='skip',
-                    showlegend=True
-                )
-            )
+#             fig.add_trace(
+#                 go.Scatter(
+#                     x=np.concatenate([
+#                         [x_min],
+#                         doi_df[self.settings.x_axis].values,
+#                         [x_max],
+#                         [x_min]
+#                     ]),
+#                     y=np.concatenate([
+#                         [y_max + 50],
+#                         doi_df["doi"].values,
+#                         [y_max + 50],
+#                         [y_max + 50]
+#                     ]),
+#                     fill="toself",
+#                     fillcolor="rgba(255,255,255,0.6)",
+#                     line=dict(width=0),
+#                     name="Below DOI",
+#                     hoverinfo='skip',
+#                     showlegend=True
+#                 )
+#             )
 
-        if self.highlighted is not None and self.dataframe is not None:
+#         if self.highlighted is not None and self.dataframe is not None:
 
-            selected_df = self.dataframe[self.dataframe["site_id"] == self.highlighted]
+#             selected_df = self.dataframe[self.dataframe["site_id"] == self.highlighted]
 
-            if not selected_df.empty:
+#             if not selected_df.empty:
 
-                x_axis = self.settings.x_axis
-                x_value = selected_df[x_axis].iloc[0]
+#                 x_axis = self.settings.x_axis
+#                 x_value = selected_df[x_axis].iloc[0]
 
-                x_vals = np.sort(self.dataframe[x_axis].dropna().unique())
+#                 x_vals = np.sort(self.dataframe[x_axis].dropna().unique())
 
-                if len(x_vals) > 1:
-                    diffs = np.diff(x_vals)
-                    dx = np.median(diffs) * 0.5
-                else:
-                    dx = 0.5
+#                 if len(x_vals) > 1:
+#                     diffs = np.diff(x_vals)
+#                     dx = np.median(diffs) * 0.5
+#                 else:
+#                     dx = 0.5
 
-                fig.add_shape(
-                    type="rect",
-                    x0=x_value - dx,
-                    x1=x_value + dx,
-                    y1=df_layers_long["depth"].min(),
-                    y0=df_layers_long["depth"].max()+20,
-                    line=dict(color="black", width=1.5),
-                    fillcolor="rgba(0,0,0,0.0)",
-                )
+#                 fig.add_shape(
+#                     type="rect",
+#                     x0=x_value - dx,
+#                     x1=x_value + dx,
+#                     y1=df_layers_long["depth"].min(),
+#                     y0=df_layers_long["depth"].max()+20,
+#                     line=dict(color="black", width=1.5),
+#                     fillcolor="rgba(0,0,0,0.0)",
+#                 )
 
-        fig.update_yaxes(
-            range=[doi_df["doi"].max()+8, df_layers_long["depth"].min()-8],
-            autorange=False,
-            #title="Depth [m]"
-        )
+#         fig.update_yaxes(
+#             range=[doi_df["doi"].max()+8, df_layers_long["depth"].min()-8],
+#             autorange=False,
+#             #title="Depth [m]"
+#         )
 
-        fig.update_xaxes(
-            range=[x_min, x_max],
-            autorange=False
-        )
-        fig.update_layout(yaxis2=dict(range=[0, 8]))
-        fig.update_xaxes(
-            title=dict(
-                text=self.settings.x_axis,
-                standoff=5
-            )
-        )
+#         fig.update_xaxes(
+#             range=[x_min, x_max],
+#             autorange=False
+#         )
+#         fig.update_layout(yaxis2=dict(range=[0, 8]))
+#         fig.update_xaxes(
+#             title=dict(
+#                 text=self.settings.x_axis,
+#                 standoff=5
+#             )
+#         )
 
-        fig.update_xaxes(
-            showline=True,
-            linewidth=1,
-            linecolor="black",
-            mirror=True
-        )
+#         fig.update_xaxes(
+#             showline=True,
+#             linewidth=1,
+#             linecolor="black",
+#             mirror=True
+#         )
 
-        fig.update_yaxes(
-            showline=True,
-            linewidth=1,
-            linecolor="black",
-            mirror=True
-        )
-        fig.update_layout(margin = dict(l=60, r=60, t=15, b=20))
-        return fig
+#         fig.update_yaxes(
+#             showline=True,
+#             linewidth=1,
+#             linecolor="black",
+#             mirror=True
+#         )
+#         fig.update_layout(margin = dict(l=60, r=60, t=15, b=20))
+#         return fig
     # def add_callbacks(self, app):
     #     super().add_callbacks(app)
 
@@ -2164,13 +1766,13 @@ class HotKeyReminder(Panel):
                     dbc.ButtonGroup([
                         dbc.Button("Save session [ctrl+s]", id='saveButton'),
                     ]),
-                    # html.Div(style={'width':'30px'}),
+                    html.Div(style={'width':'30px'}),
                     dbc.Tooltip("Save the current session to the default location or select a folder", target='saveButton', placement='top'),
-                    dbc.Tooltip(id="disable-tooltip",children="Used to disable noisy data or data which cannot be fitted in inversions.",target="disableButton",placement="top",),
-                    dbc.Tooltip(id="enable-tooltip",children="Used to enable previously disabled data.",target="enableButton",placement="top",),
-                    dbc.Tooltip(id = "beginning-tooltip",children="Go to the first collected data site.", target='beginning-buffer', placement='top'),
-                    dbc.Tooltip(id = "prev-buffer-tooltip",children="Go to the previous buffer of sites.", target='prev-buffer', placement='top'),
-                    dbc.Tooltip(id = "next-buffer-tooltip",children="Go to the next buffer of sites.", target='next-buffer', placement='top'),
+                    dbc.Tooltip("Used to disable noisy data or data which cannot be fitted in inversions.", target='disableButton', placement='top'),
+                    dbc.Tooltip("Used to enable previously disabled data.", target='enableButton', placement='top'),
+                    dbc.Tooltip("Go to the first collected data site.", target='beginning-buffer', placement='top'),
+                    dbc.Tooltip("Go to the previous buffer of sites.", target='prev-buffer', placement='top'),
+                    dbc.Tooltip("Go to the next buffer of sites.", target='next-buffer', placement='top'),
                     dbc.Tooltip("Go to previous.", target='highlight_prev', placement='top'),
                     dbc.Tooltip("Go to next", target='highlight_next', placement='top'),
                 ], style={'padding': '10px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between'}
@@ -2225,8 +1827,7 @@ class HotKeyReminder(Panel):
         @app.callback(
             Output("disableButton", "children"),
             Output("enableButton", "children"),
-            Output("disable-tooltip", "children"),
-            Output("enable-tooltip", "children"),
+
             Output("beginning-buffer", "style"),
             Output("prev-buffer", "style"),
             Output("next-buffer", "style"),
@@ -2238,9 +1839,6 @@ class HotKeyReminder(Panel):
             Output("buffer-progress", "style"),
             Output("buffer-progress-text", "style"),
             Output('buffer-length-label', 'style'),
-            Output("beginning-tooltip","style"),
-            Output("prev-buffer-tooltip","style"),
-            Output("next-buffer-tooltip","style"),
 
             Input("interpret_layout", "color"),
             prevent_initial_call=True
@@ -2250,15 +1848,11 @@ class HotKeyReminder(Panel):
             hidden = {"opacity": 0}
             shown = {"opacity": 1}
 
-            shown_tooltip = {}
-            hidden_tooltip = {"display": "none"}
 
             if color != "primary":
                 return (
                 "Disable [ctrl+d]",
                 "Enable [ctrl+e]",
-                "Used to disable noisy data or data which cannot be fitted in inversions.",
-                "Used to enable previously disabled data.",
                 shown,  # beginning-buffer
                 shown,  # prev-buffer
                 shown,  # next-buffer
@@ -2268,26 +1862,17 @@ class HotKeyReminder(Panel):
                 shown,  # buffer-progress
                 shown,  # buffer-progress-text
                 shown,  # buffer-length-label
-                shown_tooltip,
-                shown_tooltip,
-                shown_tooltip,
             )
-            else:
-                return (
-                    "Delete",
-                    "Export",
-                    "Used to delete unwanted profiles.",
-                    "Export profile to kml file and png",
-                    hidden,  # beginning-buffer
-                    hidden,  # prev-buffer
-                    hidden,  # next-buffer
-                    "Previous profile",  # highlight_prev
-                    "Next profile",  # highlight_next
-                    hidden,  # buffer-length-input
-                    hidden,  # buffer-progress
-                    hidden,  # buffer-progress-text
-                    hidden,  # buffer-length-label
-                    hidden_tooltip,
-                    hidden_tooltip,
-                    hidden_tooltip,
-                )
+            return (
+                "Delete",
+                "Export",
+                hidden,  # beginning-buffer
+                hidden,  # prev-buffer
+                hidden,  # next-buffer
+                "Previous profile",  # highlight_prev
+                "Next profile",  # highlight_next
+                hidden,  # buffer-length-input
+                hidden,  # buffer-progress
+                hidden,  # buffer-progress-text
+                hidden,  # buffer-length-label
+            )

@@ -9,7 +9,6 @@ import dash_flexlayout as dfl
 
 from dataclasses import dataclass
 from dataclasses_jsonschema import JsonSchemaMixin
-import tkinter as tk
 
 import plotly.express as px
 import plotly.graph_objects as go
@@ -221,6 +220,12 @@ class PanelSettings:
                     )
                 )
             form_items.append(dbc.Row(row_children, className='mb-2'))
+        form_items.append(dbc.Button(
+            "Apply Settings",
+            id=f'{self.id}_apply_settings',
+            n_clicks=0,
+            style={'margin': '10px'}
+        ))
         return html.Div([dbc.Form(form_items, style={'margin': '10px'}), 
                          gear_maker(self.id+'_settings')], style={'width':'95%'})
 
@@ -301,65 +306,6 @@ class PanelSettings:
                 return close_settings(model, f'tab-{self.id}', f'tab-{self.id}_settings')
             else:
                 raise PreventUpdate
-            
-
-        @app.callback(
-            Output('global-colorbar-store', 'data', allow_duplicate=True),
-            Input({'type': f'settings-{self.id}', 'key': ALL}, 'value'),
-            State({'type': f'settings-{self.id}', 'key': ALL}, 'id'),
-            State('global-colorbar-store', 'data'),
-            prevent_initial_call=True
-        )
-        def sync_to_global(values, ids, master_data):
-            if master_data is None: master_data = {}
-            
-            # 1. Identify which attribute we are currently looking at (e.g., 'resistivity')
-            # You might get this from a State('points-attr', 'value') 
-            current_attr = 'resistivity' 
-            
-            if current_attr not in master_data:
-                master_data[current_attr] = {}
-
-            # 2. Map every UI change to the store
-            for val, ident in zip(values, ids):
-                key = ident['key']
-                master_data[current_attr][key] = val
-            
-            # 3. Handle Special Logic (e.g., if colors change, update cmap)
-            # This allows 'lm_color' or 'hm_color' to affect the visuals immediately
-            return master_data
-        
-        import time
-        
-        @app.callback(
-            # Output('force-refresh-store', 'data',allow_duplicate=True),
-            Output(f"tab-{self.id}_settings", "data-status"), # Dummy output to trigger the callback
-            Input({'type': f'settings-{self.id}', 'key': ALL}, 'value'),
-            State({'type': f'settings-{self.id}', 'key': ALL}, 'id'),
-            prevent_initial_call=True
-        )
-
-        def update_settings_realtime(values, ids):
-            # 1. Update THIS object instance
-            for val, identifier in zip(values, ids):
-                key = identifier['key']
-                
-                # FIX: More robust numeric conversion
-                if val is not None and str(val).replace('.', '', 1).isdigit():
-                    # val = float(val)
-                    try:
-                        if float(val) == int(float(val)):
-                            val = int(float(val))
-                        else:
-                            val = float(val)
-                    except ValueError:
-                        pass
-
-                if hasattr(self, key):
-                    setattr(self, key, val)
-
-            print(f"Real-time update for {self.id}: vmin={self.vmin}, vmax={self.vmax}")
-            return  "updated"
 
     @property
     def flat_keys(self):
@@ -382,22 +328,8 @@ class Panel:
     def add_callbacks(self, app):
         if self.settings is not None:
             self.settings.add_callbacks(app)
-
-            if not self.settings.flat_keys:
-                        return
-    
-            def update_render(global_data, current_attr, *args):
-                # 1. Update from Global Store (vmin, vmax, log)
-                if global_data and current_attr in global_data:
-                    config = global_data[current_attr]
-                    for attr in ['vmin', 'vmax', 'log']:
-                        if hasattr(self.settings, attr) and attr in config:
-                            setattr(self.settings, attr, config[attr])
-
-                # 2. Update all other settings from the UI
-                # IMPORTANT: args must align 1:1 with flat_keys
+            def update_render(*args):
                 for key, arg in zip(self.settings.flat_keys, args):
-                    # Handle Dash Color Picker dicts
                     if isinstance(arg, dict) and 'hex' in arg:
                         arg = arg['hex']
                     
@@ -417,18 +349,6 @@ class Panel:
                 return self.render()        
             update_render = app.callback(Output(self.id, self.childname),
                         [Input({'type': f'settings-{self.id}', 'key': x}, 'value') for x in self.settings.flat_keys])(update_render)
-
-        # @app.callback(
-        #     Output(self.id, self.childname, allow_duplicate=True),
-        #     Input(f"{self.id}_apply_settings", "n_clicks"),
-        #     [State({'type': f'settings-{self.id}', 'key': k}, 'value') for k in self.settings.flat_keys],
-        #     prevent_initial_call=True
-        # )
-        # def apply_settings(n, *values):
-        #     if not n:
-        #         raise PreventUpdate
-        #     update_render(None, None, *values)
-        #     return self.render()
 
             
     def initialize(self):

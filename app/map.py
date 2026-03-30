@@ -178,8 +178,8 @@ class MapSettings(PanelSettings):
     zoom: int = 10
     color: str = '#ff0000'
     highlight_color: str= '#ffff00'  # Default highlight color
-    plot_by: str = 'misfit'
-    buffer_color: str= '#0000ff'  # Default buffer color
+    plot_by: Literal['', 'misfit', 'doi', 'date', '_line_1_x', '_line_1_y'] = ''
+    buffer_color: str= "#ffffff"  # Default buffer color
     dragmode: str='select'
     view: dict = None
 
@@ -234,7 +234,6 @@ class Map(Panel):
                     lat="latitude",
                     lon="longitude",
                     zoom=zoom, center=center, 
-                    # color_discrete_sequence=["#00cc96"],  # soft green
                 )
 
                 buffer_trace.update_traces(
@@ -244,13 +243,14 @@ class Map(Panel):
 
                 for trace in buffer_trace.data:
                     fig.add_trace(trace)
+                
+                fig.data = fig.data[-1:]+fig.data[:-1]
 
         fig.update_layout(map_style="white-bg",
             map_layers=[
                 {
                     "below": 'traces',
                     "sourcetype": "raster",
-                    "sourceattribution": "Google Earth (C)",
                     "source": ['https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}']
                 }])
         if self.highlighted is not None:
@@ -260,6 +260,7 @@ class Map(Panel):
                 fig.add_trace(
                     trace
                 )
+
         if self.lines is not None:
             fig2 = px.line_map(self.lines, lat='latitude', lon='longitude', line_group='line', color='line', zoom=zoom, center=center, hover_name='line')
             fig2.update_traces(mode='lines+markers')
@@ -306,33 +307,62 @@ class Map(Panel):
         return x,y
 
     def initialize(self):
-        return  html.Div([
-                    html.Div([
-                        dcc.Graph(figure=self.render(), id=self.id, mathjax=True, 
-                                   style={'height': '95%'}),
+        return html.Div(
+            [
+                html.Div(
+                    [
+                        html.Div(  
+                            dcc.Graph(
+                                figure=self.render(),
+                                id=self.id,
+                                mathjax=True,
+                                responsive=True,
+                                style={
+                                    'height': '100%',
+                                    'width': '100%'
+                                }
+                            ),
+                            style={
+                                'flex': '1',
+                                'minHeight': 0,
+                                'boxSizing': 'border-box',
+                                'marginBottom': '50px'
+                            }
+                        ),
+
                         dbc.Select(
-                            options=['misfit', 'doi', 'date'],
+                            options=self.settings.schema['properties']['plot_by']['enum'],
                             id=self.id+'_plot_by',
-                            value='misfit',
-                            style={'margin-left':'45%', 'justify': 'center','width':'10%', 'height':'4%'}),
-                    ]),
-                    gear_maker(self.id)],
-                    style={'height': '100%'} 
-                )
+                            value=self.settings.plot_by,
+                            style={
+                                'position': 'absolute',
+                                'bottom': '10px',
+                                'left': '50%',
+                                'transform': 'translateX(-50%)',
+                                'width': '150px'
+                            }
+                        ),
+                    ],
+                    style={
+                        'flex': '1',
+                        'minHeight': 0,
+                        'position': 'relative',
+                        'display': 'flex'
+                    }
+                ),
+                gear_maker(self.id)
+            ],
+            style={
+                'display': 'flex',
+                'flexDirection': 'column',
+                'height': '100%',
+                'minHeight': 0
+            }
+        )
 
     def add_callbacks(self, app):
         super().add_callbacks(app)
 
-        @app.callback(
-            Output(self.id, "figure", allow_duplicate=True),
-            Input("selected-site-id", "data"),
-            prevent_initial_call=True
-        )
-        def update_highlight(site_id):
-            if site_id is None:
-                raise PreventUpdate
-            self.highlighted = site_id
-            return self.render()
 
         @app.callback(
             self.output,
@@ -354,33 +384,39 @@ class Map(Panel):
             prevent_initial_call=True
         )
         def update_view(relayout_data, options):
-            fig=no_update
+            from __main__ import sesh
+
+            print(options)
+            fig     = no_update
+            # options = no_update
             if 'map.center' in relayout_data:
                 self.settings.view = relayout_data
             if 'dragmode' in relayout_data:
                 self.settings.dragmode=relayout_data['dragmode']
             elif 'shapes' in relayout_data:
                 if relayout_data['shapes'][-1]['type']=='line':
-                    from __main__ import sesh
+                    
                     lat0,lon0 = self.paper2latlon(relayout_data['shapes'][-1]['x0'], relayout_data['shapes'][-1]['y0'])
                     lat1,lon1 = self.paper2latlon(relayout_data['shapes'][-1]['x1'], relayout_data['shapes'][-1]['y1'])
                     line_id = 1
                     if self.lines is None:
                         self.lines = DataFrame({'latitude':[lat0], 'longitude':[lon0], 'line':[line_id]})
-                        options.append(f'line {line_id}')
                     else:
                         lat,lon,line_id = self.lines.loc[len(self.lines)-1].tolist()
                         if cdist(lat,lon, lat0, lon0) > 10:
                             line_id +=1 
                             self.lines.loc[len(self.lines)] = [lat0, lon0, line_id]
-                            options.append(f'line {line_id}')
                     self.lines.loc[len(self.lines)] = [lat1, lon1, line_id]
                     del relayout_data['shapes']
                     sesh.lines = self.lines.copy()
                     fig=self.render()
                 else:
                     print(relayout_data['shapes'][-1])
-
+            
+            if sesh.lines is not None:
+                line_ids = sesh.lines['line'].unique()
+                line_options = [f'line {line_id:0.0f}' for line_id in line_ids]
+                options = line_options + [option for option in options if not option.startswith('line')]
             return relayout_data, fig, options
 
         @app.callback(self.output,

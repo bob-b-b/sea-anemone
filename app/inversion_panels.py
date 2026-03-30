@@ -1,6 +1,7 @@
 from dataclasses import field
 from basepanel import *
-#from database_panel import DatabasePanel
+import temframe
+
 from dash import ctx
 import numpy as np
 from nosj import nosj
@@ -99,7 +100,7 @@ class MultiInversion(Panel):
 
             d_err = sesh.data[sesh.data['site_id']==site_with_median_dbdt].error.dropna().values
             d_obs = sesh.data[sesh.data['site_id']==site_with_median_dbdt].dbdt.dropna().values
-            dbdt = sesh.data.dmfwr(rho,depth).exp()
+            dbdt = sesh.dmfwr(rho,depth).exp()
             dbdt_lm = dbdt[:len(time_lm)]
             dbdt_hm = dbdt[len(time_lm):len(time_lm)+len(time_hm)]
             e = d_err / 100
@@ -380,13 +381,11 @@ class MultiInversion(Panel):
                 elif hc_level == "tight":
                     Horz = 0.1
                 res_start                        = LogResistivity.smooth(rho,z) 
-                sesh.models, sesh.data, _ = sesh.data.invert(res_start,vc = Vert, hc = Horz)               
+                sesh.models, sesh.data, _ = temframe.invert(sesh.data, sesh.dmfwr, res_start,vc = Vert, hc = Horz)
                 m1.dataframe = sesh.overview.copy()
-                # m1.settings.plot_by = 'misfit'
                 self.title = "Inversion Finished!!!"
                 new_review_clicks = (current_review_clicks or 0) + 1
-                # layouts.invert = layouts.invert_multi_first
-                return False, False, self.render(), "success","misfit"#,new_review_clicks,  0mod2.render(), dbdt1.render(), 
+                return False, False, self.render(), "success","misfit"
             raise PreventUpdate
         
         @app.callback(
@@ -527,7 +526,6 @@ class Single_site(Panel):
         settings = SinglesiteSettings(id='inv-single', **kwargs)
         super().__init__(id='inv-single', settings=settings)
         self.dataframe = dataframe
-        # self.curves = None
 
     def render(self):
         COMMON_LAYOUT = dict(
@@ -620,7 +618,7 @@ class Single_site(Panel):
 
                 d_err = sesh.data[sesh.data['site_id']==site_with_median_dbdt].error.dropna().values
                 d_obs = sesh.data[sesh.data['site_id']==site_with_median_dbdt].dbdt.dropna().values
-                dbdt = sesh.data.dmfwr(rho,depth).exp()
+                dbdt = sesh.dmfwr(rho,depth).exp()
                 dbdt_lm = dbdt[:len(time_lm)]
                 dbdt_hm = dbdt[len(time_lm):len(time_lm)+len(time_hm)]
                 e = d_err / 100
@@ -963,7 +961,7 @@ class Single_site(Panel):
                 
                 Vert = {"loose": 2.0, "medium": 0.8, "tight": 0.2}[vc]
                 res_start = LogResistivity.smooth(rho, z)
-                df_layers, df_site, _ = sesh.data.invert_site(site_id=site_id,res_start=res_start,vc=Vert)
+                df_layers, df_site, _ = temframe.invert_site(sesh.data, sesh.dmfwr, site_id=site_id, res_start=res_start, vc=Vert)
                 self.curves.append((vc, df_layers['resistivity'].values, df_layers['bottom_depth'].values,df_layers['misfit'].values[-1],df_layers, df_site['dbdt'].values, df_site['dbdt_syn'].values, df_site['time'].values, df_site['error'].values,df_site['include'].values, df_layers['doi'].values))
 
             return self.render()
