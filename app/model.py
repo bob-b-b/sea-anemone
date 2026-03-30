@@ -119,15 +119,69 @@ class ModelSection(Panel):
             line_id = np.unique(sesh.lines.line.values)
             options += [f'line {i:02d}' for i in line_id]
         return  html.Div([
-                    html.Div([
-                        dbc.Select(
-                            options=options,
-                            id=self.id+'_axis',
-                            value='site_id',
-                            style={'margin-left':'45%', 'justify': 'center','width':'10%', 'height':'10px'}),
-                        dcc.Graph(figure=self.render(), id=self.id, mathjax=True, 
-                            style={'height': '95%'})
-                    ]),
+                    html.Div(
+                        [
+                        dcc.Graph(
+                        id=self.id,
+                        figure=self.render(),
+                        mathjax=True,
+                        style={"height": "95%"}
+                        ),
+                        html.Div(
+                            [
+                                html.Div(
+                                    [
+                                        dbc.Label(
+                                            "x-axis",
+                                            html_for=self.id + "_axis",
+                                            class_name="mb-0",
+                                            style={"width": "70px", "textAlign": "right"},
+                                        ),
+                                        dbc.Select(
+                                            id=self.id + "_axis",
+                                            options=options,
+                                            value="site_id",
+                                            style={"width": "120px"},
+                                        ),
+                                    ],
+                                    style={"display": "flex", "alignItems": "center", "gap": "8px"},
+                                ),
+                                html.Div(
+                                    [
+                                        dbc.Label(
+                                            "radius",
+                                            html_for=self.id + "_radius",
+                                            class_name="mb-0",
+                                            style={"width": "70px", "textAlign": "right"},
+                                        ),
+                                        dbc.Input(
+                                            id=self.id + "_radius",
+                                            value=100.0,
+                                            type="number",
+                                            step=25.0,
+                                            disabled=True,
+                                            style={"width": "120px"},
+                                        ),
+                                    ],
+                                    style={"display": "flex", "alignItems": "center", "gap": "8px"},
+                                ),
+                            ],
+                            style={
+                                "position": "absolute",
+                                "bottom": "12px",
+                                "left": "12px",
+                                "display": "flex",
+                                "flexDirection": "column",
+                                "gap": "8px",
+                                "zIndex": 1000,
+                                "backgroundColor": "rgba(255,255,255,0.85)",
+                                "padding": "6px 8px",
+                                "borderRadius": "6px",
+                            },
+                        ),
+                        ],
+                        style={"position": "relative", "height": "100%"}
+                    ),
                     gear_maker(self.id)],
                     style={'height': '100%'} 
                 )
@@ -467,13 +521,24 @@ class ModelSection(Panel):
         super().add_callbacks(app)
 
         @app.callback(
-            self.output,
+            self.output, Output(self.id+'_radius', 'disabled'),
             Input(self.id+'_axis', 'value'),
             prevent_initial_call=True
         )
         def update_xaxis(x_axis):
+            disabled=True
             if x_axis.startswith('line'):
                 line_id = int(float(x_axis.split(' ')[-1]))
                 x_axis = f'_line_{line_id:0.0f}_x'
+                disabled = False
             self.settings.x_axis=x_axis
+            return self.render(), disabled
+    
+        @app.callback(
+            self.output, 
+            Input(self.id+'_radius', 'value'),
+            prevent_initial_call=True
+        )
+        def update_radius(radius):
+            self.settings.radius=radius
             return self.render()
