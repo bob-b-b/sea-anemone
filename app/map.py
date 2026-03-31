@@ -10,7 +10,18 @@ import utm
 from pandas import DataFrame
 
 
-
+line_colors = [
+    '#1f77b4',  # muted blue
+    '#ff7f0e',  # safety orange
+    '#2ca02c',  # cooked asparagus green
+    '#d62728',  # brick red
+    '#9467bd',  # muted purple
+    '#8c564b',  # chestnut brown
+    '#e377c2',  # raspberry yogurt pink
+    '#7f7f7f',  # middle gray
+    '#bcbd22',  # curry yellow-green
+    '#17becf'   # blue-teal
+]
 
 
 # Define a custom template
@@ -272,7 +283,7 @@ class Map(Panel):
 
 
         fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0},
-                          modebar=dict(add=['drawline', 'eraseshape', 'drawopenpath'], remove=['zoomIn', 'zoomOut', 'lasso', 'toImage', 'plotly-logomark']),
+                          modebar=dict(add=['drawline', 'eraseshape'], remove=['zoomIn', 'zoomOut', 'lasso', 'toImage', 'plotly-logomark']),
                           newshape=dict(line_color='black', line_width=3, line_dash='dash'),
                           dragmode=self.settings.dragmode, showlegend=False)
         
@@ -280,13 +291,7 @@ class Map(Panel):
 
     def line2path(self, line_id):
         c_line = self.lines.loc[self.lines.line==line_id]
-        # path_dict = {'editable': True, 'visible': True, 'showlegend': True, 'legend': 'legend',
-        #              'legendgroup': '', 'legendgrouptitle': {'text': '', 'font': {'weight': 'normal', 'style': 'normal', 'variant': 'normal', 'lineposition': 'none', 'textcase': 'normal', 'shadow': 'none'}}, 
-        #              'legendrank': 1000-int(line_id), 'label': {'text': '', 'texttemplate': '', 'texttemplatefallback': '-'}, 
-        #              'xref': 'paper', 'yref': 'paper', 'layer': 'above', 'opacity': 1, 
-        #              'line': {'color': 'black', 'width': 3, 'dash': 'dash'}, 
-        #              'type': 'path'}
-        path_dict = {'editable': True, 'type':'path'}
+        path_dict = {'editable': True, 'type':'path', 'line': {'color': line_colors[int(line_id)%len(line_colors)-1], 'width': 3, 'dash': 'dash'}}
         path = ''
         for i,record in c_line.iterrows():
             cx,cy = self.latlon2paper(record['latitude'], record['longitude'])
@@ -294,6 +299,16 @@ class Map(Panel):
         path_dict['path'] = 'M' + path[1:]
         return path_dict
     
+    def path2line(self, path_str):
+        points = path_str[1:].split('L')
+        lat, lon = [], []
+        for point in points:
+            cx, cy = map(float, point.split(','))
+            plat, plon = self.paper2latlon(cx, cy)
+            lat.append(plat)
+            lon.append(plon)
+        return lat, lon
+
     @property
     def lat0(self):
         return min([p[1] for p in self.settings.view['map._derived']['coordinates']])
@@ -397,25 +412,18 @@ class Map(Panel):
             return self.render()  
 
         @app.callback(
-            # Output(self.id, 'relayoutData'),
             self.output,
-            Output('model_section_axis', 'options'),
+            Output('model_section_axis', 'options', allow_duplicate=True),
             Input(self.id, 'relayoutData'),
-            Input(self.id, 'restyleData'),
             State('model_section_axis', 'options'),
             prevent_initial_call=True
         )
-        def update_view(relayout_data, restyle_data, options):
+        def update_view(relayout_data, options):
             from __main__ import sesh
-            print(relayout_data)
-            print(restyle_data)
-            # fig     = no_update
-            # options = no_update
             if 'map.center' in relayout_data:
                 self.settings.view = relayout_data
-            if 'dragmode' in relayout_data:
+            elif 'dragmode' in relayout_data:
                 self.settings.dragmode=relayout_data['dragmode']
-                if self.settings.dragmode=='drawline': fig = self.render()
 
             elif 'shapes' in relayout_data:
                 if relayout_data['shapes'][-1]['type']=='line':
@@ -434,30 +442,23 @@ class Map(Panel):
                     del relayout_data['shapes']
                     sesh.lines = self.lines.copy()
                     fig=self.render()
-                else:
-                    print(relayout_data['shapes'])
+                elif len(relayout_data['shapes'])==len(self.lines.line.unique())-1:
+                    saved_paths = [self.line2path(line_id)['path'] for line_id in self.lines.line.unique()]
+                    remaining_paths = [shape['path'] for shape in relayout_data['shapes']]
+                    for line_id, path in zip(self.lines.line.unique(), saved_paths):
+                        if path not in remaining_paths:
+                            self.lines = self.lines[self.lines.line!=line_id]
+                    sesh.lines = self.lines.copy()
+            else:
+                key, value = list(relayout_data.items())[0]
+                if key.startswith('shapes[') and key.endswith('].path'):
+                    line_id = int(key.split('[')[1].split(']')[0])+1
+                    lat, lon = self.path2line(value)
+                    self.lines.loc[self.lines.line==line_id, ['latitude', 'longitude']] = np.array([lat, lon]).T
+                    sesh.lines = self.lines.copy()
             
             if sesh.lines is not None:
                 line_ids = sesh.lines['line'].unique()
                 line_options = [f'line {line_id:0.0f}' for line_id in line_ids]
                 options = line_options + [option for option in options if not option.startswith('line')]
             return self.render(), options
-
-
-
-        # @app.callback(self.output,
-        #                 Output(self.id, 'selectedData', allow_duplicate=True),
-        #                 Input(self.id, 'selectedData'),
-        #     prevent_initial_call=True)
-        # def trace_select(selected_data):
-        #     fig = no_update
-        #     if selected_data is not None:
-        #         [[lon0,lat0],[lon1,lat1]] = selected_data['range']['map']
-        #         if self.lines is not None:
-        #             for i,row in self.lines.iterrows():
-        #                 if cdist(row['latitude'], row['longitude'],  lat0, lon0)<100:
-        #                     self.lines.loc[i, 'latitude'] = lat1
-        #                     self.lines.loc[i, 'longitude'] = lon1
-        #                     fig = self.render()
-        #                     break
-        #     return fig, no_update
