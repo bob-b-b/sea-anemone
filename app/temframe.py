@@ -557,7 +557,7 @@ def invert(temdf, dmfwr, res_start, vc=0.5, hc=0.8, max_iterations=50):
         print(f'Inversion for data_id {i:02d} completed.')
     df_data['misfit'] = (((df_data['dbdt'] - df_data['dbdt_syn'])**2/(np.log1p(df_data['dbdt'].values*df_data['error'].values/100.)**2))**0.5)
 
-    df_overview = df_data.overview()
+    df_overview = overview(df_data)
     df_overview['doi'] = doi
     df_resmod = pd.DataFrame(results)
 
