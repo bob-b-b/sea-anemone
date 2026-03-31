@@ -681,6 +681,14 @@ def upload_file(contents):
 def sync_x_axis(x_axis):
     return x_axis
 
+@app.callback(
+    Output({'type': f'settings-{dbdt2.id}', 'key': 'radius'}, 'value'),
+    Input({'type': f'settings-{mod2.id}', 'key': 'radius'}, 'value'),
+    prevent_initial_call=True
+)
+def sync_radius(radius):
+    return radius
+
 
 
 @app.callback(

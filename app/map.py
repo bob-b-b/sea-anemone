@@ -442,6 +442,7 @@ class Map(Panel):
                     self.lines.loc[len(self.lines)] = [lat1, lon1, line_id]
                     del relayout_data['shapes']
                     sesh.lines = self.lines.copy()
+                    sesh.update_site_table()
                     fig=self.render()
                 elif len(relayout_data['shapes'])==len(self.lines.line.unique())-1:
                     saved_paths = [self.line2path(line_id)['path'] for line_id in self.lines.line.unique()]
@@ -450,6 +451,7 @@ class Map(Panel):
                         if path not in remaining_paths:
                             self.lines = self.lines[self.lines.line!=line_id]
                     sesh.lines = self.lines.copy()
+                    sesh.update_site_table()
             else:
                 key, value = list(relayout_data.items())[0]
                 if key.startswith('shapes[') and key.endswith('].path'):
@@ -457,7 +459,8 @@ class Map(Panel):
                     lat, lon = self.path2line(value)
                     self.lines.loc[self.lines.line==line_id, ['latitude', 'longitude']] = np.array([lat, lon]).T
                     sesh.lines = self.lines.copy()
-            
+                    sesh.update_site_table()
+
             if sesh.lines is not None:
                 line_ids = sesh.lines['line'].unique()
                 line_options = [f'line {line_id:0.0f}' for line_id in line_ids]

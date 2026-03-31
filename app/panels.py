@@ -529,6 +529,7 @@ class dbdtSectionSettings(PanelSettings):
     plot_disabled: bool = True
     dbdt_max: float = -3
     dbdt_min: float = -12
+    radius: float = 100.
 
 class dbdtSection(Panel):
     dataframe = None
@@ -560,13 +561,7 @@ class dbdtSection(Panel):
         df_tmp.loc[df_tmp['system_id'] == 0, 'dbdt']      *= lm_factor
         df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt_syn']  *= hm_factor
         df_tmp.loc[df_tmp['system_id'] == 1, 'dbdt']      *= hm_factor
-        df_tmp.loc[df_tmp['site_id'] ==  -1, 'include']  = False
         df_tmp['system_id']                                = df_tmp['system_id'].map({0: 'lm', 1: 'hm'})
-
-        # x_axis = df_tmp[x_axis].unique()#.values
-        # if x_axis == 'site_id':
-        #     x_axis = x_axis[x_axis>-1]
-        # xmin,xmax = np.nanmin(x_axis), np.nanmax(x_axis)
 
         x_vals = np.sort(df_tmp[x_axis].unique())
 
@@ -574,18 +569,9 @@ class dbdtSection(Panel):
             x_vals = x_vals[x_vals > -1]
 
         n_sites = len(x_vals)
-        # self.buffer_start +=1
-        plot_start = max(0, self.buffer_start)
-        plot_end   = min(n_sites, self.buffer_start + self.buffer_len)
 
-        x_slice = x_vals[plot_start:plot_end]
-
-        if len(x_slice) > 0:
-            xmin = x_slice.min()
-            xmax = x_slice.max()
-        else:
-            xmin = x_vals.min()
-            xmax = x_vals.max()
+        xmin = x_vals.min()
+        xmax = x_vals.max()
 
         dx = xmax - xmin
 
@@ -605,7 +591,6 @@ class dbdtSection(Panel):
             error_y_minus=error_lb
         )
 
-        df_tmp.loc[df_tmp['site_id'] == -1, 'include'] = True
         df_tmp.loc[(~df_tmp['include']), 'dbdt'] = np.nan
         df_tmp.loc[(~df_tmp['include']), 'dbdt_syn'] = np.nan
 
@@ -617,7 +602,6 @@ class dbdtSection(Panel):
             y='dbdt',
             color_discrete_sequence=["black", "black"],
             color="system_id",
-            # custom_data=["system_id", "data_id"],
             error_y=error_ub,
             error_y_minus=error_lb,
         )
@@ -627,6 +611,7 @@ class dbdtSection(Panel):
             x=x_axis,
             y='dbdt_syn',
             color="system_id",
+            line_group="gate_id",
             color_discrete_sequence=[self.settings.lm_color, self.settings.hm_color],
             custom_data=["system_id", "data_id", "site_id"],
         )
@@ -682,7 +667,8 @@ class dbdtSection(Panel):
         x_axis = self.settings.x_axis
         if x_axis.startswith('line'):
             line_id = int(float(x_axis.split(' ')[-1]))
-            x_axis = f'_line_{line_id:0.0f}_x'        
+            x_axis = f'_line_{line_id:0.0f}_x'
+
         df_tmp = self.dataframe[self.dataframe['gate_id']>-1]
         df_tmp                                             = df_tmp.sort_values(['gate_id', x_axis])
         df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto']).astype(bool)
@@ -816,6 +802,14 @@ class dbdtSection(Panel):
 
     def render(self):
         if self.dataframe is None: return self.empty_render()
+        x_axis = self.settings.x_axis
+        if x_axis.startswith('line'):
+            line_id = int(float(x_axis.split(' ')[-1]))
+            x_axis = f'_line_{line_id:0.0f}_x'
+            from __main__ import sesh
+            self.dataframe = sesh.data.copy()
+            self.dataframe = self.dataframe.loc[np.abs(self.dataframe[x_axis.replace('_x', '_y')])<self.settings.radius]
+
         if 'dbdt_syn' in self.dataframe.columns:
             fig = self.compare_synthetic()
         else:
