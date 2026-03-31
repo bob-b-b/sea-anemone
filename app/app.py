@@ -21,7 +21,7 @@ session_tracker = os.path.join(tempdir, 'anemone_projects.txt')
 from panels import *
 from inversion_panels import *
 from dash import dcc
-from dash import Dash, callback_context, ALL
+from dash import Dash, callback_context, ALL, Patch
 from dash.exceptions import PreventUpdate
 from dash import Input, Output, State, html, dcc, ctx
 from dash_bootstrap_components import themes
@@ -122,77 +122,57 @@ for panel in panels:
 
 
 
-# @app.callback(
-#     [ 
-#         dbdt1.output, dbdt2.output, rhoa.output, mod1.output, mod2.output,
-#     ],
-#     [Input('map', 'relayoutData'), Input('map', 'selectedData')],
-#     prevent_initial_call=True
-# )
-# def handle_map_interactions(relayout_data, selected_data):
-#     """Handle both drawing and selection on the map"""
-#     # ctx = callback_context
-#     if not ctx.triggered:
-#         raise PreventUpdate
-       
-#     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
-#     trigger_prop = ctx.triggered[0]['prop_id'].split('.')[1]
-#     selected_sites = None
-# #     selected_sites = []
-    
-#     # Handle drawing interactions
-#     if trigger_prop == 'relayoutData' and relayout_data:
-#         # Check if shapes were drawn
-#         # if 'shapes' in relayout_data:
-#         #     print("SHAPES IN HANDLE MAP INTERACTION LINE 582")
-#         #     m1.drawn_shapes = relayout_data['shapes']
-#         #     selected_sites = m1.get_selected_sites()
-#         # Handle shape deletion
-#         # elif any(key.startswith('shapes[') and key.endswith('].x0') for key in relayout_data.keys()):
-#         if any(key.startswith('shapes[') and key.endswith('].x0') for key in relayout_data.keys()):
-#             # Update shapes if they were modified
-#             shapes = []
-#             i = 0
-#             while f'shapes[{i}].x0' in relayout_data:
-#                 shape = {
-#                     'type': relayout_data.get(f'shapes[{i}].type', 'rect'),
-#                     'x0': relayout_data.get(f'shapes[{i}].x0'),
-#                     'x1': relayout_data.get(f'shapes[{i}].x1'),
-#                     'y0': relayout_data.get(f'shapes[{i}].y0'),
-#                     'y1': relayout_data.get(f'shapes[{i}].y1'),
-#                 }
-#                 shapes.append(shape)
-#                 i += 1
-#             m1.drawn_shapes = shapes
-#             selected_sites = m1.get_selected_sites()
-    
-#     # Handle point selection
-#     elif trigger_prop == 'selectedData' and selected_data and 'points' in selected_data:
-#         selected_sites = []
-#         for point in selected_data['points']:
-#             cd = point.get('customdata', None)
-#             if isinstance(cd, (list, tuple)) and len(cd) > 0:
-#                 selected_sites.append(cd[0])
+@app.callback(
+    [ 
+        dbdt1.output, dbdt2.output, rhoa.output, mod1.output, mod2.output, m1.output,
+    ],
+    [Input('map', 'selectedData')],
+    prevent_initial_call=True
+)
+def handle_map_interactions(selected_data):
+    if not selected_data:
+        raise PreventUpdate
+        
+    if 'points' in selected_data:
+        selected_sites = [point['pointNumber'] for point in selected_data['points'] if point['curveNumber']==0]
 
-#     # keep your sentinel if you rely on it elsewhere
-#     if selected_sites:
-#         selected_sites = list(set(selected_sites)) + [-1]
+
+    if selected_sites:
+        selected_sites = list(set(selected_sites))# + [-1]
     
-#     # If no sites selected, don't update
-#     if not selected_sites:
-#         # print("NO SHAPES IN HANDLE MAP INTERACTION LINE 582")
-#         raise PreventUpdate
 
-# #     df_data = sesh.data
 
-#     # Update dataframes with selected sites
-#     new_df = df_data[df_data['site_id'].isin(selected_sites)]
-#     dbdt1.dataframe = new_df
-#     dbdt2.dataframe = new_df
-#     rhoa.dataframe  = new_df
-
+    df_data = sesh.data.copy()
+    new_df = df_data[df_data['site_id'].isin(selected_sites)]
+    dbdt1.dataframe = new_df
+    rhoa.dataframe  = new_df
     
-#     return dbdt1.render(), dbdt2.render(), rhoa.render(), mod1.render(), mod2.render()
+    if sesh.models is not None:
+        df_mod = sesh.models.copy()
+        new_df = df_mod[df_mod['site_id'].isin(selected_sites)]
+        mod1.dataframe = new_df
+        mod1_patch = mod1.render()
+    else:
+        mod1_patch  = Patch()
+
+
+    xmin,xmax = dbdt2.xlim(selected_sites)
+
+    dbdt1_patch = dbdt1.render()
+    dbdt2_patch = Patch()
+    rhoa_patch  = rhoa.render()
+    
+    
+    mod2_patch  = Patch()
+
+    m1_patch = Patch()
+    m1_patch["data"][0]["selected"]   = {"marker": {"size": int(m1.settings.markersize*1.5)}}
+    m1_patch["data"][0]["unselected"] = {"marker": {"opacity": 0.6}}
+    
+    mod2_patch["layout"]["xaxis"]["range"]  = [xmin, xmax]
+    dbdt2_patch["layout"]["xaxis"]["range"] = [xmin, xmax]
+    
+    return dbdt1_patch, dbdt2_patch, rhoa_patch, mod1_patch, mod2_patch, m1_patch
 
 app.clientside_callback(
     hkr.javascript,

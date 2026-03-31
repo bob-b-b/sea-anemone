@@ -193,6 +193,7 @@ class MapSettings(PanelSettings):
     buffer_color: str= "#ffffff"  # Default buffer color
     dragmode: str='select'
     view: dict = None
+    markersize: int=14
 
 
 class Map(Panel):
@@ -218,8 +219,10 @@ class Map(Panel):
         if self.settings.plot_by in self.dataframe.columns:
 
             fig = px.scatter_map(df_plot, lat="latitude", lon="longitude", zoom=zoom, center=center, 
-                                 color=self.settings.plot_by, color_continuous_scale='turbo'
+                                 color=self.settings.plot_by, color_continuous_scale='turbo',
+                                 custom_data='site_id'
                                  )
+            fig.update_traces(marker=dict(size=self.settings.markersize))
             fig.update_layout(
                 coloraxis_colorbar=dict(
                     orientation="h", 
@@ -234,28 +237,30 @@ class Map(Panel):
                 side="bottom"))
             )
         else:
-            fig = px.scatter_map(df_plot, lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.color])
+            fig = px.scatter_map(df_plot, lat="latitude", lon="longitude", custom_data='site_id',
+                                 zoom=zoom, center=center, color_discrete_sequence=[self.settings.color])
+            fig.update_traces(marker=dict(size=self.settings.markersize))
 
-        if self.buffer_sites is not None and len(self.buffer_sites) > 0 and self.dataframe is not None and 'site_id' in self.dataframe.columns:
-            df_buffer = self.dataframe[self.dataframe["site_id"].isin(self.buffer_sites)]
+        # if self.buffer_sites is not None and len(self.buffer_sites) > 0 and self.dataframe is not None and 'site_id' in self.dataframe.columns:
+        #     df_buffer = self.dataframe[self.dataframe["site_id"].isin(self.buffer_sites)]
 
-            if not df_buffer.empty:
-                buffer_trace = px.scatter_map(
-                    df_buffer,
-                    lat="latitude",
-                    lon="longitude",
-                    zoom=zoom, center=center, 
-                )
+        #     if not df_buffer.empty:
+        #         buffer_trace = px.scatter_map(
+        #             df_buffer,
+        #             lat="latitude",
+        #             lon="longitude",
+        #             zoom=zoom, center=center, 
+        #         )
 
-                buffer_trace.update_traces(
-                    marker=dict(size=12, color=self.settings.buffer_color),
-                    name="Buffer window"
-                )
+        #         buffer_trace.update_traces(
+        #             marker=dict(size=12, color=self.settings.buffer_color),
+        #             name="Buffer window"
+        #         )
 
-                for trace in buffer_trace.data:
-                    fig.add_trace(trace)
+        #         for trace in buffer_trace.data:
+        #             fig.add_trace(trace)
                 
-                fig.data = fig.data[-1:]+fig.data[:-1]
+        #         fig.data = fig.data[-1:]+fig.data[:-1]
 
         fig.update_layout(map_style="white-bg",
             map_layers=[
@@ -266,7 +271,7 @@ class Map(Panel):
                 }])
         if self.highlighted is not None:
             highlight_trace = px.scatter_map(df_plot[df_plot.index == self.highlighted], lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.highlight_color])
-            highlight_trace.update_traces(marker=dict(size=14))
+            highlight_trace.update_traces(marker=dict(size=self.settings.markersize*2))
             for trace in highlight_trace.data:
                 fig.add_trace(
                     trace
@@ -278,8 +283,8 @@ class Map(Panel):
 
         elif self.lines is not None:
             fig2 = px.line_map(self.lines, lat='latitude', lon='longitude', line_group='line', color='line', zoom=zoom, center=center, hover_name='line')
-            fig2.update_traces(mode='lines+markers')
-            fig = go.Figure(data=fig2.data+fig.data, layout=fig.layout)
+            fig2.update_traces(mode='lines')
+            fig = go.Figure(data=fig.data+fig2.data, layout=fig.layout)
 
 
         fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0},

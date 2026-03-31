@@ -542,6 +542,21 @@ class dbdtSection(Panel):
         super().__init__(id='tTEM', settings=settings)
         for key, value in kwargs.items():
             setattr(self, key, value)
+
+    def xlim(self, site_ids):
+        x_axis = self.settings.x_axis
+        if x_axis.startswith('line'):
+            line_id = int(float(x_axis.split(' ')[-1]))
+            x_axis = f'_line_{line_id:0.0f}_x'
+            from __main__ import sesh
+            self.dataframe = sesh.data.copy()
+            self.dataframe = self.dataframe.loc[np.abs(self.dataframe[x_axis.replace('_x', '_y')])<self.settings.radius]
+        new_df = self.dataframe[self.dataframe['site_id'].isin(site_ids)][x_axis].values
+        xmin, xmax = new_df.min(), new_df.max()
+        dx = xmax-xmin
+        xmax+= 0.1*dx
+        xmin-= 0.1*dx
+        return xmin,xmax
     
     def compare_synthetic(self):
         x_axis = self.settings.x_axis
