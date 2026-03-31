@@ -261,17 +261,38 @@ class Map(Panel):
                     trace
                 )
 
-        if self.lines is not None:
+        if self.lines is not None and self.settings.dragmode=='drawline':
+            for line_id in self.lines.line.unique():
+                fig.add_shape(self.line2path(line_id))
+
+        elif self.lines is not None:
             fig2 = px.line_map(self.lines, lat='latitude', lon='longitude', line_group='line', color='line', zoom=zoom, center=center, hover_name='line')
             fig2.update_traces(mode='lines+markers')
             fig = go.Figure(data=fig2.data+fig.data, layout=fig.layout)
 
+
         fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0},
-                          modebar=dict(add=['drawline'], remove=['zoomIn', 'zoomOut', 'lasso', 'toImage', 'plotly-logomark']),
+                          modebar=dict(add=['drawline', 'eraseshape', 'drawopenpath'], remove=['zoomIn', 'zoomOut', 'lasso', 'toImage', 'plotly-logomark']),
                           newshape=dict(line_color='black', line_width=3, line_dash='dash'),
                           dragmode=self.settings.dragmode, showlegend=False)
         
-        return fig       
+        return fig 
+
+    def line2path(self, line_id):
+        c_line = self.lines.loc[self.lines.line==line_id]
+        # path_dict = {'editable': True, 'visible': True, 'showlegend': True, 'legend': 'legend',
+        #              'legendgroup': '', 'legendgrouptitle': {'text': '', 'font': {'weight': 'normal', 'style': 'normal', 'variant': 'normal', 'lineposition': 'none', 'textcase': 'normal', 'shadow': 'none'}}, 
+        #              'legendrank': 1000-int(line_id), 'label': {'text': '', 'texttemplate': '', 'texttemplatefallback': '-'}, 
+        #              'xref': 'paper', 'yref': 'paper', 'layer': 'above', 'opacity': 1, 
+        #              'line': {'color': 'black', 'width': 3, 'dash': 'dash'}, 
+        #              'type': 'path'}
+        path_dict = {'editable': True, 'type':'path'}
+        path = ''
+        for i,record in c_line.iterrows():
+            cx,cy = self.latlon2paper(record['latitude'], record['longitude'])
+            path += f'L{cx},{cy}'
+        path_dict['path'] = 'M' + path[1:]
+        return path_dict
     
     @property
     def lat0(self):
@@ -376,23 +397,26 @@ class Map(Panel):
             return self.render()  
 
         @app.callback(
-            Output(self.id, 'relayoutData'),
+            # Output(self.id, 'relayoutData'),
             self.output,
             Output('model_section_axis', 'options'),
             Input(self.id, 'relayoutData'),
+            Input(self.id, 'restyleData'),
             State('model_section_axis', 'options'),
             prevent_initial_call=True
         )
-        def update_view(relayout_data, options):
+        def update_view(relayout_data, restyle_data, options):
             from __main__ import sesh
-
-            print(options)
-            fig     = no_update
+            print(relayout_data)
+            print(restyle_data)
+            # fig     = no_update
             # options = no_update
             if 'map.center' in relayout_data:
                 self.settings.view = relayout_data
             if 'dragmode' in relayout_data:
                 self.settings.dragmode=relayout_data['dragmode']
+                if self.settings.dragmode=='drawline': fig = self.render()
+
             elif 'shapes' in relayout_data:
                 if relayout_data['shapes'][-1]['type']=='line':
                     
@@ -411,27 +435,29 @@ class Map(Panel):
                     sesh.lines = self.lines.copy()
                     fig=self.render()
                 else:
-                    print(relayout_data['shapes'][-1])
+                    print(relayout_data['shapes'])
             
             if sesh.lines is not None:
                 line_ids = sesh.lines['line'].unique()
                 line_options = [f'line {line_id:0.0f}' for line_id in line_ids]
                 options = line_options + [option for option in options if not option.startswith('line')]
-            return relayout_data, fig, options
+            return self.render(), options
 
-        @app.callback(self.output,
-                        Output(self.id, 'selectedData', allow_duplicate=True),
-                        Input(self.id, 'selectedData'),
-            prevent_initial_call=True)
-        def trace_select(selected_data):
-            fig = no_update
-            if selected_data is not None:
-                [[lon0,lat0],[lon1,lat1]] = selected_data['range']['map']
-                if self.lines is not None:
-                    for i,row in self.lines.iterrows():
-                        if cdist(row['latitude'], row['longitude'],  lat0, lon0)<100:
-                            self.lines.loc[i, 'latitude'] = lat1
-                            self.lines.loc[i, 'longitude'] = lon1
-                            fig = self.render()
-                            break
-            return fig, no_update
+
+
+        # @app.callback(self.output,
+        #                 Output(self.id, 'selectedData', allow_duplicate=True),
+        #                 Input(self.id, 'selectedData'),
+        #     prevent_initial_call=True)
+        # def trace_select(selected_data):
+        #     fig = no_update
+        #     if selected_data is not None:
+        #         [[lon0,lat0],[lon1,lat1]] = selected_data['range']['map']
+        #         if self.lines is not None:
+        #             for i,row in self.lines.iterrows():
+        #                 if cdist(row['latitude'], row['longitude'],  lat0, lon0)<100:
+        #                     self.lines.loc[i, 'latitude'] = lat1
+        #                     self.lines.loc[i, 'longitude'] = lon1
+        #                     fig = self.render()
+        #                     break
+        #     return fig, no_update
