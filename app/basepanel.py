@@ -220,12 +220,6 @@ class PanelSettings:
                     )
                 )
             form_items.append(dbc.Row(row_children, className='mb-2'))
-        form_items.append(dbc.Button(
-            "Apply Settings",
-            id=f'{self.id}_apply_settings',
-            n_clicks=0,
-            style={'margin': '10px'}
-        ))
         return html.Div([dbc.Form(form_items, style={'margin': '10px'}), 
                          gear_maker(self.id+'_settings')], style={'width':'95%'})
 
@@ -244,18 +238,7 @@ class PanelSettings:
     def _create_schema(cls):
         class tmp(cls, JsonSchemaMixin):
             pass
-        # return tmp.json_schema()
         schema = tmp.json_schema()
-        
-        # Target the property and force it to be an integer-based slider/input
-        if 'properties' in schema and 'column_width' in schema['properties']:
-            schema['properties']['column_width'].update({
-                "type": "integer",    # Tell UI to treat this as a whole number
-                "title": "Bar Width (1-9)",
-                "minimum": 1,         # Start at 1 (becomes 0.1)
-                "maximum": 9,         # End at 9 (becomes 0.9)
-                "step": 1             # Increment by 1
-            })
         return schema
     
     @property
@@ -363,9 +346,10 @@ class Panel:
         return fig
 
     def to_nodes(self):
-        nodes = [dfl.Tab(id=f'tab-{self.id}', children=[self.initialize()])]
+        nodes = []
         if self.settings is not None:
             nodes.append(self.settings.node())
+        nodes.append(dfl.Tab(id=f'tab-{self.id}', children=[self.initialize()]))
         return nodes
     
     @property

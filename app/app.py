@@ -119,6 +119,9 @@ app.layout = html.Div([
 for panel in panels:
     panel.add_callbacks(app)
 
+
+
+
 # @app.callback(
 #     [ 
 #         dbdt1.output, dbdt2.output, rhoa.output, mod1.output, mod2.output,
@@ -670,6 +673,15 @@ def upload_file(contents):
 # def print_flex_layout_model(model):
 #     print(f"Flex layout model: {model}")
 #     return m1.render()
+@app.callback(
+    Output({'type': f'settings-{dbdt2.id}', 'key': 'x_axis'}, 'value'),
+    Input({'type': f'settings-{mod2.id}', 'key': 'x_axis'}, 'value'),
+    prevent_initial_call=True
+)
+def sync_x_axis(x_axis):
+    return x_axis
+
+
 
 @app.callback(
     [

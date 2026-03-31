@@ -543,9 +543,14 @@ class dbdtSection(Panel):
             setattr(self, key, value)
     
     def compare_synthetic(self):
+        x_axis = self.settings.x_axis
+        if x_axis.startswith('line'):
+            line_id = int(float(x_axis.split(' ')[-1]))
+            x_axis = f'_line_{line_id:0.0f}_x'
+
         y_axis                                             = self.settings.y_axis
         df_tmp = self.dataframe[self.dataframe['gate_id']>-1]
-        df_tmp                                             = df_tmp.sort_values(['gate_id', self.settings.x_axis])
+        df_tmp                                             = df_tmp.sort_values(['gate_id', x_axis])
         df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto'])
 
         # lm_factor = compute_lm_scaling(self.dataframe, self.settings.lm_factor)
@@ -558,14 +563,14 @@ class dbdtSection(Panel):
         df_tmp.loc[df_tmp['site_id'] ==  -1, 'include']  = False
         df_tmp['system_id']                                = df_tmp['system_id'].map({0: 'lm', 1: 'hm'})
 
-        # x_axis = df_tmp[self.settings.x_axis].unique()#.values
-        # if self.settings.x_axis == 'site_id':
+        # x_axis = df_tmp[x_axis].unique()#.values
+        # if x_axis == 'site_id':
         #     x_axis = x_axis[x_axis>-1]
         # xmin,xmax = np.nanmin(x_axis), np.nanmax(x_axis)
 
-        x_vals = np.sort(df_tmp[self.settings.x_axis].unique())
+        x_vals = np.sort(df_tmp[x_axis].unique())
 
-        if self.settings.x_axis == 'site_id':
+        if x_axis == 'site_id':
             x_vals = x_vals[x_vals > -1]
 
         n_sites = len(x_vals)
@@ -591,7 +596,7 @@ class dbdtSection(Panel):
         
         fig = px.scatter(
             df_tmp,
-            x=self.settings.x_axis,
+            x=x_axis,
             y='dbdt',
             color_discrete_sequence=["gray", "gray"],
             color="system_id",
@@ -608,7 +613,7 @@ class dbdtSection(Panel):
         
         fig3 = px.scatter(
             df_tmp,
-            x=self.settings.x_axis,
+            x=x_axis,
             y='dbdt',
             color_discrete_sequence=["black", "black"],
             color="system_id",
@@ -619,7 +624,7 @@ class dbdtSection(Panel):
 
         fig2 = px.line(
             df_tmp,
-            x=self.settings.x_axis,
+            x=x_axis,
             y='dbdt_syn',
             color="system_id",
             color_discrete_sequence=[self.settings.lm_color, self.settings.hm_color],
@@ -674,8 +679,12 @@ class dbdtSection(Panel):
 
     def observed_only(self):
         y_axis                                             = self.settings.y_axis
+        x_axis = self.settings.x_axis
+        if x_axis.startswith('line'):
+            line_id = int(float(x_axis.split(' ')[-1]))
+            x_axis = f'_line_{line_id:0.0f}_x'        
         df_tmp = self.dataframe[self.dataframe['gate_id']>-1]
-        df_tmp                                             = df_tmp.sort_values(['gate_id', self.settings.x_axis])
+        df_tmp                                             = df_tmp.sort_values(['gate_id', x_axis])
         df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto']).astype(bool)
         # lm_factor = compute_lm_scaling(self.dataframe, self.settings.lm_factor)
         lm_factor = self.settings.lm_factor
@@ -685,14 +694,14 @@ class dbdtSection(Panel):
         df_tmp.loc[df_tmp['site_id'] ==  -1, 'include']  = False
         df_tmp['system_id']                                = df_tmp['system_id'].map({0: 'lm', 1: 'hm'})
 
-        # x_axis = df_tmp[self.settings.x_axis].unique()#.values
-        # if self.settings.x_axis == 'site_id':
+        # x_axis = df_tmp[x_axis].unique()#.values
+        # if x_axis == 'site_id':
         #     x_axis = x_axis[x_axis>-1]
         # xmin,xmax = np.nanmin(x_axis), np.nanmax(x_axis)
 
-        x_vals = np.sort(df_tmp[self.settings.x_axis].unique())
+        x_vals = np.sort(df_tmp[x_axis].unique())
 
-        if self.settings.x_axis == 'site_id':
+        if x_axis == 'site_id':
             x_vals = x_vals[x_vals > -1]
 
         n_sites = len(x_vals)
@@ -727,7 +736,7 @@ class dbdtSection(Panel):
         
         fig = px.scatter(
             df_tmp,
-            x=self.settings.x_axis,
+            x=x_axis,
             y='dbdt',
             color_discrete_sequence=["gray", "gray"],
             color="system_id",
@@ -742,7 +751,7 @@ class dbdtSection(Panel):
         
         fig3 = px.scatter(
             df_tmp,
-            x=self.settings.x_axis,
+            x=x_axis,
             y='dbdt',
             color_discrete_sequence=["black", "black"],
             color="system_id",
@@ -754,7 +763,7 @@ class dbdtSection(Panel):
 
         fig2 = px.line(
             df_tmp,
-            x=self.settings.x_axis,
+            x=x_axis,
             y='dbdt',
             color="system_id",
             color_discrete_sequence=[self.settings.lm_color, self.settings.hm_color],
@@ -812,27 +821,6 @@ class dbdtSection(Panel):
         else:
             fig = self.observed_only()
 
-        # if self.highlighted is not None and self.dataframe is not None:
-        #     # Get x coordinate of selected site
-        #     selected_df = self.dataframe[self.dataframe["site_id"] == self.highlighted]
-        #     if not selected_df.empty:
-
-        #         x_value = selected_df[self.settings.x_axis].iloc[0]
-
-        #         # Width of highlight box
-        #         dx = 0.5  # adjust depending on spacing
-
-        #         fig.add_shape(
-        #             type="rect",
-        #             x0=x_value - dx,
-        #             x1=x_value + dx,
-        #             y0=abs(selected_df["dbdt"]).min()*0.5,
-        #             y1=selected_df["dbdt"].max()*25,
-        #             line=dict(color="rgba(0,0,0,0.8)", width=1.5),
-        #             fillcolor="rgba(0,0,0,0.0)",
-        #             # hoverinfo="skip",
-        #             layer="above"
-        #         )
         if self.highlighted is not None and self.dataframe is not None:
 
             selected_df = self.dataframe[self.dataframe["site_id"] == self.highlighted]
@@ -840,6 +828,9 @@ class dbdtSection(Panel):
             if not selected_df.empty:
 
                 x_axis = self.settings.x_axis
+                if x_axis.startswith('line'):
+                    line_id = int(float(x_axis.split(' ')[-1]))
+                    x_axis = f'_line_{line_id:0.0f}_x'                
                 x_value = selected_df[x_axis].iloc[0]
 
                 # Compute spacing dynamically
@@ -877,7 +868,6 @@ class dbdtSection(Panel):
             yaxis_type="log",
             yaxis_range=[self.settings.dbdt_min, self.settings.dbdt_max],
             xaxis_title=self.settings.x_axis,
-            # yaxis_title="$\\frac{dB}{dt}$ \\[V / m$^2$\\]",
             yaxis_title="dB/dt [V / m²]",
             margin={"l": 55, "r": 40, "t": 10, "b": 50},
             dragmode='select',
@@ -893,6 +883,9 @@ class dbdtSection(Panel):
                 linewidth=1,
                 linecolor="black"
             ))
+        fig.update_layout(
+            legend=dict(x=0.95, y=0.95,xanchor="right",yanchor="top",bgcolor="rgba(255,255,255,0.8)")
+            )        
         return fig    
 
 @nosj

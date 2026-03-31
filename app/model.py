@@ -98,9 +98,11 @@ class ModelGraph(Panel):
 @nosj
 class ModelSectionSettings(PanelSettings):
     y_axis: Literal['depth', 'elevation'] = 'depth'
-    x_axis: Literal['daytime', 'site_id', 'longitude', 'latitude', 'distance'] = 'site_id'
+    x_axis: Literal['daytime', 'site_id'] = 'site_id'
     bars: bool=True
-    radius: float = 100.
+    misfit: bool=True
+    doi: bool=True
+    radius : float=100.0
 
 class ModelSection(Panel):
     highlighted: int = None
@@ -108,6 +110,7 @@ class ModelSection(Panel):
     buffer_start = 0
     def __init__(self, **kwargs):
         settings = kwargs.pop('settings', ModelSectionSettings(id='model_section'))
+        settings.radius=100.
         super().__init__(id='model_section', settings=settings)
         for key, value in kwargs.items():
             setattr(self, key, value)
@@ -158,7 +161,7 @@ class ModelSection(Panel):
                                             id=self.id + "_radius",
                                             value=100.0,
                                             type="number",
-                                            step=25.0,
+                                            step=10.0,
                                             disabled=True,
                                             style={"width": "120px"},
                                         ),
@@ -191,6 +194,9 @@ class ModelSection(Panel):
         if self.dataframe is None: return self.empty_render()
         df = self.dataframe.copy()
         x_axis = self.settings.x_axis
+        if x_axis.startswith('line'):
+            line_id = int(float(x_axis.split(' ')[-1]))
+            x_axis = f'_line_{line_id:0.0f}_x'
 
         if 'line' in x_axis:
             from __main__ import sesh
@@ -287,77 +293,38 @@ class ModelSection(Panel):
     
     def render(self):
         if self.dataframe is None: return self.empty_render()
-        elif True: return self.render_base()
-        else:
-            
-            df_layers_long = self.dataframe.melt(
-                id_vars=[self.settings.x_axis, 'resistivity', 'misfit','doi'],
-                value_vars=['top_depth', 'bottom_depth'],
-                var_name='depth_type',
-                value_name='depth'
-            ).sort_values([self.settings.x_axis, 'layer', 'depth'])
+        fig = self.render_base()
 
-            df_layers_long = df_layers_long.drop(columns=['depth_type'])
-            df_layers_long['log_resistivity'] = np.log10(df_layers_long['resistivity'])
+        df = self.dataframe.copy()
+        x_axis = self.settings.x_axis
+        if x_axis.startswith('line'):
+            line_id = int(float(x_axis.split(' ')[-1]))
+            x_axis = f'_line_{line_id:0.0f}_x'
 
-            heatmap_df = df_layers_long.pivot_table(
-                index='depth', columns=self.settings.x_axis, values='log_resistivity'
-            )        
-            heatmap_df = heatmap_df.sort_index(ascending=True)
-            buffer_start = self.buffer_start
-            buffer_len   = self.buffer_len
 
-            x_values = heatmap_df.columns.tolist()
-            n_sites  = len(x_values)
+        if 'line' in x_axis:
+            from __main__ import sesh
+            df = sesh.models.copy()
+            df = df.loc[np.abs(df[x_axis.replace('_x', '_y')])<self.settings.radius]        
 
-            plot_start = max(0, buffer_start)
-            plot_end   = min(n_sites, buffer_start + buffer_len)
-
-            x_slice = x_values[plot_start:plot_end]
-            df_layers_long = df_layers_long[df_layers_long[self.settings.x_axis].isin(x_slice)]
-
-            fig = px.imshow(
-                heatmap_df[x_slice],
-                aspect='auto',
-                origin='lower',
-                color_continuous_scale='turbo',
-                labels={'x': self.settings.x_axis, 'y': 'Depth [m]', 'color': 'Resistivity [Ω·m]'},
-                zmin=0,
-                zmax=2.7,
-            )
-            fig.update_layout(
-                coloraxis_colorbar=dict(
-                    tickvals = [0, 1, 2, np.log10(500)],
-                    ticktext = ["1", "10", "100", "500"],
-                    orientation="h",     # horizontal
-                    y=-0.45,              # move below plot
-                    x=0.5,               # center horizontally
-                    xanchor="center",
-                    len=0.5,
-                    thickness = 10,
-                    title=dict(
-                text="Resistivity [Ωm]",
-                side="bottom"))
-            )
-            fig.update_layout(
-                xaxis=dict(
-                    title_standoff=4   # default is ~15–20
-                )
-            )
-            fig.update_layout(hovermode="x")
-            fig.update_yaxes(autorange="reversed")
-            fig.update_layout(yaxis2=dict(title='Misfit',overlaying='y',side='right',showgrid=False))
-
-            # ---- Misfit only for buffered sites ----
+        df_layers_long = df.melt(
+            id_vars=[x_axis, 'resistivity', 'misfit','doi', 'layer', 'elevation'],
+            value_vars=['top_depth', 'bottom_depth'],
+            var_name='depth_type',
+            value_name='depth'
+        ).sort_values([x_axis, 'layer', 'depth'])
+        fig.update_layout(yaxis2=dict(title='Misfit',overlaying='y',side='right',showgrid=False))
+        # ---- Misfit only for buffered sites ----
+        if self.settings.misfit:
             misfit_df = (
                 df_layers_long
-                .groupby(self.settings.x_axis)['misfit']
+                .groupby(x_axis)['misfit']
                 .first()
                 .reset_index()
             )
 
             misfit_trace = go.Scatter(
-                x=misfit_df[self.settings.x_axis],
+                x=misfit_df[x_axis],
                 y=misfit_df['misfit'],
                 mode='lines',
                 line=dict(color='black', width=2),
@@ -370,7 +337,7 @@ class ModelSection(Panel):
             y_dashed[y_dashed > 8] = 7.95
 
             fig.add_trace(go.Scatter(
-                x=misfit_df[self.settings.x_axis],
+                x=misfit_df[x_axis],
                 y=y_dashed,
                 mode="lines",
                 line=dict(color="rgba(0,0,0,0.7)", dash="dash"),
@@ -378,43 +345,32 @@ class ModelSection(Panel):
                 yaxis='y2'
             ))
 
-
-            # misfit_trace.update(
-            #     yaxis='y2',
-            #     line=dict(color='black', width=2),
-            #     name='Misfit',showlegend=True
-            # )
-            # fig.update_layout(yaxis2=dict(range=[0, 8]))
-            # fig.add_trace(go.Scatter(
-            #     x=x,
-            #     y=y_dashed,
-            #     mode="lines",
-            #     line=dict(color="rgb(0,0,0,0.7)", dash="dash"),
-            #     # hoverinfo="skip",
-            #     showlegend=False, yaxis='y2'
-            # ))
-
-
-
             fig.add_trace(misfit_trace)
 
             fig.update_layout(
-            legend=dict(x=0.89, y=0.2,xanchor="left",yanchor="top",bgcolor="rgba(255,255,255,0.8)")
+                legend=dict(x=0.89, y=0.2,xanchor="left",yanchor="top",bgcolor="rgba(255,255,255,0.8)")
                 )
 
-            fig.update_layout(yaxis2=dict(title=dict(text="Misfit",standoff=10),overlaying="y",side="right",showgrid=False)
-    )
-            doi_df = (df_layers_long.groupby(self.settings.x_axis)["doi"].first().reset_index())
+            fig.update_layout(yaxis2=dict(title=dict(text="Misfit",standoff=10),overlaying="y",side="right",showgrid=False))
+        
+        doi_df = (df_layers_long.groupby(x_axis)["doi"].first().reset_index())        
+        if self.settings.y_axis=='elevation':
+            doi_df['doi'] = df.groupby(x_axis)['elevation'].first().values - doi_df['doi'].values
+            ylim = [doi_df["doi"].min()-8, df_layers_long["elevation"].max()+8]
+        else:
+            ylim = [doi_df["doi"].max()+8, df_layers_long["depth"].min()-8]
+
+        if self.settings.doi:    
             if not doi_df.empty:
-                x_min = min(x_slice)
-                x_max = max(x_slice)
+                x_min = df_layers_long[x_axis].min()
+                x_max = df_layers_long[x_axis].max()
                 y_max = df_layers_long["depth"].max()
 
                 fig.add_trace(
                     go.Scatter(
                         x=np.concatenate([
                             [x_min],
-                            doi_df[self.settings.x_axis].values,
+                            doi_df[x_axis].values,
                             [x_max],
                             [x_min]
                         ]),
@@ -436,8 +392,6 @@ class ModelSection(Panel):
                 selected_df = self.dataframe[self.dataframe["site_id"] == self.highlighted]
 
                 if not selected_df.empty:
-
-                    x_axis = self.settings.x_axis
                     x_value = selected_df[x_axis].iloc[0]
 
                     x_vals = np.sort(self.dataframe[x_axis].dropna().unique())
@@ -458,18 +412,15 @@ class ModelSection(Panel):
                         fillcolor="rgba(0,0,0,0.0)",
                     )
 
-            fig.update_yaxes(
-                range=[doi_df["doi"].max()+8, df_layers_long["depth"].min()-8],
-                autorange=False,
-                #title="Depth [m]"
-            )
-
             fig.update_xaxes(
                 range=[x_min, x_max],
                 autorange=False
             )
+
+        fig.update_yaxes(range=ylim, autorange=False)
+        if self.settings.misfit:
             fig.update_layout(yaxis2=dict(range=[0, 8]))
-            return fig
+        return fig
         
         # def add_callbacks(self, app):
         #     super().add_callbacks(app)
@@ -521,24 +472,23 @@ class ModelSection(Panel):
         super().add_callbacks(app)
 
         @app.callback(
-            self.output, Output(self.id+'_radius', 'disabled'),
+            Output(self.id+'_radius', 'disabled'),
+            Output({'type': f'settings-{self.id}', 'key': 'x_axis'}, 'value'),
             Input(self.id+'_axis', 'value'),
             prevent_initial_call=True
         )
         def update_xaxis(x_axis):
             disabled=True
             if x_axis.startswith('line'):
-                line_id = int(float(x_axis.split(' ')[-1]))
-                x_axis = f'_line_{line_id:0.0f}_x'
                 disabled = False
             self.settings.x_axis=x_axis
-            return self.render(), disabled
+            return disabled, x_axis
     
         @app.callback(
-            self.output, 
+            Output({'type': f'settings-{self.id}', 'key': 'radius'}, 'value'),
             Input(self.id+'_radius', 'value'),
             prevent_initial_call=True
         )
         def update_radius(radius):
             self.settings.radius=radius
-            return self.render()
+            return radius

@@ -414,6 +414,7 @@ class Map(Panel):
         @app.callback(
             self.output,
             Output('model_section_axis', 'options', allow_duplicate=True),
+            Output({'type': f'settings-model_section', 'key': 'x_axis'}, 'options', allow_duplicate=True),
             Input(self.id, 'relayoutData'),
             State('model_section_axis', 'options'),
             prevent_initial_call=True
@@ -461,4 +462,4 @@ class Map(Panel):
                 line_ids = sesh.lines['line'].unique()
                 line_options = [f'line {line_id:0.0f}' for line_id in line_ids]
                 options = line_options + [option for option in options if not option.startswith('line')]
-            return self.render(), options
+            return self.render(), options, options
