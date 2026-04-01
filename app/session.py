@@ -56,15 +56,15 @@ class Session:
             folder = other.save_dir
 
         if other.data is not None:
-            # other.data = clean_table(other.data)
+            other.data = clean_table(other.data)
             other.data.to_csv(folder+'data.csv', index=False)
             other.data = 'data.csv'            
         if other.models is not None:
-            # other.models = clean_table(other.models)
+            other.models = clean_table(other.models)
             other.models.to_csv(folder+'models.csv', index=False)
             other.models = 'models.csv'
         if other.site is not None:
-            # other.site = clean_table(other.site)
+            other.site = clean_table(other.site)
             other.site.to_csv(folder+'site.csv', index=False)
             other.site = 'site.csv'                        
         if other.lines is not None:
@@ -146,26 +146,34 @@ class Session:
 
             if self.models is not None:
                 doi = self.models.groupby('site_id', as_index=False).agg(doi=('doi', 'first'))
-                site = site.merge(doi, left_on='site_id', right_on='site_id')
+                site = site.merge(doi, left_on='site_id', right_on='site_id', how='left')
 
         self.site = site
         self.line_update()
         return site
     
     def line_update(self):
-        if self.lines is not None:
+        if self.lines is not None and self.data is not None:
             self.data   = clean_table(self.data)
-            self.models = clean_table(self.models)
             self.site   = clean_table(self.site)
+
+            if self.models is not None: 
+                self.models = clean_table(self.models)
+            
+
             from map import Profile
             for line_id in self.lines.line.unique():
                 c_line = self.lines[self.lines.line==line_id]
                 x_axis,y_axis = f'_line_{line_id:0.0f}_x', f'_line_{line_id:0.0f}_y'
                 lat, lon = c_line['latitude'].values, c_line['longitude'].values
                 sec = Profile(lat, lon)
+                self.lines.loc[self.lines.line==line_id, 'length'] = sec.cumulative_length
+                self.lines.loc[self.lines.line==line_id, 'total_length'] = sec.length
                 x,y = sec(self.site['latitude'].values, self.site['longitude'].values)
                 self.site[x_axis] = x
                 self.site[y_axis] = y
-                self.data = self.data.merge(self.site[[x_axis, y_axis]], left_on='site_id', right_index=True, how='left')
-                self.models = self.models.merge(self.site[[x_axis, y_axis]], left_on='site_id', right_index=True, how='left')
+                if self.data is not None:
+                    self.data = self.data.merge(self.site[[x_axis, y_axis]], left_on='site_id', right_index=True, how='left')
+                if self.models is not None:
+                    self.models = self.models.merge(self.site[[x_axis, y_axis]], left_on='site_id', right_index=True, how='left')
         

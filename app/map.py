@@ -194,6 +194,7 @@ class MapSettings(PanelSettings):
     dragmode: str='select'
     view: dict = None
     markersize: int=14
+    line_width: int=3
 
 
 class Map(Panel):
@@ -241,26 +242,27 @@ class Map(Panel):
                                  zoom=zoom, center=center, color_discrete_sequence=[self.settings.color])
             fig.update_traces(marker=dict(size=self.settings.markersize))
 
-        # if self.buffer_sites is not None and len(self.buffer_sites) > 0 and self.dataframe is not None and 'site_id' in self.dataframe.columns:
-        #     df_buffer = self.dataframe[self.dataframe["site_id"].isin(self.buffer_sites)]
+        if self.buffer_sites is None:
+            self.buffer_sites = self.dataframe['site_id'].unique().tolist()
+            df_buffer = self.dataframe.copy()
+        else:
+            df_buffer = self.dataframe.copy()[self.dataframe["site_id"].isin(self.buffer_sites)]
+        buffer_trace = px.scatter_map(
+            df_buffer,
+            lat="latitude",
+            lon="longitude",
+            zoom=zoom, center=center, 
+        )
 
-        #     if not df_buffer.empty:
-        #         buffer_trace = px.scatter_map(
-        #             df_buffer,
-        #             lat="latitude",
-        #             lon="longitude",
-        #             zoom=zoom, center=center, 
-        #         )
+        buffer_trace.update_traces(
+            marker=dict(size=self.settings.markersize*1.5, color=self.settings.buffer_color),
+            name="Buffer window"
+        )
 
-        #         buffer_trace.update_traces(
-        #             marker=dict(size=12, color=self.settings.buffer_color),
-        #             name="Buffer window"
-        #         )
-
-        #         for trace in buffer_trace.data:
-        #             fig.add_trace(trace)
-                
-        #         fig.data = fig.data[-1:]+fig.data[:-1]
+        for trace in buffer_trace.data:
+            fig.add_trace(trace)
+        
+        fig.data = fig.data[-1:]+fig.data[:-1]
 
         fig.update_layout(map_style="white-bg",
             map_layers=[
@@ -282,26 +284,34 @@ class Map(Panel):
                 fig.add_shape(self.line2path(line_id))
 
         elif self.lines is not None:
-            fig2 = px.line_map(self.lines, lat='latitude', lon='longitude', line_group='line', color='line', zoom=zoom, center=center, hover_name='line')
-            fig2.update_traces(mode='lines')
+            fig2 = px.line_map(self.lines, lat='latitude', lon='longitude', line_group='line', color='line', zoom=zoom, center=center, color_discrete_sequence=line_colors)
+            fig2.update_traces(mode='lines', hovertemplate='Line%{line:.0f}', line=dict(width=self.settings.line_width))
             fig = go.Figure(data=fig.data+fig2.data, layout=fig.layout)
 
-
+        hovermode = False if self.settings.dragmode=='drawline' else None
         fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0},
                           modebar=dict(add=['drawline', 'eraseshape'], remove=['zoomIn', 'zoomOut', 'lasso', 'toImage', 'plotly-logomark']),
                           newshape=dict(line_color='black', line_width=3, line_dash='dash'),
-                          dragmode=self.settings.dragmode, showlegend=False)
+                          dragmode=self.settings.dragmode, showlegend=False, hovermode=hovermode)
         
         return fig 
 
     def line2path(self, line_id):
         c_line = self.lines.loc[self.lines.line==line_id]
         path_dict = {'editable': True, 'type':'path', 'line': {'color': line_colors[int(line_id)%len(line_colors)-1], 'width': 3, 'dash': 'dash'}}
-        path = ''
-        for i,record in c_line.iterrows():
-            cx,cy = self.latlon2paper(record['latitude'], record['longitude'])
+        cxs,cys = self.latlon2paper(c_line.latitude.values, c_line.longitude.values)
+
+        path = f'M{cxs[0]},{cys[0]}'
+        for cx,cy in zip(cxs[1:-1],cys[1:-1]):
             path += f'L{cx},{cy}'
-        path_dict['path'] = 'M' + path[1:]
+
+        # this is a little stupid, but it makes it possible to continuously click and piece a line together. Clicking on an identical point prevented the drag functionality to extend the line.
+
+        dx = cxs[-1]-cxs[-2]
+        dy = cys[-1]-cys[-2]
+        path += f'L{cxs[-2]+0.95*dx},{cys[-2]+0.95*dy}'
+        
+        path_dict['path'] = path
         return path_dict
     
     def path2line(self, path_str):
@@ -430,6 +440,8 @@ class Map(Panel):
                 self.settings.view = relayout_data
             elif 'dragmode' in relayout_data:
                 self.settings.dragmode=relayout_data['dragmode']
+                if self.settings.dragmode!='drawline':
+                    sesh.update_site_table()
 
             elif 'shapes' in relayout_data:
                 if relayout_data['shapes'][-1]['type']=='line':
@@ -437,14 +449,16 @@ class Map(Panel):
                     lat0,lon0 = self.paper2latlon(relayout_data['shapes'][-1]['x0'], relayout_data['shapes'][-1]['y0'])
                     lat1,lon1 = self.paper2latlon(relayout_data['shapes'][-1]['x1'], relayout_data['shapes'][-1]['y1'])
                     line_id = 1
+                    node = 0
                     if self.lines is None:
-                        self.lines = DataFrame({'latitude':[lat0], 'longitude':[lon0], 'line':[line_id]})
+                        self.lines = DataFrame({'latitude':[lat0], 'longitude':[lon0], 'line':[line_id], 'node':[node], 'length':[-1], 'total_length':[-1], 'radius':[100]})
                     else:
-                        lat,lon,line_id = self.lines.loc[len(self.lines)-1].tolist()
-                        if cdist(lat,lon, lat0, lon0) > 10:
+                        lat, lon, line_id, node, _, __, ___ = self.lines.loc[len(self.lines)-1].tolist()
+                        if cdist(lat,lon, lat0, lon0) > 50:
                             line_id +=1 
-                            self.lines.loc[len(self.lines)] = [lat0, lon0, line_id]
-                    self.lines.loc[len(self.lines)] = [lat1, lon1, line_id]
+                            node = 0
+                            self.lines.loc[len(self.lines)] = [lat0, lon0, line_id, node, -1, -1, 100]
+                    self.lines.loc[len(self.lines)] = [lat1, lon1, line_id, node+1, -1, -1, 100]
                     del relayout_data['shapes']
                     sesh.lines = self.lines.copy()
                     sesh.update_site_table()
@@ -471,3 +485,25 @@ class Map(Panel):
                 line_options = [f'line {line_id:0.0f}' for line_id in line_ids]
                 options = line_options + [option for option in options if not option.startswith('line')]
             return self.render(), options, options
+
+        @app.callback(
+            Output('model_section_axis', 'value', allow_duplicate=True),
+            Input(self.id, 'clickData'),
+            prevent_initial_call=True
+        )
+        def update_highlight(click_data):
+            result = no_update
+            if self.lines is None:
+                return result
+
+            line_threshold = 1
+            # if self.buffer_sites is not None:
+            #     line_threshold+=1
+            if 'points' in click_data and len(click_data['points'])==1:
+                curve_number = click_data['points'][0]['curveNumber']
+                if curve_number>line_threshold:
+                    all_dist = cdist(click_data['points'][0]['lat'], click_data['points'][0]['lon'], self.lines['latitude'].values, self.lines['longitude'].values)
+                    line_id = self.lines['line'].values[np.argmin(all_dist)]
+                    x_axis = 'line '+f'{line_id:0.0f}'
+                    result = x_axis
+            return result

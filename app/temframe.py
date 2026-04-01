@@ -246,19 +246,9 @@ def from_sweeps(sweeps, folder_path=None):
     hm.data[flip_mask] *= -1
 
     print(f"Flipped signs for {np.sum(flip_mask)} sites based on HM polarity.")
-    n_gates += 1
     day_sort = np.argsort(lm.daytime)
     site_id = np.zeros(n_sites, dtype=int)
     site_id[day_sort] = np.arange(len(lm.daytime))
-    site_id = np.insert(site_id, 0, -1)  # insert a dummy site_id for the loop
-
-    lm.data  = np.pad(lm.data, ((1,0), (1,0)), mode='constant', constant_values=np.nan)
-    lm.time  = np.pad(lm.time, ((1,0), (1,0)), mode='constant', constant_values=np.nan)
-    lm.error = np.pad(lm.error, ((1,0), (1,0)), mode='constant', constant_values=np.nan)
-
-    lm.date     = np.pad(lm.date, (1,0), mode='constant', constant_values=np.nan)
-    lm.location = np.pad(lm.location, ((1,0), (0,0)), mode='constant', constant_values=np.nan)
-    lm.daytime  = np.pad(lm.daytime, (1,0), mode='constant', constant_values=np.nan)
 
     data_avg = {
         'site_id': np.concatenate([np.ones(n_gates, dtype=int)*i for i in site_id]),
@@ -267,26 +257,16 @@ def from_sweeps(sweeps, folder_path=None):
         'inuse_auto': [True for _ in lm.data.flatten()],
         'inuse_manual': [np.nan for _ in lm.data.flatten()],
         'time': lm.time.flatten(),
-        'gate_id': np.concatenate([np.arange(-1, n_gates-1) for i in site_id]),
+        'gate_id': np.concatenate([np.arange(n_gates) for i in site_id]),
         'system_id': [0 for _ in lm.data.flatten()],
         'date':     np.concatenate([np.ones(n_gates, dtype=int)*x for x in lm.date]),
-        'latitude': np.concatenate([np.ones( n_gates, dtype=float)*x for x in lm.location[:, 1]]),
+        'latitude': np.concatenate([np.ones(n_gates, dtype=float)*x for x in lm.location[:, 1]]),
         'longitude':np.concatenate([np.ones(n_gates, dtype=float)*x for x in lm.location[:, 0]]),
         'elevation':np.concatenate([np.ones(n_gates, dtype=float)*x for x in lm.location[:, 2]]),
         'daytime':  np.concatenate([np.ones(n_gates, dtype=float)*x for x in lm.daytime]),
     }
 
     n_sites,n_gates = hm.data.shape
-    n_gates += 1
-
-    hm.data = np.pad(hm.data, ((1,0), (1,0)), mode='constant', constant_values=np.nan)
-    hm.time = np.pad(hm.time, ((1,0), (1,0)), mode='constant', constant_values=np.nan)
-    hm.error = np.pad(hm.error, ((1,0), (1,0)), mode='constant', constant_values=np.nan)
-
-    hm.date = np.pad(hm.date, (1,0), mode='constant', constant_values=np.nan)
-    hm.location = np.pad(hm.location, ((1,0), (0,0)), mode='constant', constant_values=np.nan)
-
-    hm.daytime = np.pad(hm.daytime, (1,0), mode='constant', constant_values=np.nan)
 
     data_avg['site_id']      = np.append(data_avg['site_id'], np.concatenate([np.ones(n_gates, dtype=int)*i for i in site_id]))
     data_avg['dbdt']         = np.append(data_avg['dbdt'], hm.data.flatten())
@@ -294,7 +274,7 @@ def from_sweeps(sweeps, folder_path=None):
     data_avg['inuse_auto']   = np.append(data_avg['inuse_auto'], np.array([True for _ in hm.data.flatten()]))
     data_avg['inuse_manual'] = np.append(data_avg['inuse_manual'], np.array([np.nan for _ in hm.data.flatten()]))
     data_avg['time']         = np.append(data_avg['time'],      hm.time.flatten())
-    data_avg['gate_id']      = np.append(data_avg['gate_id'],   np.concatenate([np.arange(-1, n_gates-1) for i in range(-1, n_sites)]))
+    data_avg['gate_id']      = np.append(data_avg['gate_id'],   np.concatenate([np.arange(n_gates) for i in range(n_sites)]))
     data_avg['system_id']    = np.append(data_avg['system_id'], np.array([1 for _ in hm.data.flatten()]))
     data_avg['date']         = np.append(data_avg['date'],      np.concatenate([np.ones(n_gates, dtype=int)*x for x in lm.date]))
     data_avg['latitude']     = np.append(data_avg['latitude'],  np.concatenate([np.ones(n_gates, dtype=float)*x for x in lm.location[:, 1]]))
@@ -309,7 +289,6 @@ def from_sweeps(sweeps, folder_path=None):
     df_data = DataFrame(data_avg)
     neg_mask = df_data['dbdt'] <= 0
     df_data.loc[neg_mask, 'inuse_manual'] = False
-    # with df_data._skip_tracking():
     df_data.sort_values(by=['site_id','system_id', 'gate_id'], inplace=True)
     df_data.reset_index(drop=True, inplace=True)
     
@@ -326,7 +305,6 @@ def from_sweeps(sweeps, folder_path=None):
     df_data['utm_x'] = np.nan
     df_data['utm_y'] = np.nan
     df_data['zone_number'] = np.nan
-    # df_data['zone_letter'] = np.nan
     df_data.loc[ok, 'utm_x'] = np.round(utmx, 1)
     df_data.loc[ok, 'utm_y'] = np.round(utmy, 1)
     df_data.loc[ok, 'zone_number'] = zone_number
@@ -341,22 +319,6 @@ def from_sweeps(sweeps, folder_path=None):
     forward_operators[0].receiver   = forward_operators[1].receiver
     forward_operators[0].filterfunc = forward_operators[1].filterfunc     
 
-    if {'site_id','date','daytime'}.issubset(df_data.columns):
-
-        valid = df_data['site_id'] != -1
-
-        site_meta = (
-            df_data.loc[valid]
-            .groupby('site_id')[['date', 'daytime']]
-            .first()
-            .reset_index()
-            .sort_values(['date', 'daytime'])
-        )
-
-        site_meta['new_site_id'] = np.arange(1, len(site_meta) + 1)
-        mapping = dict(zip(site_meta['site_id'], site_meta['new_site_id']))
-
-        df_data.loc[valid, 'site_id'] = df_data.loc[valid, 'site_id'].map(mapping)
     return df_data, forward_operators
 
 def disable(temdf, data_ids):

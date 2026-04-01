@@ -382,8 +382,9 @@ class MultiInversion(Panel):
                     Horz = 0.1
                 res_start                        = LogResistivity.smooth(rho,z) 
                 sesh.models, sesh.data, _ = temframe.invert(sesh.data, sesh.dmfwr, res_start,vc = Vert, hc = Horz)
-                m1.dataframe = sesh.overview.copy()
-                self.title = "Inversion Finished!!!"
+                sesh.update_site_table()
+                m1.dataframe = sesh.site.copy()
+                self.title = "Inversion Finished"
                 new_review_clicks = (current_review_clicks or 0) + 1
                 return False, False, self.render(), "success","misfit"
             raise PreventUpdate

@@ -129,6 +129,7 @@ class dbdtSounding(Panel):
             x=self.settings.x_axis,
             y='dbdt_syn',
             color="system_id",
+            line_group="site_id",
             color_discrete_sequence=[self.settings.lm_color, self.settings.hm_color],
             # title="dbdt vs time by site_id",
             custom_data=["system_id", "data_id", "site_id"],
@@ -382,6 +383,7 @@ class rhoaSounding(dbdtSounding):
             x=self.settings.x_axis,
             y='rhoa_syn',
             color="system_id",
+            line_group="site_id",
             color_discrete_sequence=[self.settings.lm_color, self.settings.hm_color],
             custom_data=["system_id", "data_id", "site_id"],
         )
@@ -445,6 +447,7 @@ class rhoaSounding(dbdtSounding):
             x=self.settings.x_axis,
             y='rhoa',
             color="system_id",
+            line_group="site_id",
             color_discrete_sequence=[self.settings.lm_color, self.settings.hm_color],
             custom_data=["system_id", "data_id", "site_id"],
         )
@@ -544,13 +547,16 @@ class dbdtSection(Panel):
             setattr(self, key, value)
 
     def xlim(self, site_ids):
+
         x_axis = self.settings.x_axis
         if x_axis.startswith('line'):
             line_id = int(float(x_axis.split(' ')[-1]))
             x_axis = f'_line_{line_id:0.0f}_x'
-            from __main__ import sesh
-            self.dataframe = sesh.data.copy()
-            self.dataframe = self.dataframe.loc[np.abs(self.dataframe[x_axis.replace('_x', '_y')])<self.settings.radius]
+
+        from __main__ import sesh
+        self.dataframe = sesh.data.copy()
+        self.dataframe = self.dataframe.loc[np.abs(self.dataframe[x_axis.replace('_x', '_y')])<self.settings.radius]
+
         new_df = self.dataframe[self.dataframe['site_id'].isin(site_ids)][x_axis].values
         xmin, xmax = new_df.min(), new_df.max()
         dx = xmax-xmin
@@ -565,7 +571,7 @@ class dbdtSection(Panel):
             x_axis = f'_line_{line_id:0.0f}_x'
 
         y_axis                                             = self.settings.y_axis
-        df_tmp = self.dataframe[self.dataframe['gate_id']>-1]
+        df_tmp = self.dataframe.copy()
         df_tmp                                             = df_tmp.sort_values(['gate_id', x_axis])
         df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto'])
 
@@ -766,6 +772,7 @@ class dbdtSection(Panel):
             df_tmp,
             x=x_axis,
             y='dbdt',
+            line_group="gate_id",
             color="system_id",
             color_discrete_sequence=[self.settings.lm_color, self.settings.hm_color],
             title="dbdt vs time by site_id",
@@ -824,6 +831,11 @@ class dbdtSection(Panel):
             from __main__ import sesh
             self.dataframe = sesh.data.copy()
             self.dataframe = self.dataframe.loc[np.abs(self.dataframe[x_axis.replace('_x', '_y')])<self.settings.radius]
+            x_min = 0
+            x_max = sesh.lines[sesh.lines.line==line_id].total_length.max()
+        else:
+            x_min = None
+            x_max = None
 
         if 'dbdt_syn' in self.dataframe.columns:
             fig = self.compare_synthetic()
@@ -893,8 +905,11 @@ class dbdtSection(Panel):
                 linecolor="black"
             ))
         fig.update_layout(
-            legend=dict(x=0.95, y=0.95,xanchor="right",yanchor="top",bgcolor="rgba(255,255,255,0.8)")
-            )        
+            legend=dict(x=0.95, y=0.95,xanchor="right",yanchor="top",bgcolor="rgba(255,255,255,0.8)"),
+            modebar=dict(add=['lasso'], remove=['zoomIn', 'zoomOut', 'toImage', 'plotly-logomark', 'autoScale', 'resetScale2d', 'pan2d'])
+        )
+        if x_min is not None and x_max is not None:
+            fig.update_xaxes(range=[x_min, x_max], autorange=False)
         return fig    
 
 @nosj
@@ -1249,394 +1264,8 @@ class Upload(Panel):
 #             gear_maker(self.id)],
 #             style={'margin':'10px'}#,'height': 'calc(100%-30px)', 'overflow': 'hidden'} 
 #         )
-
-import pandas as pd
-@nosj
-class ModelGraphSettings(PanelSettings):
-    z: Literal['depth', 'elevation'] = 'depth'
-    color_by: Literal['site_id', 'misfit'] = 'site_id'
-    vmin: int = 1
-    vmax: int = 300
-
-class ModelGraph(Panel):
-    highlighted=None
-    buffer_len = 50
-    buffer_start = 0
-
-    def __init__(self, **kwargs):
-        settings = kwargs.pop('settings', ModelGraphSettings(id='model_graph'))
-        super().__init__(id='model_graph', settings=settings)
-        for key, value in kwargs.items():
-            setattr(self, key, value)
+   
     
-    def render(self):
-        if self.dataframe is None: return self.empty_render()
-        # ...existing code...
-        df_layers_long = pd.melt(
-            self.dataframe,
-            id_vars=['site_id', 'daytime', 'longitude', 'latitude', 'date', 'elevation', 'layer', 'resistivity','doi'],
-            value_vars=['top_depth', 'bottom_depth'],
-            var_name='depth_type',
-            value_name='depth'
-        ).sort_values(['site_id', 'daytime', 'layer', 'depth'])
-
-        df_layers_long = df_layers_long.drop(columns=['depth_type'])
-
-        if self.highlighted is None:
-            heatmap_df = df_layers_long.set_index('site_id').sort_index(ascending=True)
-            buffer_start = self.buffer_start
-            buffer_len   = self.buffer_len
-
-            x_values = df_layers_long['site_id'].unique().tolist()
-            n_sites  = len(x_values)
-
-            plot_start = max(0, buffer_start)
-            plot_end   = min(n_sites, buffer_start + buffer_len)
-
-            x_slice = x_values[plot_start:plot_end]
-
-            fig = px.line(
-                df_layers_long[df_layers_long['site_id'].isin(x_slice)],
-                x="resistivity",
-                y="depth",
-                color="site_id",
-                labels={
-                    "resistivity": "ρ [Ω·m]",  # Unicode rho
-                    "site_id": "Site ID"
-                },
-                # title="1D Resistivity Profile",
-            )
-        else:
-            fig = go.Figure(layout=dict())#title="1D Resistivity Profile"))
-            df_highlighted = df_layers_long[df_layers_long['site_id'] == self.highlighted]
-            fig.add_trace(
-                go.Scatter(
-                    x=df_highlighted["resistivity"],
-                    y=df_highlighted["depth"],
-                    mode="lines",
-                    line=dict(width=2, color='red'),
-                    zorder=10,
-                    name=f"Site {self.highlighted}"
-                ), 
-            )
-
-            if not df_highlighted.empty:
-                doi_val = df_highlighted['doi'].iloc[0]
-                fig.add_trace(go.Scatter(
-                    x=[0.1,1000],
-                    y=[doi_val, doi_val],
-                    mode="lines",
-                    line=dict(color="black",width=2,dash="dash"),
-                    showlegend=False,
-                ))
-                fig.update_layout(dragmode=False) 
-
-        fig.update_xaxes(title_text='Resistivity [Ωm]',type='log',range=[0, 2.7],            showline=True,
-            linewidth=1,
-            linecolor="black",
-            mirror=True)
-
-        fig.update_yaxes(
-            title_text='Depth [m]',
-            range=[df_layers_long['depth'].max(), -0.5],  # depth increasing downward
-            showline=True,
-            linewidth=1,
-            linecolor="black",
-            mirror=True
-        )
-        fig.update_layout(
-            margin={"l": 50, "r": 30, "t": 10, "b": 50},)
-        return fig        
-    
-@nosj
-class ModelSectionSettings(PanelSettings):
-    z: Literal['depth', 'elevation'] = 'depth'
-    x_axis: Literal['daytime', 'site_id', 'longitude', 'latitude', 'distance'] = 'site_id'
-    vmin: int = 1
-    vmax: int = 300
-    log: bool = True
-    cmap: str = 'turbo'
-    nticks: int = 4
-
-# class ModelSection(Panel):
-#     highlighted: int = None
-#     buffer_len = 50
-#     buffer_start = 0
-#     def __init__(self, **kwargs):
-#         settings = kwargs.pop('settings', ModelSectionSettings(id='model_section'))
-#         super().__init__(id='model_section', settings=settings)
-#         for key, value in kwargs.items():
-#             setattr(self, key, value)
-
-#     def update_attributes(self, data_dict):
-#         """Force update the __dict__ to bypass class-level defaults."""
-#         for key, value in data_dict.items():
-#             if hasattr(self, key):
-#                 if isinstance(value, str) and value.replace('.', '', 1).isdigit():
-#                     value = float(value)
-#                 # This writes directly to this specific object's memory
-#                 self.__dict__[key] = value
-    
-#     def render(self):
-#         if self.dataframe is None: return self.empty_render()
-#         df_layers_long = self.dataframe.melt(
-#             id_vars=['site_id', 'daytime', 'longitude', 'latitude', 'date', 'elevation', 'layer', 'resistivity', 'misfit','doi'],
-#             value_vars=['top_depth', 'bottom_depth'],
-#             var_name='depth_type',
-#             value_name='depth'
-#         ).sort_values(['daytime', 'layer', 'depth'])
-
-
-#         df_layers_long = df_layers_long.drop(columns=['depth_type'])
-#         df_layers_long['log_resistivity'] = np.log10(df_layers_long['resistivity'])
-
-#         heatmap_df = df_layers_long.pivot_table(
-#             index='depth', columns=self.settings.x_axis, values='log_resistivity'
-#         )        
-#         heatmap_df = heatmap_df.sort_index(ascending=True)
-#         buffer_start = self.buffer_start
-#         buffer_len   = self.buffer_len
-
-#         x_values = heatmap_df.columns.tolist()
-#         n_sites  = len(x_values)
-
-#         plot_start = max(0, buffer_start)
-#         plot_end   = min(n_sites, buffer_start + buffer_len)
-
-#         x_slice = x_values[plot_start:plot_end]
-#         df_layers_long = df_layers_long[df_layers_long[self.settings.x_axis].isin(x_slice)]
-
-
-#         log_vmin = np.log10(self.settings.vmin)
-#         log_vmax = np.log10(self.settings.vmax)
-
-#         tick_vals = np.linspace(log_vmin, log_vmax, self.settings.nticks)
-#         tick_text = [f"{10**v:.0f}" for v in tick_vals]
-
-#         fig = px.imshow(
-#             heatmap_df[x_slice],
-#             x=heatmap_df[x_slice].columns,
-#             y=heatmap_df.index,  # depth values
-#             aspect='auto',
-#             origin='lower',
-#             # color_continuous_scale=settings.cmap, #'turbo',
-#             color_continuous_scale=self.settings.cmap,
-#             labels={'x': self.settings.x_axis, 'y': 'Depth [m]'},
-#             # title='Resistivity Heatmap by Site and Depth',
-#             # zmin=heatmap_df.min().min(),
-#             # zmax=heatmap_df.max().max(),
-#             zmin=log_vmin,
-#             zmax=log_vmax,
-#         )
-#         fig.update_layout(hovermode="x")
-#         fig.update_traces(
-#             customdata=10**heatmap_df[x_slice].values,
-#             hovertemplate=(
-#                 "Depth: %{y} m<br>"
-#                 "Site: %{x}<br>"
-#                 "Resistivity: %{customdata:.2f} Ω·m"
-#                 "<extra></extra>"
-#             )
-#         )
-#         fig.update_yaxes(autorange="reversed")
-#         fig.update_layout(yaxis2=dict(title='Misfit',overlaying='y',side='right',showgrid=False))
-        
-#         fig.update_layout(
-#             coloraxis=dict(
-#                 cmin=log_vmin,
-#                 cmax=log_vmax,
-#                 colorscale=self.settings.cmap,
-#                 colorbar=dict(
-#                     orientation='h',
-#                     x=0.5,
-#                     xanchor='center',
-#                     y=-0.15,
-#                     yanchor='top',
-#                     thickness=15,
-#                     len=0.95,
-#                     tickmode='array',
-#                     tickvals=tick_vals,
-#                     ticktext=tick_text,
-#                     title=dict(text='Resistivity [Ωm]',side='bottom'))
-#             ),
-#             # margin=dict(b=120)
-#         )
-        
-#         # ---- Misfit only for buffered sites ----
-#         misfit_df = (
-#             df_layers_long
-#             .groupby(self.settings.x_axis)['misfit']
-#             .first()
-#             .reset_index()
-#         )
-
-#         misfit_trace = go.Scatter(
-#             x=misfit_df[self.settings.x_axis],
-#             y=misfit_df['misfit'],
-#             mode='lines',
-#             line=dict(color='black', width=2),
-#             name='Misfit',
-#             yaxis='y2'
-#         )
-
-#         y_dashed = misfit_df['misfit'].copy()
-#         y_dashed[y_dashed <= 8] = np.nan
-#         y_dashed[y_dashed > 8] = 7.95
-
-#         fig.add_trace(go.Scatter(
-#             x=misfit_df[self.settings.x_axis],
-#             y=y_dashed,
-#             mode="lines",
-#             line=dict(color="rgba(0,0,0,0.7)", dash="dash"),
-#             showlegend=False,
-#             yaxis='y2'
-#         ))
-
-
-#         fig.add_trace(misfit_trace)
-
-#         fig.update_layout(
-#         legend=dict(x=0.89, y=0.2,xanchor="left",yanchor="top",bgcolor="rgba(255,255,255,0.8)")
-#             )
-
-#         fig.update_layout(yaxis2=dict(title=dict(text="Misfit",standoff=10),overlaying="y",side="right",showgrid=False)
-# )
-#         doi_df = (df_layers_long.groupby(self.settings.x_axis)["doi"].first().reset_index())
-#         if not doi_df.empty:
-#             x_min = min(x_slice)
-#             x_max = max(x_slice)
-#             y_max = df_layers_long["depth"].max()
-
-#             fig.add_trace(
-#                 go.Scatter(
-#                     x=np.concatenate([
-#                         [x_min],
-#                         doi_df[self.settings.x_axis].values,
-#                         [x_max],
-#                         [x_min]
-#                     ]),
-#                     y=np.concatenate([
-#                         [y_max + 50],
-#                         doi_df["doi"].values,
-#                         [y_max + 50],
-#                         [y_max + 50]
-#                     ]),
-#                     fill="toself",
-#                     fillcolor="rgba(255,255,255,0.6)",
-#                     line=dict(width=0),
-#                     name="Below DOI",
-#                     hoverinfo='skip',
-#                     showlegend=True
-#                 )
-#             )
-
-#         if self.highlighted is not None and self.dataframe is not None:
-
-#             selected_df = self.dataframe[self.dataframe["site_id"] == self.highlighted]
-
-#             if not selected_df.empty:
-
-#                 x_axis = self.settings.x_axis
-#                 x_value = selected_df[x_axis].iloc[0]
-
-#                 x_vals = np.sort(self.dataframe[x_axis].dropna().unique())
-
-#                 if len(x_vals) > 1:
-#                     diffs = np.diff(x_vals)
-#                     dx = np.median(diffs) * 0.5
-#                 else:
-#                     dx = 0.5
-
-#                 fig.add_shape(
-#                     type="rect",
-#                     x0=x_value - dx,
-#                     x1=x_value + dx,
-#                     y1=df_layers_long["depth"].min(),
-#                     y0=df_layers_long["depth"].max()+20,
-#                     line=dict(color="black", width=1.5),
-#                     fillcolor="rgba(0,0,0,0.0)",
-#                 )
-
-#         fig.update_yaxes(
-#             range=[doi_df["doi"].max()+8, df_layers_long["depth"].min()-8],
-#             autorange=False,
-#             #title="Depth [m]"
-#         )
-
-#         fig.update_xaxes(
-#             range=[x_min, x_max],
-#             autorange=False
-#         )
-#         fig.update_layout(yaxis2=dict(range=[0, 8]))
-#         fig.update_xaxes(
-#             title=dict(
-#                 text=self.settings.x_axis,
-#                 standoff=5
-#             )
-#         )
-
-#         fig.update_xaxes(
-#             showline=True,
-#             linewidth=1,
-#             linecolor="black",
-#             mirror=True
-#         )
-
-#         fig.update_yaxes(
-#             showline=True,
-#             linewidth=1,
-#             linecolor="black",
-#             mirror=True
-#         )
-#         fig.update_layout(margin = dict(l=60, r=60, t=15, b=20))
-#         return fig
-    # def add_callbacks(self, app):
-    #     super().add_callbacks(app)
-
-    #     @app.callback(
-    #         Output(self.id, 'figure', allow_duplicate=True),
-    #         Output('data-buffer','data', allow_duplicate=True),
-    #         Input('next-buffer', 'data'),
-    #         Input('prev-buffer', 'data'),
-    #         State('buffer','length'),
-    #         prevent_initial_call=True
-    #     )
-    #     def update_buffer(data,length):
-    #         if not ctx.triggered:
-    #             raise PreventUpdate
-    #         trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
-
-    #         highlighted = m1.highlighted
-    #         if trigger_id == 'next-buffer':
-    #             self.buffer_start += length
-    #             if self.buffer_start > len(self.dataframe): self.buffer_start-=length 
-    #         elif trigger_id == 'prev-buffer':
-    #             self.buffer_start -= length
-    #             if self.buffer_start>0: self.buffer_start=0
-                
-    #         return self.render(), {"length": length, "start_site": self.buffer_start}
-        
-    #     @app.callback(
-    #         Output(self.id, 'figure', allow_duplicate=True),
-    #         Input('next-buffer', 'data'),
-    #         prevent_initial_call=True
-    #     )
-    #     def update_buffer(data,length):
-    #         if not ctx.triggered:
-    #             raise PreventUpdate
-    #         trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
-
-    #         highlighted = m1.highlighted
-    #         if trigger_id == 'next-buffer':
-    #             self.buffer_start += length
-    #             if self.buffer_start > len(self.dataframe): self.buffer_start-=length 
-    #         elif trigger_id == 'prev-buffer':
-    #             self.buffer_start -= length
-    #             if self.buffer_start>0: self.buffer_start=0
-    #         return self.render()
-    #     return fig
-
-
 import dash_bootstrap_components as dbc
 
 class HotKeyReminder(Panel):
