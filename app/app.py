@@ -125,20 +125,23 @@ for panel in panels:
 @app.callback(
     [ 
         dbdt1.output, dbdt2.output, rhoa.output, mod1.output, mod2.output, m1.output,
+        Output("data-buffer", "data", allow_duplicate=True),
+        Output('buffer-length-input', 'value', allow_duplicate=True),
     ],
     [Input('map', 'selectedData')],
     prevent_initial_call=True
 )
 def handle_map_interactions(selected_data):
+    # print(selected_data)
     if not selected_data:
         raise PreventUpdate
         
     if 'points' in selected_data:
-        selected_sites = [point['pointNumber'] for point in selected_data['points'] if point['curveNumber']==0]
+        selected_sites = [point['pointNumber'] for point in selected_data['points'] if point['curveNumber']==1]
 
 
     if selected_sites:
-        selected_sites = list(set(selected_sites))# + [-1]
+        selected_sites = list(set(selected_sites))
     else:
         PreventUpdate
     
@@ -167,14 +170,19 @@ def handle_map_interactions(selected_data):
     
     mod2_patch  = Patch()
 
-    m1_patch = Patch()
-    m1_patch["data"][0]["selected"]   = {"marker": {"size": int(m1.settings.markersize*1.5)}}
-    m1_patch["data"][0]["unselected"] = {"marker": {"opacity": 0.6}}
+
+    m1.buffer_sites = selected_sites
+    m1_patch = m1.render()
+
+    # m1_patch = Patch()
+    # m1_patch["data"][0]["selected"]   = {"marker": {"size": int(m1.settings.markersize*1.5)}}
+    # m1_patch["data"][0]["unselected"] = {"marker": {"opacity": 0.6}}
     
     mod2_patch["layout"]["xaxis"]["range"]  = [xmin, xmax]
     dbdt2_patch["layout"]["xaxis"]["range"] = [xmin, xmax]
     
-    return dbdt1_patch, dbdt2_patch, rhoa_patch, mod1_patch, mod2_patch, m1_patch
+    data_buffer = {"length": len(selected_sites), "start_site": min(selected_sites)}
+    return dbdt1_patch, dbdt2_patch, rhoa_patch, mod1_patch, mod2_patch, m1_patch, data_buffer, len(selected_sites)
 
 app.clientside_callback(
     hkr.javascript,
@@ -275,73 +283,73 @@ def update_model_section_from_buffer(buffer_data):
         dbdt2.highlighted = None
     return mod2.render(), dbdt2.render(), dbdt1.render(), m1.render(), mod1.render(), rhoa.render()
 
-@app.callback(
-    Output('data-buffer', 'data'),
-    Input('beginning-buffer', 'n_clicks'),
-    Input('next-buffer', 'n_clicks'),
-    Input('prev-buffer', 'n_clicks'),
-    State('data-buffer', 'data'),
-    prevent_initial_call=True
-)
-def update_buffer(next_clicks, prev_clicks, beginning_clicks, buffer_data):
-    if not ctx.triggered:
-        raise PreventUpdate
+# @app.callback(
+#     Output('data-buffer', 'data'),
+#     Input('beginning-buffer', 'n_clicks'),
+#     Input('next-buffer', 'n_clicks'),
+#     Input('prev-buffer', 'n_clicks'),
+#     State('data-buffer', 'data'),
+#     prevent_initial_call=True
+# )
+# def update_buffer(next_clicks, prev_clicks, beginning_clicks, buffer_data):
+#     if not ctx.triggered:
+#         raise PreventUpdate
 
-    trigger = ctx.triggered_id
+#     trigger = ctx.triggered_id
 
-    length = buffer_data["length"]
-    start  = buffer_data["start_site"]
-    # Get total number of sites from models (safer than tTEM)
-    if dbdt2.dataframe is None:
-        raise PreventUpdate
+#     length = buffer_data["length"]
+#     start  = buffer_data["start_site"]
+#     # Get total number of sites from models (safer than tTEM)
+#     if dbdt2.dataframe is None:
+#         raise PreventUpdate
 
-    x_axis = dbdt2.settings.x_axis
-    df = dbdt2.dataframe
+#     x_axis = dbdt2.settings.x_axis
+#     df = dbdt2.dataframe
 
-    if x_axis == "site_id":
-        df = df[df["site_id"] != -1]
+#     if x_axis == "site_id":
+#         df = df[df["site_id"] != -1]
 
-    x_vals = np.sort(df[x_axis].dropna().unique())
-    n_sites = len(x_vals)
+#     x_vals = np.sort(df[x_axis].dropna().unique())
+#     n_sites = len(x_vals)
 
-    if trigger == "next-buffer":
-        start += length
-    elif trigger == "prev-buffer":
-        start -= length
-    elif trigger == "beginning-buffer":
-        start = 0
+#     if trigger == "next-buffer":
+#         start += length
+#     elif trigger == "prev-buffer":
+#         start -= length
+#     elif trigger == "beginning-buffer":
+#         start = 0
 
-    # Clamp safely
-    start = max(0, min(start, max(0, n_sites - length)))
+#     # Clamp safely
+#     start = max(0, min(start, max(0, n_sites - length)))
 
-    buffer_data["start_site"] = start
-    buffer_data['source'] = "buffer_button"
-    return buffer_data
+#     buffer_data["start_site"] = start
+#     buffer_data['source'] = "buffer_button"
+#     return buffer_data
 
-@app.callback(
-    Output('data-buffer', 'data', allow_duplicate=True),
-    Input('buffer-length-input', 'value'),
-    State('data-buffer', 'data'),
-    prevent_initial_call=True,
-)
-def update_buffer_length(new_length, buffer_data):
-    if new_length is None or new_length <= 0:
-        raise PreventUpdate
+# @app.callback(
+#     Output('data-buffer', 'data', allow_duplicate=True),
+#     Input('buffer-length-input', 'value'),
+#     State('data-buffer', 'data'),
+#     prevent_initial_call=True,
+# )
+# def update_buffer_length(new_length, buffer_data):
+#     if new_length is None or new_length <= 0:
+#         raise PreventUpdate
 
-    buffer_data["length"] = int(new_length)
+#     buffer_data["length"] = int(new_length)
 
-    # reset start if necessary to avoid overflow
-    buffer_data["start_site"] = max(0, buffer_data["start_site"])
+#     # reset start if necessary to avoid overflow
+#     buffer_data["start_site"] = max(0, buffer_data["start_site"])
 
-    return buffer_data
+#     return buffer_data
 
-@app.callback(
-    Output("model_section", "figure", allow_duplicate=True),
-    Output("model_graph", "figure", allow_duplicate=True),
-    Input("review_layout", "n_clicks"),
-    State("invert_layout", "color"),
-    prevent_initial_call=True
-)
+# @app.callback(
+#     Output("model_section", "figure", allow_duplicate=True),
+#     Output("model_graph", "figure", allow_duplicate=True),
+#     Input("review_layout", "n_clicks"),
+#     State("invert_layout", "color"),
+#     prevent_initial_call=True
+# )
 
 def update_model_on_review(_, invert_color):
     mod2.dataframe = sesh.models.copy() if sesh.models is not None else None
@@ -491,7 +499,7 @@ from map import cdist
     State('data-buffer', 'data'),
     prevent_initial_call=True
 )
-def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color,review_layout_color, interpret_layout_color, buffer_data):
+def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color, review_layout_color, interpret_layout_color, buffer_data):
     if not ctx.triggered:
         raise PreventUpdate
     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
@@ -507,9 +515,12 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color,re
         x_value = click_data['points'][0]['x']
         site_id = mod2.dataframe.query(f'{mod2.settings.x_axis} == @x_value')['site_id'].iloc[0]
     elif trigger_id == 'map':
-        x_value,y_value = click_data['points'][0]['lon'],click_data['points'][0]['lat']
-        all_dist = cdist(m1.dataframe.latitude, m1.dataframe.longitude, y_value+0.00000002, x_value+0.000000002)
-        site_id = m1.dataframe.loc[np.argmin(all_dist), 'site_id']
+        if click_data['points'][0]['curveNumber'] < 2:
+            x_value,y_value = click_data['points'][0]['lon'],click_data['points'][0]['lat']
+            all_dist = cdist(m1.dataframe.latitude, m1.dataframe.longitude, y_value+0.00000002, x_value+0.000000002)
+            site_id = m1.dataframe.loc[np.argmin(all_dist), 'site_id']
+    if site_id is None:
+        raise PreventUpdate
 
     df_data = sesh.data
     m1.highlighted    = site_id
@@ -599,11 +610,12 @@ def upload_file(contents):
     if sesh.save_dir is None:
         warning_msg = "No working directory selected. You can still explore data; choose Save to set one."
     if contents[0].startswith('data:application/x-zip'):
-        try:
-            sesh.data            = temframe.from_zip_content(contents[0])
-        except Exception as e:
-            return (html.Div("Upload failed."),no_update,no_update,no_update,no_update,no_update,no_update,build_data_summary(),True,f"Upload failed: Only one geometry is supported at a time",True,True,no_update,no_update,no_update,no_update,no_update,{'display': 'block'}, {'display': 'block'})
-    sesh.site = sesh.overview
+        # try:
+        sesh.data, sesh.forwards = temframe.from_zip_content(contents[0])
+
+        # except Exception as e:
+        #     return (html.Div("Upload failed."),no_update,no_update,no_update,no_update,no_update,no_update,build_data_summary(),True,f"Upload failed: Only one geometry is supported at a time",True,True,no_update,no_update,no_update,no_update,no_update,{'display': 'block'}, {'display': 'block'})
+    # sesh.site = sesh.overview
     sesh.data['include'] = sesh.data['inuse_manual'].astype(bool, copy=True).fillna(sesh.data['inuse_auto'])
     sesh.models          = None
     m1.dataframe    = sesh.overview.copy()

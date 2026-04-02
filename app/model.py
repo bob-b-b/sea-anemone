@@ -103,6 +103,8 @@ class ModelSectionSettings(PanelSettings):
     misfit: bool=True
     doi: bool=True
     radius : float=100.0
+    vmin: float=1.0
+    vmax: float=500.
 
 class ModelSection(Panel):
     highlighted: int = None
@@ -266,15 +268,15 @@ class ModelSection(Panel):
             origin='lower',
             color_continuous_scale='turbo',
             labels={'x': x_axis.replace('_x', '').replace('_', ' ').strip(), 'y': y_axis, 'color': 'Resistivity [Ω·m]'},
-            zmin=0,
-            zmax=2.7,
+            zmin=np.log10(self.settings.vmin),
+            zmax=np.log10(self.settings.vmax),
         )
         if y_axis=='depth':
             fig.update_yaxes(autorange="reversed")
         fig.update_layout(
             coloraxis_colorbar=dict(
-                tickvals = [0, 1, 2, np.log10(500)],
-                ticktext = ["1", "10", "100", "500"],
+                # tickvals = [0, 1, 2, np.log10(self.settings.vmax)],
+                # ticktext = ["1", "10", "100", str(int(self.settings.vmax))],
                 orientation="h",     # horizontal
                 y=-0.45,              # move below plot
                 x=0.5,               # center horizontally
@@ -301,11 +303,16 @@ class ModelSection(Panel):
             line_id = int(float(x_axis.split(' ')[-1]))
             x_axis = f'_line_{line_id:0.0f}_x'
 
-
         if 'line' in x_axis:
             from __main__ import sesh
             df = sesh.models.copy()
             df = df.loc[np.abs(df[x_axis.replace('_x', '_y')])<self.settings.radius]        
+            x_min = 0
+            x_max = sesh.lines[sesh.lines.line==line_id].total_length.max()
+
+        else:
+            x_min = None
+            x_max = None
 
         df_layers_long = df.melt(
             id_vars=[x_axis, 'resistivity', 'misfit','doi', 'layer', 'elevation'],
@@ -359,11 +366,15 @@ class ModelSection(Panel):
             ylim = [doi_df["doi"].min()-8, df_layers_long["elevation"].max()+8]
         else:
             ylim = [doi_df["doi"].max()+8, df_layers_long["depth"].min()-8]
+        
+        if x_min is None:
+            x_min = df_layers_long[x_axis].min()
+        if x_max is None:
+            x_max = df_layers_long[x_axis].max()
 
         if self.settings.doi:    
             if not doi_df.empty:
-                x_min = df_layers_long[x_axis].min()
-                x_max = df_layers_long[x_axis].max()
+
                 y_max = df_layers_long["depth"].max()
 
                 fig.add_trace(
@@ -389,12 +400,12 @@ class ModelSection(Panel):
 
             if self.highlighted is not None and self.dataframe is not None:
 
-                selected_df = self.dataframe[self.dataframe["site_id"] == self.highlighted]
+                selected_df = df[df["site_id"] == self.highlighted]
 
                 if not selected_df.empty:
                     x_value = selected_df[x_axis].iloc[0]
 
-                    x_vals = np.sort(self.dataframe[x_axis].dropna().unique())
+                    x_vals = np.sort(df[x_axis].dropna().unique())
 
                     if len(x_vals) > 1:
                         diffs = np.diff(x_vals)
@@ -412,12 +423,9 @@ class ModelSection(Panel):
                         fillcolor="rgba(0,0,0,0.0)",
                     )
 
-            fig.update_xaxes(
-                range=[x_min, x_max],
-                autorange=False
-            )
-
+        fig.update_xaxes(range=[x_min, x_max], autorange=False)
         fig.update_yaxes(range=ylim, autorange=False)
+
         if self.settings.misfit:
             fig.update_layout(yaxis2=dict(range=[0, 8]))
         return fig
