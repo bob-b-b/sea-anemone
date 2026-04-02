@@ -139,6 +139,8 @@ def handle_map_interactions(selected_data):
 
     if selected_sites:
         selected_sites = list(set(selected_sites))# + [-1]
+    else:
+        PreventUpdate
     
 
 
