@@ -7,7 +7,7 @@ if fpath not in sys.path:
 
 import session
 global sesh
-sesh = None
+sesh = None#session.Session.from_workbench(r"C:\\Users\\au646858\\OneDrive - Aarhus universitet\\Documents\\_repositories\\sea-anemone\\app\\Models\\Surround_MOD_dat.xyz")
 
 if sesh is None:
     sesh = session.Session()
@@ -620,6 +620,7 @@ def upload_file(contents):
     sesh.models          = None
     m1.dataframe    = sesh.overview.copy()
     
+    
     buffer_length = 50
     # unique_sites = np.sort(sesh.data['site_id'].unique())
     # unique_sites = np.sort(sesh.data.loc[sesh.data['site_id'] != -1, 'site_id'].unique())
@@ -737,6 +738,11 @@ def update_layout(model,
         return layouts.review, *colors.values()
 
     elif button_id == "interpret_layout":
+        m1.make_grid()
+        m1.settings.legend=True
+        m1.settings.dragmode='pan'
+        m1.settings.markersize=0
+        m1.settings.line_width=0
         return layouts.interpret, *colors.values()
 
 
