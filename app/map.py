@@ -298,6 +298,7 @@ class Map(Panel):
     highlighted: int = None
     buffer_sites: list = None
     lines = None
+    
 
     
 
@@ -305,6 +306,7 @@ class Map(Panel):
         settings = MapSettings(id='map', **kwargs)
         super().__init__(id='map', settings=settings)
         self.dataframe = data
+        self.layer_order=['tif', 'meanres', 'buffer', 'sites', 'highlight', 'lines']
 
     def render(self):
         if self.dataframe is None: return self.empty_render()
@@ -315,13 +317,15 @@ class Map(Panel):
         zoom = self.settings.view['map.zoom'] if self.settings.view is not None else self.settings.zoom
         center = self.settings.view['map.center'] if self.settings.view is not None else None
 
+        c_layers = []
+
         if self.settings.plot_by in self.dataframe.columns:
 
             fig = px.scatter_map(df_plot, lat="latitude", lon="longitude", zoom=zoom, center=center, 
                                  color=self.settings.plot_by, color_continuous_scale='turbo',
                                  custom_data='site_id'
                                  )
-            fig.update_traces(marker=dict(size=self.settings.markersize))
+            fig.update_traces(marker=dict(size=self.settings.markersize), name='sites')
             fig.update_layout(
                 coloraxis_colorbar=dict(
                     orientation="h", 
@@ -335,32 +339,32 @@ class Map(Panel):
                 text='',
                 side="bottom"))
             )
+            c_layers.append('sites')
         else:
             fig = px.scatter_map(df_plot, lat="latitude", lon="longitude", custom_data='site_id',
                                  zoom=zoom, center=center, color_discrete_sequence=[self.settings.color])
-            fig.update_traces(marker=dict(size=self.settings.markersize))
+            fig.update_traces(marker=dict(size=self.settings.markersize), name='sites')
+            c_layers.append('sites')
 
-        if self.buffer_sites is None:
+        if self.buffer_sites is not None:
             self.buffer_sites = self.dataframe['site_id'].unique().tolist()
             df_buffer = self.dataframe.copy()
         else:
             df_buffer = self.dataframe.copy()[self.dataframe["site_id"].isin(self.buffer_sites)]
-        buffer_trace = px.scatter_map(
-            df_buffer,
-            lat="latitude",
-            lon="longitude",
-            zoom=zoom, center=center, 
-        )
+            buffer_trace = px.scatter_map(
+                df_buffer,
+                lat="latitude",
+                lon="longitude",
+                zoom=zoom, center=center, 
+            )
+            c_layers.append('buffer')
+            buffer_trace.update_traces(
+                marker=dict(size=self.settings.markersize*1.5, color=self.settings.buffer_color),
+                name="Buffer window"
+            )
 
-        buffer_trace.update_traces(
-            marker=dict(size=self.settings.markersize*1.5, color=self.settings.buffer_color),
-            name="Buffer window"
-        )
-
-        for trace in buffer_trace.data:
-            fig.add_trace(trace)
-        
-        fig.data = fig.data[-1:]+fig.data[:-1]
+            for trace in buffer_trace.data:
+                fig.add_trace(trace)
 
         fig.update_layout(map_style="white-bg",
             map_layers=[
@@ -380,26 +384,44 @@ class Map(Panel):
         if self.lines is not None and self.settings.dragmode=='drawline':
             for line_id in self.lines.line.unique():
                 fig.add_shape(self.line2path(line_id))
-
         elif self.lines is not None:
             fig2 = px.line_map(self.lines, lat='latitude', lon='longitude', line_group='line', color='line', zoom=zoom, center=center, color_discrete_sequence=line_colors)
             fig2.update_traces(mode='lines', hovertemplate='Line%{line:.0f}', line=dict(width=self.settings.line_width))
             fig = go.Figure(data=fig.data+fig2.data, layout=fig.layout)
+            for i in range(len(fig2.data)):
+                c_layers.append(f'line_{i:02d}')
 
         hovermode = False if self.settings.dragmode=='drawline' else None
         fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0},
                           modebar=dict(add=['drawline', 'eraseshape'], remove=['zoomIn', 'zoomOut', 'lasso', 'toImage', 'plotly-logomark']),
                           newshape=dict(line_color='black', line_width=3, line_dash='dash'),
-                          dragmode=self.settings.dragmode, showlegend=False, hovermode=hovermode)
+                          dragmode=self.settings.dragmode, hovermode=hovermode)
         
         if hasattr(self, 'grid') and self.grid is not None:
             from __main__ import sesh
             z_new = np.array([self.settings.mean_res, self.settings.mean_res+1])*10.
             res_grid = np.log10(rediscretize(sesh.models, z_new))
             # res_grid = 
-            fig.add_trace(self.grid.graph_object(res_grid, zmin=0, zmax=2, colorscale='Turbo', name='Mean Res.'))
+            fig.add_trace(self.grid.graph_object(res_grid, zmin=0, zmax=2, colorscale='Turbo', name='Mean Res'))
+            c_layers.append('meanres')
+        
         data_list = list(fig.data)
-        fig.data = [data_list[-1]] + data_list[:-1]        
+        reordered_data = []
+        reordered_labels = []
+        used_id = np.zeros(len(data_list), dtype=bool)
+        
+        for layer in self.layer_order:
+            if layer in c_layers: 
+                reordered_data.append(data_list[c_layers.index(layer)])
+                used_id[c_layers.index(layer)] = True
+                reordered_labels.append(layer)
+        for i,add in zip(np.arange(len(data_list)), ~used_id):
+            if add:
+                reordered_data.append(data_list[i])
+                reordered_labels.append(c_layers[i])
+
+        fig.data = reordered_data
+        self._layers = reordered_labels
 
         if self.settings.legend:
             fig.update_layout(showlegend=True,
@@ -571,7 +593,8 @@ class Map(Panel):
             from __main__ import sesh
             z_new = np.array([self.settings.mean_res, self.settings.mean_res+1])*10.
             res_grid = np.log10(rediscretize(sesh.models, z_new))
-            m1_patch['data'][0]['z'] = self.grid.grid_values(res_grid)
+
+            m1_patch['data'][self._layers.index('meanres')]['z'] = self.grid.grid_values(res_grid)
             return m1_patch
 
         @app.callback(
