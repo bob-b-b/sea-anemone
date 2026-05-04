@@ -475,7 +475,7 @@ def invert(temdf, dmfwr, res_start, vc=0.5, hc=0.8, max_iterations=50):
         d_err[~include_mask] = torch.inf  # Set error to zero for included measurements
 
         inv = fastJac(d_obs, d_err, res_start.copy(), dmfwr.copy(), logger=silence)
-        inv.setup_matrices()
+        # inv.setup_matrices()
         inv_list.append(inv)
         x_list.append(row_meta['utm_x'])
         y_list.append(row_meta['utm_y'])

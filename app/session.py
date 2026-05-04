@@ -281,23 +281,26 @@ class Session:
         df_syn = read_workbench_table(syn_path)
         df_mod = read_workbench_table(mod_path)
         
+        # df_dat[df_dat.dbdt==9999].inuse_auto = False
+
+        
             # convert placeholder 9999 to NaN and remove placeholder rows
-        for df in (df_dat, df_syn, df_mod):
-            try:
-                df.replace(9999, np_nan, inplace=True)
-            except Exception:
-                pass
-            # drop rows that are completely empty
-            try:
-                df.dropna(how='all', inplace=True)
-            except Exception:
-                pass
-            # if site_id exists, drop rows where it's missing (placeholder)
-            if 'site_id' in df.columns:
-                try:
-                    df.dropna(subset=['site_id'], inplace=True)
-                except Exception:
-                    pass
+        # for df in (df_dat, df_syn, df_mod):
+        #     try:
+        #         df.replace(9999, np_nan, inplace=True)
+        #     except Exception:
+        #         pass
+        #     # drop rows that are completely empty
+        #     # try:
+        #     #     df.dropna(how='all', inplace=True)
+        #     # except Exception:
+        #     #     pass
+        #     # if site_id exists, drop rows where it's missing (placeholder)
+        #     if 'site_id' in df.columns:
+        #         try:
+        #             df.dropna(subset=['site_id'], inplace=True)
+        #         except Exception:
+        #             pass
 
         # merge synthetic dbdt into measured data
         df1 = df_dat.copy()

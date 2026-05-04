@@ -7,7 +7,8 @@ if fpath not in sys.path:
 
 import session
 global sesh
-sesh = None#session.Session.from_workbench(r"C:\\Users\\au646858\\OneDrive - Aarhus universitet\\Documents\\_repositories\\sea-anemone\\app\\Models\\Surround_MOD_dat.xyz")
+sesh =  None#session.Session.from_workbench("C:\\Users\\au646858\\Downloads\\tTEM_Aug_HM_MOD_inv.xyz")
+#sesh.save("C:\\Users\\au646858\\Downloads\\tTEM_Aug_HM_MOD_inv_session\\")
 
 if sesh is None:
     sesh = session.Session()
@@ -48,14 +49,15 @@ else:
     session_files = []
 
 m1        = Map(data=sesh.overview)
-dbdt1     = dbdtSounding(dataframe=sesh.data)
-dbdt2     = dbdtSection(dataframe=sesh.data)
-rhoa      = rhoaSounding(dataframe=sesh.data)
-u1        = Upload(session_files=session_files)
-mod1      = ModelGraph(   dataframe=sesh.models )
-mod2      = ModelSection( dataframe=sesh.models )
+dbdt1     = dbdtSounding(   dataframe=sesh.data)
+dbdt2     = dbdtSection(    dataframe=sesh.data)
+rhoa      = rhoaSounding(   dataframe=sesh.data)
+mod1      = ModelGraph(     dataframe=sesh.models )
+mod2      = ModelSection(   dataframe=sesh.models )
 Multi_inv = MultiInversion( dataframe=sesh.data )
-Sing_inv  = Single_site( dataframe=sesh.data, rho=10 )
+Sing_inv  = Single_site(    dataframe=sesh.data, rho=10 )
+u1        = Upload(session_files=session_files)
+
 hkr       = HotKeyReminder()
 
 panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, Multi_inv, Sing_inv, rhoa, hkr]
@@ -162,8 +164,7 @@ def handle_map_interactions(selected_data):
         mod1_patch  = Patch()
 
 
-    xmin,xmax = dbdt2.xlim(selected_sites)
-    print(xmin, xmax)
+    xmin,xmax = dbdt2.calc_xlim(selected_sites)
 
     dbdt1_patch = dbdt1.render()
     dbdt2_patch = Patch()
@@ -182,7 +183,7 @@ def handle_map_interactions(selected_data):
     
     mod2_patch["layout"]["xaxis"]["range"]  = [xmin, xmax]
     dbdt2_patch["layout"]["xaxis"]["range"] = [xmin, xmax]
-    # dbdt2.xlim = [xmin, xmax]
+    dbdt2.xlim = [xmin, xmax]
     
     data_buffer = {"length": len(selected_sites), "start_site": min(selected_sites)}
     return dbdt1_patch, dbdt2_patch, rhoa_patch, mod1_patch, mod2_patch, m1_patch, data_buffer, len(selected_sites)
@@ -211,24 +212,23 @@ def show_value(n1, n2, ttem_selected, sounding_selected, rhoa_selected, interpre
     elif str(ctx.triggered_id) == 'enableButton':
         inuse = True
 
-
-    if ttem_selected and len(ttem_selected['points'])>0:
-        data_ids = [point['customdata'][1] for point in ttem_selected['points'] if 'customdata' in point]
-    elif sounding_selected and len(sounding_selected['points'])>0:
+    if sounding_selected and len(sounding_selected['points'])>0:
         data_ids = [point['customdata'][1] for point in sounding_selected['points'] if 'customdata' in point]
     elif rhoa_selected and len(rhoa_selected['points'])>0:
         data_ids = [point['customdata'][1] for point in rhoa_selected['points'] if 'customdata' in point]        
+    elif ttem_selected and len(ttem_selected['points'])>0:
+        data_ids = [point['customdata'][1] for point in ttem_selected['points'] if 'customdata' in point]
+
     else:
         raise PreventUpdate
     
 
-    df_data = sesh.data
+    # df_data = sesh.data
     
-    df_data.loc[df_data['data_id'].isin(data_ids), 'inuse_manual'] = inuse
-    df_data['include'] = df_data['inuse_manual'].astype(bool, copy=True).fillna(df_data['inuse_auto'])
-    dbdt1.dataframe = df_data[df_data['site_id'].isin(dbdt1.dataframe['site_id'].unique())]
-    dbdt2.dataframe = df_data[df_data['site_id'].isin(dbdt2.dataframe['site_id'].unique())]
-    rhoa.dataframe  = df_data[df_data['site_id'].isin(rhoa.dataframe['site_id'].unique())]
+    for df_data in [sesh.data, dbdt1.dataframe, dbdt2.dataframe, rhoa.dataframe]:
+        df_data.loc[df_data['data_id'].isin(data_ids), 'inuse_manual'] = inuse
+        df_data['include'] = df_data['inuse_manual'].astype(bool, copy=True).fillna(df_data['inuse_auto'])
+
     return dbdt1.render(), dbdt2.render(), rhoa.render()
 
 @app.callback(
@@ -237,8 +237,7 @@ def show_value(n1, n2, ttem_selected, sounding_selected, rhoa_selected, interpre
     prevent_initial_call=True,
 )
 def update_selection_from_section(selected_data):
-    print(selected_data)
-    if not selected_data or 'points' not in selected_data:
+    if not selected_data or 'points' not in selected_data or len(selected_data['points']) == 0:
         raise PreventUpdate
 
     site_ids = [point['customdata'][2] for point in selected_data['points'] if 'customdata' in point]
@@ -761,6 +760,10 @@ def update_layout(model,
         m1.make_grid()
         m1.settings.legend=True
         m1.settings.dragmode='pan'
+        m1.settings.markersize=0
+        m1.settings.line_width=0
+        # m1.settings.plot_by = "mean-res"
+        
         return layouts.interpret, *colors.values()
 
 

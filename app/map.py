@@ -283,7 +283,7 @@ class MapSettings(PanelSettings):
     zoom: int = 10
     color: str = '#ff0000'
     highlight_color: str= '#ffff00'  # Default highlight color
-    plot_by: Literal['', 'misfit', 'doi', 'date', '_line_1_x', '_line_1_y'] = ''
+    plot_by: Literal['', 'misfit', 'doi', 'date', 'mean-res'] = ''
     buffer_color: str= "#ffffff"  # Default buffer color
     dragmode: str='select'
     view: dict = None
@@ -386,7 +386,8 @@ class Map(Panel):
                 fig.add_shape(self.line2path(line_id))
         elif self.lines is not None:
             fig2 = px.line_map(self.lines, lat='latitude', lon='longitude', line_group='line', color='line', zoom=zoom, center=center, color_discrete_sequence=line_colors)
-            fig2.update_traces(mode='lines', hovertemplate='Line%{line:.0f}', line=dict(width=self.settings.line_width))
+            fig2.update_traces(mode='lines', hovertemplate='Line%{line:.0f}', line=dict(width=self.settings.line_width),
+                               name='lines', showlegend=self.settings.legend)
             fig = go.Figure(data=fig.data+fig2.data, layout=fig.layout)
             for i in range(len(fig2.data)):
                 c_layers.append(f'line_{i:02d}')
@@ -399,7 +400,7 @@ class Map(Panel):
         
         if hasattr(self, 'grid') and self.grid is not None:
             from __main__ import sesh
-            z_new = np.array([self.settings.mean_res, self.settings.mean_res+1])*10.
+            z_new = np.array([0., 5.])
             res_grid = np.log10(rediscretize(sesh.models, z_new))
             # res_grid = 
             fig.add_trace(self.grid.graph_object(res_grid, zmin=0, zmax=2, colorscale='Turbo', name='Mean Res'))
@@ -418,7 +419,9 @@ class Map(Panel):
         for i,add in zip(np.arange(len(data_list)), ~used_id):
             if add:
                 reordered_data.append(data_list[i])
-                reordered_labels.append(c_layers[i])
+                if i<len(c_layers):
+                    print('need to figure out why this happens?')
+                    reordered_labels.append(c_layers[i])
 
         fig.data = reordered_data
         self._layers = reordered_labels
@@ -533,11 +536,11 @@ class Map(Panel):
                             }
                         ),
 
-                        dbc.Input(
-                            type='number',
-                            step=1,
-                            value=0,
+                        dbc.Select(
+                            options=['0-5', '5-10', '10-15', '15-20', '20-30', '30-40', '40-50', '50-75', '75-100', '100-125', '125-150', '150-200', '200-250', '300-400', '400-500'],
                             id=self.id+'_mean_res',
+                            value='0-5',
+                            # disabled=self.settings.plot_by != 'mean-res',
                             style={
                                 'position': 'absolute',
                                 'bottom': '10px',
@@ -572,15 +575,18 @@ class Map(Panel):
 
 
         @app.callback(
-            self.output,
+            self.output, Output(self.id+'_mean_res', 'disabled', allow_duplicate=True),
             Input(self.id+'_plot_by', 'value'),
             prevent_initial_call=True
         )
         def update_plotby(value):
+            print(value)
             if value not in self.dataframe.columns:
                 raise PreventUpdate
             self.settings.plot_by = value
-            return self.render()  
+            disabled = value != 'mean-res'
+            print('disabled:', disabled)
+            return self.render(), False
         
         @app.callback(
             self.output,
@@ -591,9 +597,8 @@ class Map(Panel):
             self.settings.mean_res = value
             m1_patch = Patch()
             from __main__ import sesh
-            z_new = np.array([self.settings.mean_res, self.settings.mean_res+1])*10.
+            z_new = np.array([float(bound) for bound in value.split('-')])
             res_grid = np.log10(rediscretize(sesh.models, z_new))
-
             m1_patch['data'][self._layers.index('meanres')]['z'] = self.grid.grid_values(res_grid)
             return m1_patch
 

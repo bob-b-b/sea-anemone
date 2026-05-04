@@ -123,7 +123,7 @@ class dbdtSounding(Panel):
             # range_y=[self.settings.dbdt_min, self.settings.dbdt_max]
 
         )
-        
+
         fig2 = px.line(
             df_tmp,
             x=self.settings.x_axis,
@@ -546,7 +546,7 @@ class dbdtSection(Panel):
         for key, value in kwargs.items():
             setattr(self, key, value)
 
-    def xlim(self, site_ids):
+    def calc_xlim(self, site_ids):
 
         x_axis = self.settings.x_axis
         if x_axis.startswith('line'):
@@ -893,11 +893,13 @@ class dbdtSection(Panel):
             self.dataframe = self.dataframe.loc[np.abs(self.dataframe[x_axis.replace('_x', '_y')])<self.settings.radius]
             x_min = 0
             x_max = sesh.lines[sesh.lines.line==line_id].total_length.max()
-        # elif hasattr(self, 'xlim'):
-        #     x_min,x_max = self.xlim
+            self.xlim = (x_min, x_max)
+        elif hasattr(self, 'xlim'):
+            x_min,x_max = self.xlim
         else:
             x_min = None
             x_max = None
+        print(x_min, x_max)
 
         if self.settings.y_axis=='gate_id':
             return self.observed_by_gate_id()
@@ -967,16 +969,15 @@ class dbdtSection(Panel):
                 showline=True,
                 mirror=True,
                 linewidth=1,
-                linecolor="black"
+                linecolor="black",
+                fixedrange=True
             ))
         fig.update_layout(
             legend=dict(x=0.95, y=0.95,xanchor="right",yanchor="top",bgcolor="rgba(255,255,255,0.8)"),
-            modebar=dict(add=['lasso'], remove=['zoomIn', 'zoomOut', 'toImage', 'plotly-logomark', 'autoScale', 'resetScale2d', 'pan2d'])
+            modebar=dict(add=['lasso'], remove=['zoomIn', 'zoomOut', 'toImage', 'plotly-logomark', 'autoScale', 'resetScale2d'])
         )
         if x_min is not None and x_max is not None:
             fig.update_xaxes(range=[x_min, x_max], autorange=False)
-        else:
-            fig.update_xaxes(autorange=False)
         return fig    
 
 @nosj
