@@ -352,22 +352,22 @@ class Map(Panel):
         if self.buffer_sites is not None:
             self.buffer_sites = self.dataframe['site_id'].unique().tolist()
             df_buffer = self.dataframe.copy()
-        # else:
-        #     df_buffer = self.dataframe.copy()[self.dataframe["site_id"].isin(self.buffer_sites)]
-        #     buffer_trace = px.scatter_map(
-        #         df_buffer,
-        #         lat="latitude",
-        #         lon="longitude",
-        #         zoom=zoom, center=center, 
-        #     )
-        #     c_layers.append('buffer')
-        #     buffer_trace.update_traces(
-        #         marker=dict(size=self.settings.markersize*1.5, color=self.settings.buffer_color),
-        #         name="Buffer window"
-        #     )
+        else:
+            df_buffer = self.dataframe.copy()[self.dataframe["site_id"].isin(self.buffer_sites)]
+            buffer_trace = px.scatter_map(
+                df_buffer,
+                lat="latitude",
+                lon="longitude",
+                zoom=zoom, center=center, 
+            )
+            c_layers.append('buffer')
+            buffer_trace.update_traces(
+                marker=dict(size=self.settings.markersize*1.5, color=self.settings.buffer_color),
+                name="Buffer window"
+            )
 
-        #     for trace in buffer_trace.data:
-        #         fig.add_trace(trace)
+            for trace in buffer_trace.data:
+                fig.add_trace(trace)
 
         fig.update_layout(map_style="white-bg",
             map_layers=[
