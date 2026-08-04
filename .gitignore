@@ -177,3 +177,5 @@ inversion_log.txt
 app/recent_projects.txt
 
 cache/*
+*.exe
+*.zip
