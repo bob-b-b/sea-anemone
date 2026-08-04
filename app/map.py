@@ -146,8 +146,11 @@ class Profile:
             
             projection_dist[i,1,not_inbounds] = np.abs(projection_dist[i,1,not_inbounds]) + np.abs(projections[i,0,not_inbounds])
         idx_min = np.nanargmin(np.abs(projection_dist[:,1:,:]), axis=0)
+ 
+        n_pts = projections.shape[2]
+        projections = projections[idx_min[0], :, np.arange(n_pts)]  # (n_pts, 2)
+        projections = projections.T  # (2, n_pts)
 
-        projections = idx_min.choose(projections)
 
         projections[0,:] += np.squeeze(self.cumulative_length[idx_min])
         if return_segment_index:
@@ -349,22 +352,22 @@ class Map(Panel):
         if self.buffer_sites is not None:
             self.buffer_sites = self.dataframe['site_id'].unique().tolist()
             df_buffer = self.dataframe.copy()
-        else:
-            df_buffer = self.dataframe.copy()[self.dataframe["site_id"].isin(self.buffer_sites)]
-            buffer_trace = px.scatter_map(
-                df_buffer,
-                lat="latitude",
-                lon="longitude",
-                zoom=zoom, center=center, 
-            )
-            c_layers.append('buffer')
-            buffer_trace.update_traces(
-                marker=dict(size=self.settings.markersize*1.5, color=self.settings.buffer_color),
-                name="Buffer window"
-            )
+        # else:
+        #     df_buffer = self.dataframe.copy()[self.dataframe["site_id"].isin(self.buffer_sites)]
+        #     buffer_trace = px.scatter_map(
+        #         df_buffer,
+        #         lat="latitude",
+        #         lon="longitude",
+        #         zoom=zoom, center=center, 
+        #     )
+        #     c_layers.append('buffer')
+        #     buffer_trace.update_traces(
+        #         marker=dict(size=self.settings.markersize*1.5, color=self.settings.buffer_color),
+        #         name="Buffer window"
+        #     )
 
-            for trace in buffer_trace.data:
-                fig.add_trace(trace)
+        #     for trace in buffer_trace.data:
+        #         fig.add_trace(trace)
 
         fig.update_layout(map_style="white-bg",
             map_layers=[
@@ -386,8 +389,9 @@ class Map(Panel):
                 fig.add_shape(self.line2path(line_id))
         elif self.lines is not None:
             fig2 = px.line_map(self.lines, lat='latitude', lon='longitude', line_group='line', color='line', zoom=zoom, center=center, color_discrete_sequence=line_colors)
-            fig2.update_traces(mode='lines', hovertemplate='Line%{line:.0f}', line=dict(width=self.settings.line_width),
-                               name='lines', showlegend=self.settings.legend)
+            fig2.update_traces(mode='lines', line=dict(width=self.settings.line_width),
+                               showlegend=self.settings.legend)
+            fig2.for_each_trace(lambda t: t.update(hovertemplate=f'Line {t.name}<extra></extra>'))
             fig = go.Figure(data=fig.data+fig2.data, layout=fig.layout)
             for i in range(len(fig2.data)):
                 c_layers.append(f'line_{i:02d}')
@@ -434,7 +438,6 @@ class Map(Panel):
                     bordercolor="black",borderwidth=1,
                 )
             )
-
         return fig
     
         

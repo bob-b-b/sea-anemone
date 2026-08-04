@@ -150,7 +150,7 @@ class Session:
         self.site = site
         self.line_update()
         return site
-    
+        
     def line_update(self):
         if self.lines is not None and self.data is not None:
             self.data   = clean_table(self.data)
@@ -158,24 +158,34 @@ class Session:
 
             if self.models is not None: 
                 self.models = clean_table(self.models)
-            
 
             from map import Profile
+            new_cols = []
+            new_site_data = {}
             for line_id in self.lines.line.unique():
                 c_line = self.lines[self.lines.line==line_id]
-                x_axis,y_axis = f'_line_{line_id:0.0f}_x', f'_line_{line_id:0.0f}_y'
+                x_axis, y_axis = f'_line_{line_id:0.0f}_x', f'_line_{line_id:0.0f}_y'
                 lat, lon = c_line['latitude'].values, c_line['longitude'].values
                 sec = Profile(lat, lon)
                 self.lines.loc[self.lines.line==line_id, 'length'] = sec.cumulative_length
                 self.lines.loc[self.lines.line==line_id, 'total_length'] = sec.length
-                x,y = sec(self.site['latitude'].values, self.site['longitude'].values)
-                self.site[x_axis] = x
-                self.site[y_axis] = y
-                if self.data is not None:
-                    self.data = self.data.merge(self.site[[x_axis, y_axis]], left_on='site_id', right_index=True, how='left')
+                x, y = sec(self.site['latitude'].values, self.site['longitude'].values)
+                new_site_data[x_axis] = x
+                new_site_data[y_axis] = y
+
+            if new_site_data:
+                self.site = pd.concat(
+                    [self.site, pd.DataFrame(new_site_data, index=self.site.index)], axis=1
+                )
+                # site_cols = self.site.set_index('site_id')[list(new_site_data.keys())]
+                # self.data = self.data.merge(site_cols, left_on='site_id', right_index=True, how='left').copy()
+                # if self.models is not None:
+                #     self.models = self.models.merge(site_cols, left_on='site_id', right_index=True, how='left').copy()
+                site_cols = self.site.set_index('site_id')[list(new_site_data.keys())]
+                self.data = self.data.merge(site_cols, left_on='site_id', right_index=True, how='left').copy()
                 if self.models is not None:
-                    self.models = self.models.merge(self.site[[x_axis, y_axis]], left_on='site_id', right_index=True, how='left')
-    
+                    self.models = self.models.merge(site_cols, left_on='site_id', right_index=True, how='left').copy()
+                    
 
     @classmethod
     def from_workbench(cls, fname):
@@ -237,7 +247,8 @@ class Session:
             except Exception:
                 df = pd.read_csv(StringIO(text), sep=r'\s+', engine='python')
             
-            df['site_id'] = df.index
+            df['site_id'] = df.RECORD
+            df.sort_values('site_id', inplace=True)
 
             return df
 
