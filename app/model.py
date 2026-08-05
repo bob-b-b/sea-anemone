@@ -106,6 +106,16 @@ class ModelSectionSettings(PanelSettings):
     vmin: float=1.0
     vmax: float=500.
 
+    def __getattribute__(self, name):
+        x_axis = super().__getattribute__(name)
+        if name == 'x_axis':
+            if x_axis.lower().startswith('line'):
+                line_id = int(float(x_axis.split(' ')[-1]))
+                x_axis = f'_line_{line_id:0.0f}_x'        
+        return x_axis
+
+
+
 class ModelSection(Panel):
     highlighted: int = None
     buffer_len = 50
@@ -116,7 +126,9 @@ class ModelSection(Panel):
         super().__init__(id='model_section', settings=settings)
         for key, value in kwargs.items():
             setattr(self, key, value)
-    
+
+
+
     def initialize(self):
         from __main__ import sesh
         options=['site_id', 'daytime']
@@ -196,9 +208,7 @@ class ModelSection(Panel):
         if self.dataframe is None: return self.empty_render()
         df = self.dataframe.copy()
         x_axis = self.settings.x_axis
-        if x_axis.startswith('line'):
-            line_id = int(float(x_axis.split(' ')[-1]))
-            x_axis = f'_line_{line_id:0.0f}_x'
+
 
         if 'line' in x_axis:
             from __main__ import sesh
@@ -299,9 +309,8 @@ class ModelSection(Panel):
 
         df = self.dataframe.copy()
         x_axis = self.settings.x_axis
-        if x_axis.startswith('line'):
-            line_id = int(float(x_axis.split(' ')[-1]))
-            x_axis = f'_line_{line_id:0.0f}_x'
+        if x_axis.startswith('_line'):
+            line_id = int(float(x_axis.split('_')[-2]))
 
         if 'line' in x_axis:
             from __main__ import sesh
@@ -320,7 +329,10 @@ class ModelSection(Panel):
             var_name='depth_type',
             value_name='depth'
         ).sort_values([x_axis, 'layer', 'depth'])
-        fig.update_layout(yaxis2=dict(title='Misfit',overlaying='y',side='right',showgrid=False))
+        fig.update_layout(
+            margin=dict(l=55, r=120, t=10, b=50, autoexpand=False),
+            yaxis2=dict(title='Misfit', overlaying='y', side='right', showgrid=False)
+        )
         # ---- Misfit only for buffered sites ----
         if self.settings.misfit:
             misfit_df = (
@@ -375,7 +387,11 @@ class ModelSection(Panel):
         if self.settings.doi:    
             if not doi_df.empty:
 
-                y_max = df_layers_long["depth"].max()
+                # in elevation mode ylim[0] is the bottom; in depth mode depth.max() is the bottom
+                if self.settings.y_axis == 'elevation':
+                    y_fill = ylim[0] - 50
+                else:
+                    y_fill = df_layers_long["depth"].max() + 50
 
                 fig.add_trace(
                     go.Scatter(
@@ -386,14 +402,14 @@ class ModelSection(Panel):
                             [x_min]
                         ]),
                         y=np.concatenate([
-                            [y_max + 50],
+                            [y_fill],
                             doi_df["doi"].values,
-                            [y_max + 50],
-                            [y_max + 50]
+                            [y_fill],
+                            [y_fill]
                         ]),
                         fill="toself",
                         fillcolor="rgba(255,255,255,0.6)",
-                        line=dict(width=0),
+                        line=dict(width=0, shape='hvh' if self.settings.bars else 'linear'),
                         name="Below DOI",
                     )
                 )
@@ -500,3 +516,11 @@ class ModelSection(Panel):
         def update_radius(radius):
             self.settings.radius=radius
             return radius
+
+
+if __name__ == "__main__":
+
+    m1 = ModelSectionSettings('setting_mod')
+    m1.x_axis = 'Line 1'
+    m1.__post_init__()
+    print(m1.x_axis)
