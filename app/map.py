@@ -276,7 +276,17 @@ class Grid:
             showscale=True,
             hoverinfo="skip",
             selectedpoints=[],
-            unselected=dict(marker=dict(opacity=opacity)),            
+            unselected=dict(marker=dict(opacity=opacity)),
+            colorbar=dict(
+                orientation="h",
+                y=-0.01,
+                x=0.5,
+                xanchor="center",
+                yanchor="top",
+                len=0.75,
+                thickness=10,
+                title=dict(text='log\u2081\u2080(\u03a9\u00b7m)', side="bottom")
+            ),
             **kwargs
         )
 
@@ -293,7 +303,7 @@ class MapSettings(PanelSettings):
     markersize: int=14
     line_width: int=3
     legend: bool = False
-    mean_res: int = 0
+    mean_res: str = '0-5'
 
 
 class Map(Panel):
@@ -346,7 +356,8 @@ class Map(Panel):
         else:
             fig = px.scatter_map(df_plot, lat="latitude", lon="longitude", custom_data='site_id',
                                  zoom=zoom, center=center, color_discrete_sequence=[self.settings.color])
-            fig.update_traces(marker=dict(size=self.settings.markersize), name='sites')
+            fig.update_traces(marker=dict(size=self.settings.markersize), name='sites',
+                              showlegend=(self.settings.plot_by == 'mean-res'))
             c_layers.append('sites')
 
         if self.buffer_sites is not None:
@@ -402,11 +413,10 @@ class Map(Panel):
                           newshape=dict(line_color='black', line_width=3, line_dash='dash'),
                           dragmode=self.settings.dragmode, hovermode=hovermode)
         
-        if hasattr(self, 'grid') and self.grid is not None:
+        if hasattr(self, 'grid') and self.grid is not None and self.settings.plot_by == 'mean-res':
             from __main__ import sesh
-            z_new = np.array([0., 5.])
+            z_new = np.array([float(b) for b in self.settings.mean_res.split('-')])
             res_grid = np.log10(rediscretize(sesh.models, z_new))
-            # res_grid = 
             fig.add_trace(self.grid.graph_object(res_grid, zmin=0, zmax=2, colorscale='Turbo', name='Mean Res'))
             c_layers.append('meanres')
         
@@ -543,7 +553,7 @@ class Map(Panel):
                             options=['0-5', '5-10', '10-15', '15-20', '20-30', '30-40', '40-50', '50-75', '75-100', '100-125', '125-150', '150-200', '200-250', '300-400', '400-500'],
                             id=self.id+'_mean_res',
                             value='0-5',
-                            # disabled=self.settings.plot_by != 'mean-res',
+                            disabled=self.settings.plot_by != 'mean-res',
                             style={
                                 'position': 'absolute',
                                 'bottom': '10px',
@@ -583,13 +593,11 @@ class Map(Panel):
             prevent_initial_call=True
         )
         def update_plotby(value):
-            print(value)
-            if value not in self.dataframe.columns:
+            if value not in self.dataframe.columns and value != 'mean-res':
                 raise PreventUpdate
             self.settings.plot_by = value
             disabled = value != 'mean-res'
-            print('disabled:', disabled)
-            return self.render(), False
+            return self.render(), disabled
         
         @app.callback(
             self.output,

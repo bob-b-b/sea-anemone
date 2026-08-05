@@ -760,10 +760,6 @@ def update_layout(model,
         m1.make_grid()
         m1.settings.legend=True
         m1.settings.dragmode='pan'
-        m1.settings.markersize=0
-        m1.settings.line_width=0
-        # m1.settings.plot_by = "mean-res"
-        
         return layouts.interpret, *colors.values()
 
 
