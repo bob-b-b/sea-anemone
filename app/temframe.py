@@ -553,7 +553,7 @@ def invert(temdf, dmfwr, res_start, vc=0.5, hc=0.8, max_iterations=50):
 
 
 def invert_site(temdf, dmfwr, site_id, vc=0.4, res_start=100., max_iterations=20):
-    t_max = max([fwr.times.max().item() for fwr in temdf.forward_operators])
+    t_max = dmfwr.times.max().item()
     d_max = (t_max*4e6)**0.5
     n_layers = 30
 
@@ -573,7 +573,8 @@ def invert_site(temdf, dmfwr, site_id, vc=0.4, res_start=100., max_iterations=20
 
     res_mod=inv1.invert(iter_cap=max_iterations)
     doi_value = inv1.doi
-    i,row = df_site.overview().iterrows().__next__()
+    row = df_site.head(1)
+
     d_syn = inv1.data_predicted.exp()
     df_site.loc[:, 'dbdt_syn'] = d_syn.numpy()
     df_site['misfit'] = torch.sqrt(((d_obs - d_syn.log())**2/((d_err)**2)).mean())

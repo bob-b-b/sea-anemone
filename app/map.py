@@ -360,8 +360,7 @@ class Map(Panel):
                               showlegend=(self.settings.plot_by == 'mean-res'))
             c_layers.append('sites')
 
-        if self.buffer_sites is not None:
-            self.buffer_sites = self.dataframe['site_id'].unique().tolist()
+        if self.buffer_sites is None:
             df_buffer = self.dataframe.copy()
         else:
             df_buffer = self.dataframe.copy()[self.dataframe["site_id"].isin(self.buffer_sites)]
@@ -606,12 +605,7 @@ class Map(Panel):
         )
         def update_mean_res(value):
             self.settings.mean_res = value
-            m1_patch = Patch()
-            from __main__ import sesh
-            z_new = np.array([float(bound) for bound in value.split('-')])
-            res_grid = np.log10(rediscretize(sesh.models, z_new))
-            m1_patch['data'][self._layers.index('meanres')]['z'] = self.grid.grid_values(res_grid)
-            return m1_patch
+            return self.render()
 
         @app.callback(
             self.output,

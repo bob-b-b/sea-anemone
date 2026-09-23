@@ -140,7 +140,7 @@ def handle_map_interactions(selected_data):
         
     if 'points' in selected_data:
         curve_number = m1._layers.index('sites')
-        selected_sites = [point['pointNumber'] for point in selected_data['points'] if point['curveNumber']==curve_number]
+        selected_sites = [point['customdata'][0] for point in selected_data['points'] if point['curveNumber']==curve_number and 'customdata' in point]
 
 
     if selected_sites:

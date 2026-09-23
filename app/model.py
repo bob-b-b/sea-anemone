@@ -25,11 +25,11 @@ class ModelGraph(Panel):
         # ...existing code...
         df_layers_long = pd.melt(
             self.dataframe,
-            id_vars=['site_id', 'daytime', 'longitude', 'latitude', 'date', 'elevation', 'layer', 'resistivity'],
+            id_vars=['site_id', 'layer', 'resistivity'],
             value_vars=['top_depth', 'bottom_depth'],
             var_name='depth_type',
             value_name='depth'
-        ).sort_values(['site_id', 'daytime', 'layer', 'depth'])
+        ).sort_values(['site_id', 'layer', 'depth'])
 
         df_layers_long = df_layers_long.drop(columns=['depth_type'])
 
@@ -120,6 +120,7 @@ class ModelSection(Panel):
     highlighted: int = None
     buffer_len = 50
     buffer_start = 0
+    mean_res_interval: tuple = None
     def __init__(self, **kwargs):
         settings = kwargs.pop('settings', ModelSectionSettings(id='model_section'))
         settings.radius=100.
@@ -249,27 +250,37 @@ class ModelSection(Panel):
             res_grid = res_grid.values.T
 
         if self.settings.bars:
-            dx = np.abs(np.diff(x, prepend=0.))
-            dx_min = dx.min()*0.49
+            n = len(x)
+            if n > 1:
+                inter_dx = np.diff(x)
+                # floor prevents tightly-packed clusters from collapsing all bars to invisible width
+                dx_min = max(inter_dx.min() * 0.49, (x.max() - x.min()) * 0.005)
+            else:
+                dx_min = max(x[0] * 0.1, 1.0)
+
+            x_rep = np.empty(n * 3)
+            x_rep[0::3] = x - dx_min
+            x_rep[1::3] = x
+            x_rep[2::3] = x + dx_min
+
             res_grid = np.repeat(res_grid, 3, axis=1)
-            x = np.repeat(x, 3)
-            x[::3] -= dx_min
-            x[2::3] += dx_min
-            
-            dx = np.abs(np.diff(x, prepend=0.))
-            x_len = x.max()-x.min()
-            needs_gap = dx>0.03*x_len
+            x = x_rep
+
+            dx = np.abs(np.diff(x, prepend=x[0]))
+            x_len = x.max() - x.min()
+            needs_gap = dx > 0.03 * x_len
+            only_between_bars = np.zeros(len(needs_gap), dtype=bool)
+            only_between_bars[3::3] = True
+            needs_gap = needs_gap & only_between_bars
 
             if needs_gap.any():
-                x_with_gaps = np.zeros(len(x)+2*sum(needs_gap))
-                x_with_gaps[:] = np.nan
-                i_x = np.arange(len(x))+np.cumsum(2*needs_gap.astype(int))
-                x_with_gaps[i_x] = x            
-                res_elev_with_gaps = np.zeros(res_grid.shape[:1]+x_with_gaps.shape)
-                res_elev_with_gaps[:,:] = np.nan
-                res_elev_with_gaps[:, i_x] = res_grid
-                x = x_with_gaps*1.
-                res_grid = res_elev_with_gaps*1.
+                x_with_gaps = np.full(len(x) + 2 * needs_gap.sum(), np.nan)
+                i_x = np.arange(len(x)) + np.cumsum(2 * needs_gap.astype(int))
+                x_with_gaps[i_x] = x
+                res_with_gaps = np.full(res_grid.shape[:1] + x_with_gaps.shape, np.nan)
+                res_with_gaps[:, i_x] = res_grid
+                x = x_with_gaps
+                res_grid = res_with_gaps
         res_grid = np.log10(res_grid)        
 
         fig = px.imshow(
@@ -444,6 +455,16 @@ class ModelSection(Panel):
 
         if self.settings.misfit:
             fig.update_layout(yaxis2=dict(range=[0, 8]))
+
+        if self.mean_res_interval is not None and self.settings.y_axis == 'depth':
+            top, bot = self.mean_res_interval
+            fig.add_hrect(
+                y0=top, y1=bot,
+                fillcolor='rgba(255,255,255,0.25)',
+                line_color='rgba(255,255,255,0.8)',
+                line_width=1,
+                layer='above',
+            )
         return fig
         
         # def add_callbacks(self, app):
@@ -516,6 +537,20 @@ class ModelSection(Panel):
         def update_radius(radius):
             self.settings.radius=radius
             return radius
+
+        @app.callback(
+            self.output,
+            Input('map_mean_res', 'value'),
+            Input('map_plot_by', 'value'),
+            prevent_initial_call=True
+        )
+        def update_depth_indicator(mean_res_value, plot_by):
+            if plot_by != 'mean-res':
+                self.mean_res_interval = None
+            else:
+                top, bot = [float(b) for b in mean_res_value.split('-')]
+                self.mean_res_interval = (top, bot)
+            return self.render()
 
 
 if __name__ == "__main__":
