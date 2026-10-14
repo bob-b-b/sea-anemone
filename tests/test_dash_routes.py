@@ -1,9 +1,15 @@
 import importlib
 import sys
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 
 
 def test_dash_root_and_layout_routes(monkeypatch):
+    tkinter = ModuleType("tkinter")
+    tkinter.Tk = object
+    tkinter.filedialog = ModuleType("tkinter.filedialog")
+    monkeypatch.setitem(sys.modules, "tkinter", tkinter)
+    monkeypatch.setitem(sys.modules, "tkinter.filedialog", tkinter.filedialog)
+
     monkeypatch.setattr(
         sys.modules["__main__"],
         "sesh",
