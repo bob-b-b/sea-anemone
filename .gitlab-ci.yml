@@ -24,14 +24,9 @@ cache:
 test:
   stage: test
   before_script:
-    - apt-get update -qq && apt-get install -y --no-install-recommends git openssh-client
-    - mkdir -p ~/.ssh && chmod 700 ~/.ssh
-    - cp "$ANEMONE_KNOWN_HOSTS" ~/.ssh/known_hosts && chmod 644 ~/.ssh/known_hosts
-    - eval "$(ssh-agent -s)"
-    - chmod 400 "$ANEMONE_SSH_PRIVATE_KEY"
-    - ssh-add "$ANEMONE_SSH_PRIVATE_KEY"
+    - apt-get update -qq && apt-get install -y --no-install-recommends git
     - python -m pip install --upgrade pip
     - python -m pip install -r requirements.txt
-    - python -m pip install "anemone @ git+ssh://git@gitlab.au.dk/hgg/anemone.git@${ANEMONE_REF}"
+    - python -m pip install "anemone @ git+https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.au.dk/hgg/anemone.git@${ANEMONE_REF}"
   script:
     - python -m pytest tests -q
