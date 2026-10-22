@@ -151,6 +151,17 @@ Then reinstall dependencies (step 3) and rebuild installer (step 6).
 - **JavaScript**: Edit `app/assets/script.js`
 - **Main Logic**: Edit `app/app.py`
 
+## Optional Performance Benchmarks
+
+Install the development dependencies and run the opt-in benchmarks from the repository root:
+
+```cmd
+python -m pip install -r requirements-dev.txt
+python -m pytest benchmarks\benchmark_sea_anemone.py --benchmark-only --benchmark-columns=mean,median,stddev
+```
+
+The suite measures USF archive loading, saved-session restoration, server-side Plotly figure rendering and JSON serialization, single-site inversion, and full inversion using the included 74-site sample archive. It is kept outside `tests/` so the benchmarks do not run as part of the regular CI test suite. Results are machine-dependent; compare runs on the same machine and dataset. These benchmarks do not measure browser rendering or end-to-end point-selection latency.
+
 ## Common Issues
 
 ### "pip not found"
