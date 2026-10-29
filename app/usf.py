@@ -140,7 +140,7 @@ class Sweep:
     def correct_polarity(self, **kwargs):
         self.data *= self.get_polarity(**kwargs)        
 
-from anemone.forwards import Forward, logify_forward
+from anemone.forwards import Forward
 from anemone.system import Loop, Receiver, Waveform, FilterChain, ButterworthFilter
 import numpy as np
 
