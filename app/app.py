@@ -628,9 +628,12 @@ def upload_file(contents):
     warning_msg = None
     if sesh.save_dir is None:
         warning_msg = "No working directory selected. You can still explore data; choose Save to set one."
-    if contents[0].startswith('data:application/x-zip'):
-        # try:
+    if contents[0].startswith('data:application/x-zip') or contents[0].startswith('data:application/zip'):
         sesh.data, sesh.forwards = temframe.from_zip_content(contents[0])
+    else:
+        print(contents[0][:500])
+        print('data upload failed')
+        return [no_update]*7
 
         # except Exception as e:
         #     return (html.Div("Upload failed."),no_update,no_update,no_update,no_update,no_update,no_update,build_data_summary(),True,f"Upload failed: Only one geometry is supported at a time",True,True,no_update,no_update,no_update,no_update,no_update,{'display': 'block'}, {'display': 'block'})

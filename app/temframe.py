@@ -176,7 +176,7 @@ def apply_slope_filter(temdf, threshold=1.0, min_points=5):
             (temdf['site_id'] == site) & \
             (temdf['system_id'] == system)
 
-        temdf.loc[mask, 'inuse_manual'] = False
+        temdf.loc[mask, 'inuse_manual'] = 0
 
     return temdf
 
@@ -191,7 +191,7 @@ def from_zip_content(zip_content):
     import base64
 
     if isinstance(zip_content, str):
-        zip_bytes = base64.b64decode(zip_content)
+        zip_bytes = base64.b64decode(zip_content.split(',')[-1])
     else:
         zip_bytes = zip_content
 
@@ -288,7 +288,7 @@ def from_sweeps(sweeps, folder_path=None):
 
     df_data = DataFrame(data_avg)
     neg_mask = df_data['dbdt'] <= 0
-    df_data.loc[neg_mask, 'inuse_manual'] = False
+    df_data.loc[neg_mask, 'inuse_manual'] = 0
     df_data.sort_values(by=['site_id','system_id', 'gate_id'], inplace=True)
     df_data.reset_index(drop=True, inplace=True)
     

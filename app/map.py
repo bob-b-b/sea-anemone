@@ -632,14 +632,14 @@ class Map(Panel):
                     line_id = 1
                     node = 0
                     if self.lines is None:
-                        self.lines = DataFrame({'latitude':[lat0], 'longitude':[lon0], 'line':[line_id], 'node':[node], 'length':[-1], 'total_length':[-1], 'radius':[100]})
+                        self.lines = DataFrame({'latitude':[lat0], 'longitude':[lon0], 'line':[line_id], 'node':[node], 'length':[-1.], 'total_length':[-1.], 'radius':[100.]})
                     else:
                         lat, lon, line_id, node, _, __, ___ = self.lines.loc[len(self.lines)-1].tolist()
                         if cdist(lat,lon, lat0, lon0) > 50:
                             line_id +=1 
                             node = 0
-                            self.lines.loc[len(self.lines)] = [lat0, lon0, line_id, node, -1, -1, 100]
-                    self.lines.loc[len(self.lines)] = [lat1, lon1, line_id, node+1, -1, -1, 100]
+                            self.lines.loc[len(self.lines)] = [lat0, lon0, line_id, node, -1., -1., 100.]
+                    self.lines.loc[len(self.lines)] = [lat1, lon1, line_id, node+1, -1., -1., 100.]
                     del relayout_data['shapes']
                     sesh.lines = self.lines.copy()
                     sesh.update_site_table()
