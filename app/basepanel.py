@@ -15,6 +15,12 @@ import plotly.graph_objects as go
 
 
 
+def site_lookup(df, x_axis):
+    """x-position of each site along x_axis, stored in layout.meta so the browser can map a hovered x back to a site (map hover marker)."""
+    site_x = df[df['site_id'] != -1].groupby('site_id')[x_axis].first().dropna()
+    return {'site_x': site_x.values.tolist(), 'site_id': site_x.index.tolist()}
+
+
 def gear_maker(id):
     gear = html.Div(
         html.Span(
@@ -335,7 +341,7 @@ class Panel:
 
             
     def initialize(self):
-        children = [dcc.Graph(figure=self.render(), id=self.id, mathjax=True, style={'height':'98%', 'width': '98%', 'align': 'center'})]
+        children = [dcc.Graph(figure=self.render(), id=self.id, mathjax=True, clear_on_unhover=True, style={'height':'98%', 'width': '98%', 'align': 'center'})]
         if self.settings is not None:
             children.append(gear_maker(self.id))
         return html.Div(children,

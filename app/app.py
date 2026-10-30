@@ -30,6 +30,10 @@ import dash_bootstrap_components as dbc
 from dash.dash import no_update
 import numpy as np
 
+
+import plotly.basedatatypes
+plotly.basedatatypes.convert_to_base64 = lambda obj: None
+
 import temframe
 
 
@@ -81,6 +85,7 @@ app.layout = html.Div([
     dcc.Store(id="starting-model", data={"rho": 10.0,"depth": np.cumsum(np.logspace(0, 1.3, 31)).tolist()}),
     dcc.Store(id='starting-model-selected',data=[]),
     dcc.Store(id='data-buffer',data={"length": 50, "start_site":0}),
+    dcc.Store(id='map-hover-site', data=None),
     html.Div([dbc.Toast(
                     "⛔ Please Zoom or Pan in the map.",
                     id="zoom-toast",
@@ -194,6 +199,56 @@ app.clientside_callback(
     Input("disableButton", "id")
 )
 
+# Hovering the data/model section moves the map's 'hover' marker to the nearest site, entirely in the browser
+# (Plotly.restyle on one trace), so the map is never re-rendered. Sections carry a site/x lookup in layout.meta.
+map_hover_js = """
+function(hoverData) {
+    const mapGd = document.querySelector('#map .js-plotly-plot');
+    if (!mapGd || !mapGd.data) return window.dash_clientside.no_update;
+    const iHover = mapGd.data.findIndex(t => t.name === 'hover');
+    if (iHover < 0) return window.dash_clientside.no_update;
+
+    const num = v => (typeof v === 'number') ? v : Date.parse(v);
+    let site = null;
+    if (hoverData && hoverData.points && hoverData.points.length) {
+        const srcId = window.dash_clientside.callback_context.triggered[0].prop_id.split('.')[0];
+        const src = document.querySelector('#' + srcId + ' .js-plotly-plot');
+        const meta = src && src.layout && src.layout.meta;
+        const x = num(hoverData.points[0].x);
+        if (meta && meta.site_x && !isNaN(x)) {
+            let bestD = Infinity;
+            for (let i = 0; i < meta.site_x.length; i++) {
+                const d = Math.abs(num(meta.site_x[i]) - x);
+                if (d < bestD) { bestD = d; site = meta.site_id[i]; }
+            }
+        }
+    }
+    // skip if unchanged; the length check catches the server re-rendering the map (which empties the trace)
+    const shown = (mapGd.data[iHover].lat || []).length > 0;
+    if (mapGd._hoverSite === site && shown === (site !== null)) return window.dash_clientside.no_update;
+    mapGd._hoverSite = site;
+
+    let lat = [], lon = [];
+    if (site !== null) {
+        for (const t of mapGd.data) {
+            if (t.name === 'hover' || !t.customdata) continue;
+            const j = t.customdata.findIndex(c => (Array.isArray(c) ? c[0] : c) === site);
+            if (j >= 0) { lat = [t.lat[j]]; lon = [t.lon[j]]; break; }
+        }
+    }
+    Plotly.restyle(mapGd, {lat: [lat], lon: [lon]}, [iHover]);
+    return site;
+}
+"""
+# one callback per section, since each section panel is only in some of the layouts
+for section_id in [dbdt2.id, mod2.id]:
+    app.clientside_callback(
+        map_hover_js,
+        Output('map-hover-site', 'data', allow_duplicate=True),
+        Input(section_id, 'hoverData'),
+        prevent_initial_call=True
+    )
+
 @app.callback(
     dbdt1.output, dbdt2.output, rhoa.output,
     Input("disableButton", "n_clicks"),
@@ -208,9 +263,9 @@ def show_value(n1, n2, ttem_selected, sounding_selected, rhoa_selected, interpre
     if interpret_layout_color == 'primary':
         raise PreventUpdate
     if str(ctx.triggered_id) == 'disableButton':
-        inuse = False
+        inuse = 0
     elif str(ctx.triggered_id) == 'enableButton':
-        inuse = True
+        inuse = 1
 
     if sounding_selected and len(sounding_selected['points'])>0:
         data_ids = [point['customdata'][1] for point in sounding_selected['points'] if 'customdata' in point]
@@ -534,7 +589,7 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color, r
         x_value = click_data['points'][0]['x']
         site_id = mod2.dataframe.query(f'{mod2.settings.x_axis} == @x_value')['site_id'].iloc[0]
     elif trigger_id == 'map':
-        if click_data['points'][0]['curveNumber'] < 2:
+        if m1._layers[click_data['points'][0]['curveNumber']] in ('buffer', 'sites'):
             x_value,y_value = click_data['points'][0]['lon'],click_data['points'][0]['lat']
             all_dist = cdist(m1.dataframe.latitude, m1.dataframe.longitude, y_value+0.00000002, x_value+0.000000002)
             site_id = m1.dataframe.loc[np.argmin(all_dist), 'site_id']
@@ -760,7 +815,6 @@ def update_layout(model,
         return layouts.review, *colors.values()
 
     elif button_id == "interpret_layout":
-        m1.make_grid()
         m1.settings.legend=True
         m1.settings.dragmode='pan'
         return layouts.interpret, *colors.values()

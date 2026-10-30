@@ -897,7 +897,9 @@ class dbdtSection(Panel):
         print(x_min, x_max)
 
         if self.settings.y_axis=='gate_id':
-            return self.observed_by_gate_id()
+            fig = self.observed_by_gate_id()
+            fig.update_layout(meta=site_lookup(self.dataframe, x_axis))
+            return fig
 
         if 'dbdt_syn' in self.dataframe.columns:
             fig = self.compare_synthetic()
@@ -973,7 +975,8 @@ class dbdtSection(Panel):
         )
         if x_min is not None and x_max is not None:
             fig.update_xaxes(range=[x_min, x_max], autorange=False)
-        return fig    
+        fig.update_layout(meta=site_lookup(self.dataframe, x_axis))
+        return fig
 
 @nosj
 class AutoProcessing(PanelSettings):

@@ -143,6 +143,7 @@ class ModelSection(Panel):
                         id=self.id,
                         figure=self.render(),
                         mathjax=True,
+                        clear_on_unhover=True,
                         style={"height": "95%"}
                         ),
                         html.Div(
@@ -465,6 +466,7 @@ class ModelSection(Panel):
                 line_width=1,
                 layer='above',
             )
+        fig.update_layout(meta=site_lookup(df, x_axis))
         return fig
         
         # def add_callbacks(self, app):

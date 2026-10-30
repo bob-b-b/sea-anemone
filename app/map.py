@@ -298,6 +298,7 @@ class MapSettings(PanelSettings):
     highlight_color: str= '#ffff00'  # Default highlight color
     plot_by: Literal['', 'misfit', 'doi', 'date', 'mean-res'] = ''
     buffer_color: str= "#ffffff"  # Default buffer color
+    hover_color: str= "#00ffff"  # marker for the site under the cursor in the section panels
     dragmode: str='select'
     view: dict = None
     markersize: int=14
@@ -329,6 +330,12 @@ class Map(Panel):
 
         zoom = self.settings.view['map.zoom'] if self.settings.view is not None else self.settings.zoom
         center = self.settings.view['map.center'] if self.settings.view is not None else None
+
+        if center is None and len(df_plot) > 0:
+            center = dict(lat=df_plot['latitude'].mean(), lon=df_plot['longitude'].mean())
+            # until the user pans/zooms, fit the survey into view (the default zoom hides small surveys and the mean-res grid)
+            span = max(np.ptp(df_plot['latitude']), np.ptp(df_plot['longitude'])*np.cos(np.radians(center['lat'])), 1e-3)
+            zoom = float(np.clip(np.log2(360./span) - 1.5, 1, 18))
 
         c_layers = []
 
@@ -393,6 +400,7 @@ class Map(Panel):
                 fig.add_trace(
                     trace
                 )
+                c_layers.append('highlight')
 
         if self.lines is not None and self.settings.dragmode=='drawline':
             for line_id in self.lines.line.unique():
@@ -412,13 +420,19 @@ class Map(Panel):
                           newshape=dict(line_color='black', line_width=3, line_dash='dash'),
                           dragmode=self.settings.dragmode, hovermode=hovermode)
         
-        if hasattr(self, 'grid') and self.grid is not None and self.settings.plot_by == 'mean-res':
-            from __main__ import sesh
+        from __main__ import sesh
+        if self.settings.plot_by == 'mean-res' and sesh.models is not None:
+            self.make_grid(sesh.models)
             z_new = np.array([float(b) for b in self.settings.mean_res.split('-')])
             res_grid = np.log10(rediscretize(sesh.models, z_new))
             fig.add_trace(self.grid.graph_object(res_grid, zmin=0, zmax=2, colorscale='Turbo', name='Mean Res'))
-            c_layers.append('meanres')
-        
+        else:
+            # plotly.js keeps a trace's map layers where they were first created, so the mean-res layer must exist
+            # (empty) from the first render, otherwise switching to mean-res later draws it on top of the sites
+            fig.add_trace(go.Choroplethmap(geojson={'type': 'FeatureCollection', 'features': []}, locations=[], z=[],
+                                           showscale=False, showlegend=False, hoverinfo='skip', name='Mean Res'))
+        c_layers.append('meanres')
+
         data_list = list(fig.data)
         reordered_data = []
         reordered_labels = []
@@ -438,6 +452,11 @@ class Map(Panel):
 
         fig.data = reordered_data
         self._layers = reordered_labels
+
+        # empty trace moved client-side (Plotly.restyle) when hovering the section panels; kept last so curve numbers don't shift
+        fig.add_trace(go.Scattermap(lat=[], lon=[], mode='markers', name='hover', hoverinfo='skip', showlegend=False,
+                                    marker=dict(size=self.settings.markersize*2, color=self.settings.hover_color)))
+        self._layers.append('hover')
 
         if self.settings.legend:
             fig.update_layout(showlegend=True,
@@ -579,8 +598,15 @@ class Map(Panel):
             }
         )
 
-    def make_grid(self):
-        self.grid = Grid(self.dataframe.latitude.values, self.dataframe.longitude.values, pixel_size=25., buffer_pixel=4)
+    def make_grid(self, models):
+        # grid points must be the model sites in rediscretize's row order (sorted site_id), so the gridded values line up
+        site_ids = np.sort(models['site_id'].unique())
+        src = models if {'latitude', 'longitude'} <= set(models.columns) else self.dataframe
+        locs = src.groupby('site_id')[['latitude', 'longitude']].first().reindex(site_ids).values
+        if getattr(self, 'grid', None) is not None and np.array_equal(getattr(self, '_grid_locs', None), locs):
+            return
+        self.grid = Grid(locs[:, 0], locs[:, 1], pixel_size=25., buffer_pixel=4)
+        self._grid_locs = locs
 
     def add_callbacks(self, app):
         super().add_callbacks(app)
@@ -677,12 +703,9 @@ class Map(Panel):
             if self.lines is None:
                 return result
 
-            line_threshold = 1
-            # if self.buffer_sites is not None:
-            #     line_threshold+=1
             if 'points' in click_data and len(click_data['points'])==1:
                 curve_number = click_data['points'][0]['curveNumber']
-                if curve_number>line_threshold:
+                if self._layers[curve_number].startswith('line_'):
                     all_dist = cdist(click_data['points'][0]['lat'], click_data['points'][0]['lon'], self.lines['latitude'].values, self.lines['longitude'].values)
                     line_id = self.lines['line'].values[np.argmin(all_dist)]
                     x_axis = 'line '+f'{line_id:0.0f}'
