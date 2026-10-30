@@ -13,12 +13,145 @@ from dataclasses_jsonschema import JsonSchemaMixin
 import plotly.express as px
 import plotly.graph_objects as go
 
+import numpy as np
+import pandas as pd
+
+
+
+def site_positions(df, x_axis):
+    """x-position of each site along x_axis (indexed by site_id, sorted by position)"""
+    if df is None or x_axis not in df.columns:
+        return pd.Series(dtype=float)
+    return df[df['site_id'] != -1].groupby('site_id')[x_axis].first().dropna().sort_values()
 
 
 def site_lookup(df, x_axis):
     """x-position of each site along x_axis, stored in layout.meta so the browser can map a hovered x back to a site (map hover marker)."""
-    site_x = df[df['site_id'] != -1].groupby('site_id')[x_axis].first().dropna()
+    site_x = site_positions(df, x_axis)
     return {'site_x': site_x.values.tolist(), 'site_id': site_x.index.tolist()}
+
+
+class SiteBuffer:
+    """The window of `length` consecutive sites that the section panels zoom to and the sounding panels show, plus the
+    sites selected on the map. Shared by the panels and read when they render, so every render shows the current window.
+    Sites are counted in the order they appear along the section x axis (site_id, daytime or distance along a line),
+    taken from `section`'s settings."""
+    def __init__(self, length=50):
+        self.start = 0
+        self.length = length
+        self.selected = []
+        self.section = None
+
+    def sites(self):
+        from __main__ import sesh
+        df = sesh.data if sesh.data is not None else sesh.models
+        if df is None or self.section is None:
+            return np.array([], dtype=int)
+        x_axis = self.section.settings.x_axis
+        if x_axis not in df.columns:
+            return np.array([], dtype=int)
+        if x_axis.startswith('_line'):
+            df = df.loc[np.abs(df[x_axis.replace('_x', '_y')]) < self.section.settings.radius]
+        return site_positions(df, x_axis).index.to_numpy()
+
+    def _clamp(self, n_sites):
+        self.start = int(np.clip(self.start, 0, max(0, n_sites - self.length)))
+
+    def window(self):
+        sites = self.sites()
+        self._clamp(len(sites))
+        return sites[self.start:self.start + self.length]
+
+    def reset(self):
+        self.start = 0
+        self.selected = []
+
+    def step(self, n_windows):
+        self.start += n_windows * self.length
+        self._clamp(len(self.sites()))
+
+    def center_on(self, site_ids):
+        """centre the window on site_ids (the ones on the current axis); False if none of them are"""
+        sites = self.sites()
+        idx = np.flatnonzero(np.isin(sites, site_ids))
+        if len(idx) == 0:
+            return False
+        self.start = int(round((idx.min() + idx.max()) / 2 - (self.length - 1) / 2))
+        self._clamp(len(sites))
+        return True
+
+    def scroll_to(self, site_id, margin=5):
+        """slide the window just far enough to show site_id with `margin` sites to spare"""
+        sites = self.sites()
+        idx = np.flatnonzero(sites == site_id)
+        if len(idx) == 0:
+            return
+        i, margin = int(idx[0]), min(margin, (self.length - 1) // 2)
+        if i < self.start + margin:
+            self.start = i - margin
+        elif i > self.start + self.length - 1 - margin:
+            self.start = i - self.length + 1 + margin
+        self._clamp(len(sites))
+
+    def store(self):
+        """state for the 'data-buffer' store (buffer progress bar)"""
+        return {'length': self.length, 'start_site': self.start, 'total': len(self.sites())}
+
+
+def half_spacing(site_x):
+    if len(site_x) > 1:
+        return site_x.diff().median() / 2
+    return pd.Timedelta(seconds=30) if pd.api.types.is_datetime64_any_dtype(site_x) else 0.5
+
+
+def apply_site_buffer(fig, site_x, buffer):
+    """zoom a section figure to the buffer window and outline the selected sites (dotted, one box per run of
+    neighbouring sites); site_x as from site_positions. Returns the x range, or None if no window sites are on the plot."""
+    if buffer is None or len(site_x) == 0:
+        return None
+    dx = half_spacing(site_x)
+    in_view = site_x[site_x.index.isin(buffer.window())]
+    xrange = None
+    if len(in_view):
+        xrange = [in_view.iloc[0] - dx, in_view.iloc[-1] + dx]
+        fig.update_xaxes(range=xrange, autorange=False)
+    pos = np.flatnonzero(site_x.index.isin(buffer.selected))
+    for run in np.split(pos, np.flatnonzero(np.diff(pos) > 1) + 1) if len(pos) else []:
+        fig.add_shape(type='rect', xref='x', yref='paper', x0=site_x.iloc[run[0]] - dx, x1=site_x.iloc[run[-1]] + dx,
+                      y0=0, y1=1, line=dict(color='black', width=1.5, dash='dot'), fillcolor='rgba(0,0,0,0)')
+    return xrange
+
+
+def axis_menu(target, options, value=None, live=True):
+    """Menu shown when the user clicks an axis or colour bar title (assets/axismenu.js), stored in layout.meta['menus'].
+    Picking an option sets `value` on the component `target`; options are (label, value) pairs or plain values.
+    With live=True the browser lists the target's own options when it has them (they may be newer than the figure)."""
+    options = [{'label': o[0], 'value': o[1]} if isinstance(o, tuple) else {'label': str(o), 'value': o} for o in options]
+    return {'target': target, 'options': options, 'value': value, 'live': live}
+
+
+def section_x_menu():
+    """x-axis menu of the section plots: drives the model section's x-axis dropdown, which the tTEM section follows."""
+    from __main__ import sesh
+    options = ['site_id', 'daytime']
+    if sesh.lines is not None:
+        options = [f'line {line_id:0.0f}' for line_id in sesh.lines['line'].unique()] + options
+    return axis_menu('model_section_axis', options)
+
+
+def parse_mean_res(value):
+    """mean-res interval from the map's interval dropdown: '0-5' -> ('depth', 0, 5) (m below ground),
+    'elev 420 410' -> ('elevation', 420, 410) (top and bottom elevation of the slice)"""
+    if value.startswith('elev '):
+        top, bot = [float(v) for v in value.split()[1:]]
+        return 'elevation', top, bot
+    top, bot = [float(v) for v in value.split('-')]
+    return 'depth', top, bot
+
+
+def axis_label(x_axis):
+    """'_line_1_x' -> 'line 1'"""
+    return x_axis.replace('_x', '').replace('_', ' ').strip()
 
 
 def gear_maker(id):
@@ -346,6 +479,14 @@ class Panel:
             children.append(gear_maker(self.id))
         return html.Div(children,
                         style={'height': '100%'})
+
+    def message_render(self, message):
+        """empty figure with a message in the middle; the axes stay, so their title menus still work"""
+        fig = go.Figure()
+        fig.add_annotation(text=message, x=0.5, y=0.5, xref='paper', yref='paper', showarrow=False)
+        fig.update_xaxes(showticklabels=False, showgrid=False, zeroline=False)
+        fig.update_yaxes(showticklabels=False, showgrid=False, zeroline=False)
+        return fig
 
     def empty_render(self):
         fig = px.scatter(title='No data available', labels={'x': 'X-axis', 'y': 'Y-axis'})

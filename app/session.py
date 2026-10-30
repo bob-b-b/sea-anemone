@@ -96,7 +96,8 @@ class Session:
         
         if self.data is not None and isinstance(self.data, str):
             self.data = pd.read_csv(self.save_dir+self.data)
-            self.data['inuse_manual']=self.data['inuse_manual'].astype(bool)
+            # CSV doesn't keep the nullable dtype: unset manual flags come back as NaN (older sessions may hold 0/1)
+            self.data['inuse_manual']=self.data['inuse_manual'].astype('boolean')
             self.data['inuse_auto']=self.data['inuse_auto'].astype(bool)
 
         if self.models is not None and isinstance(self.models, str):
@@ -124,7 +125,7 @@ class Session:
 
         if self.data is not None:
             df = self.data.copy()
-            df['include'] = df['inuse_manual'].astype(bool, copy=True).fillna(df['inuse_auto'])
+            df['include'] = temframe.include_mask(df)
             aggfunc = dict(                        
                         date=('date','first'),
                         daytime=('daytime','first'),
@@ -416,9 +417,9 @@ class Session:
         df_data['misfit'] = df_data['dbdt'] - df_data['dbdt_syn']
 
         # flags
-        df_data['inuse_auto'] = 1
-        df_data['inuse_manual'] = 1
-        df_data['include'] = 1
+        df_data['inuse_auto'] = True
+        df_data['inuse_manual'] = pd.array([True] * len(df_data), dtype='boolean')
+        df_data['include'] = True
         df_data['daytime'] = 1
         df_data['zone_number'] = zone_number
         df_data['zone_letter'] = zone_letter

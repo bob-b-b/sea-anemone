@@ -8,7 +8,10 @@ import numpy as np
 from nosj import nosj
 import utm
 from pandas import DataFrame, concat
+from session import clean_table
 
+
+DEPTH_INTERVALS = ['0-5', '5-10', '10-15', '15-20', '20-30', '30-40', '40-50', '50-75', '75-100', '100-125', '125-150', '150-200', '200-250', '300-400', '400-500']
 
 line_colors = [
     '#1f77b4',  # muted blue
@@ -267,6 +270,7 @@ class Grid:
     def graph_object(self, z_data, **kwargs):
         z_mesh = self.grid_values(z_data)
         opacity = kwargs.pop('opacity', 1)
+        title = kwargs.pop('colorbar_title', 'mean res, log\u2081\u2080(\u03a9\u00b7m) \u25be')
         return go.Choroplethmap(
             geojson=self.geojson,
             locations=self.ids,
@@ -285,7 +289,7 @@ class Grid:
                 yanchor="top",
                 len=0.75,
                 thickness=10,
-                title=dict(text='log\u2081\u2080(\u03a9\u00b7m)', side="bottom")
+                title=dict(text=title, side="bottom")
             ),
             **kwargs
         )
@@ -310,7 +314,7 @@ class MapSettings(PanelSettings):
 class Map(Panel):
     dataframe: None
     highlighted: int = None
-    buffer_sites: list = None
+    buffer: SiteBuffer = None
     lines = None
     drawing: bool = False  # click-drawing lines (assets/linedraw.js)
     res_panel = None  # panel whose settings.vmin/vmax set the mean-res colour range, so it matches that panel (model section)
@@ -358,7 +362,7 @@ class Map(Panel):
                     len=0.75,
                     thickness = 10,
                     title=dict(
-                text='',
+                text=self.settings.plot_by+' ▾',
                 side="bottom"))
             )
             c_layers.append('sites')
@@ -369,10 +373,8 @@ class Map(Panel):
                               showlegend=(self.settings.plot_by == 'mean-res'))
             c_layers.append('sites')
 
-        if self.buffer_sites is None:
-            df_buffer = self.dataframe.copy()
-        else:
-            df_buffer = self.dataframe.copy()[self.dataframe["site_id"].isin(self.buffer_sites)]
+        if self.buffer is not None:
+            df_buffer = self.dataframe[self.dataframe["site_id"].isin(self.buffer.window())]
             buffer_trace = px.scatter_map(
                 df_buffer,
                 lat="latitude",
@@ -381,7 +383,7 @@ class Map(Panel):
             )
             c_layers.append('buffer')
             buffer_trace.update_traces(
-                marker=dict(size=self.settings.markersize*1.5, color=self.settings.buffer_color),
+                marker=dict(size=self.settings.markersize*1.2, color=self.settings.buffer_color),
                 name="Buffer window"
             )
 
@@ -395,19 +397,18 @@ class Map(Panel):
                     "sourcetype": "raster",
                     "source": ['https://mt1.google.com/vt/lyrs=s&x={x}&y={y}&z={z}']
                 }])
-        if self.highlighted is not None:
-            highlight_trace = px.scatter_map(df_plot[df_plot.index == self.highlighted], lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.highlight_color])
-            highlight_trace.update_traces(marker=dict(size=self.settings.markersize*2))
+        # selected sites (one clicked, or several selected on the map or in the tTEM section)
+        selected = self.buffer.selected if self.buffer is not None else [self.highlighted]
+        if len(selected) and selected[0] is not None:
+            highlight_trace = px.scatter_map(df_plot[df_plot['site_id'].isin(selected)], lat="latitude", lon="longitude", zoom=zoom, center=center, color_discrete_sequence=[self.settings.buffer_color])
+            highlight_trace.update_traces(marker=dict(size=self.settings.markersize*1.2))
             for trace in highlight_trace.data:
                 fig.add_trace(
                     trace
                 )
                 c_layers.append('highlight')
 
-        if self.lines is not None and self.settings.dragmode=='drawline':
-            for line_id in self.lines.line.unique():
-                fig.add_shape(self.line2path(line_id))
-        elif self.lines is not None:
+        if self.lines is not None:
             fig2 = px.line_map(self.lines, lat='latitude', lon='longitude', line_group='line', color='line', zoom=zoom, center=center, color_discrete_sequence=line_colors)
             fig2.update_traces(mode='lines', line=dict(width=self.settings.line_width),
                                showlegend=self.settings.legend)
@@ -416,19 +417,24 @@ class Map(Panel):
             for i in range(len(fig2.data)):
                 c_layers.append(f'line_{i:02d}')
 
-        hovermode = False if self.settings.dragmode=='drawline' else None
+        # lines are click-drawn (assets/linedraw.js); 'drawline' may still be in settings saved with plotly's own line drawing
         fig.update_layout(margin={"r":0,"t":0,"l":0,"b":0},
-                          modebar=dict(add=['drawline', 'eraseshape'], remove=['zoomIn', 'zoomOut', 'lasso', 'toImage', 'plotly-logomark']),
-                          newshape=dict(line_color='black', line_width=3, line_dash='dash'),
-                          dragmode=self.settings.dragmode, hovermode=hovermode)
+                          modebar=dict(remove=['zoomIn', 'zoomOut', 'lasso', 'toImage', 'plotly-logomark']),
+                          dragmode='pan' if self.settings.dragmode == 'drawline' else self.settings.dragmode)
         
         from __main__ import sesh
         if self.settings.plot_by == 'mean-res' and sesh.models is not None:
             self.make_grid(sesh.models)
-            z_new = np.array([float(b) for b in self.settings.mean_res.split('-')])
-            res_grid = np.log10(rediscretize(sesh.models, z_new))
+            kind, top, bot = parse_mean_res(self.settings.mean_res)
+            if kind == 'elevation':
+                res_grid = np.log10(elevation_mean_res(sesh.models, top, bot))
+                interval = f'{top:g} to {bot:g} m elev.'
+            else:
+                res_grid = np.log10(rediscretize(sesh.models, np.array([top, bot])))
+                interval = f'{top:g}-{bot:g} m depth'
             zmin, zmax = (0, 2) if self.res_panel is None else np.log10([self.res_panel.settings.vmin, self.res_panel.settings.vmax])
-            fig.add_trace(self.grid.graph_object(res_grid, zmin=zmin, zmax=zmax, colorscale='Turbo', name='Mean Res'))
+            fig.add_trace(self.grid.graph_object(res_grid, zmin=zmin, zmax=zmax, colorscale='Turbo', name='Mean Res',
+                                                 colorbar_title=f'mean res {interval}, log\u2081\u2080(\u03a9\u00b7m) \u25be'))
         else:
             # plotly.js keeps a trace's map layers where they were first created, so the mean-res layer must exist
             # (empty) from the first render, otherwise switching to mean-res later draws it on top of the sites
@@ -466,6 +472,14 @@ class Map(Panel):
                                     line=dict(width=self.settings.line_width, color='black'), marker=dict(size=8, color='black')))
         self._layers.append('draft')
 
+        # stable trace ids, so plotly matches map layers by role when traces come and go (lines deleted, highlight
+        # shown/hidden); with the default index-based ids, maplibre was asked to remove layers that didn't exist
+        seen = {}
+        for trace, label in zip(fig.data, self._layers):
+            key = f'line-{trace.name}' if label.startswith('line_') else label
+            seen[key] = seen.get(key, -1) + 1
+            trace.uid = key if seen[key] == 0 else f'{key}-{seen[key]}'
+
         if self.settings.legend:
             fig.update_layout(showlegend=True,
                 legend=dict(x=0.01, y=0.99,
@@ -474,70 +488,17 @@ class Map(Panel):
                     bordercolor="black",borderwidth=1,
                 )
             )
+
+        # clicking the colour bar title picks what the sites are coloured by (assets/axismenu.js); without a colour bar, an annotation stands in
+        plot_by = [o for o in self.settings.schema['properties']['plot_by']['enum']
+                   if o == '' or o in self.dataframe.columns or (o == 'mean-res' and sesh.models is not None)]
+        fig.update_layout(meta={'menus': {'colorbar': axis_menu(self.id+'_plot_by', plot_by, self.settings.plot_by, live=False)}})
+        if self.settings.plot_by not in self.dataframe.columns and not (self.settings.plot_by == 'mean-res' and sesh.models is not None):
+            fig.add_annotation(name='menu:colorbar', text='colour by ▾', x=0.5, y=0.01, xref='paper', yref='paper', yanchor='bottom',
+                               showarrow=False, bgcolor='rgba(255,255,255,0.8)')
         return fig
     
         
-    def line2path(self, line_id):
-        c_line = self.lines.loc[self.lines.line==line_id]
-        path_dict = {'editable': True, 'type':'path', 'line': {'color': line_colors[int(line_id)%len(line_colors)-1], 'width': 3, 'dash': 'dash'}}
-        cxs,cys = self.latlon2paper(c_line.latitude.values, c_line.longitude.values)
-
-        path = f'M{cxs[0]},{cys[0]}'
-        for cx,cy in zip(cxs[1:-1],cys[1:-1]):
-            path += f'L{cx},{cy}'
-
-        # this is a little stupid, but it makes it possible to continuously click and piece a line together. Clicking on an identical point prevented the drag functionality to extend the line.
-
-        dx = cxs[-1]-cxs[-2]
-        dy = cys[-1]-cys[-2]
-        path += f'L{cxs[-2]+0.95*dx},{cys[-2]+0.95*dy}'
-        
-        path_dict['path'] = path
-        return path_dict
-    
-    def path2line(self, path_str):
-        points = path_str[1:].split('L')
-        lat, lon = [], []
-        for point in points:
-            cx, cy = map(float, point.split(','))
-            plat, plon = self.paper2latlon(cx, cy)
-            lat.append(plat)
-            lon.append(plon)
-        return lat, lon
-
-    @property
-    def lat0(self):
-        return min([p[1] for p in self.settings.view['map._derived']['coordinates']])
-    @property
-    def lat1(self):
-        return max([p[1] for p in self.settings.view['map._derived']['coordinates']])
-    @property
-    def lon0(self):
-        return min([p[0] for p in self.settings.view['map._derived']['coordinates']])
-    @property
-    def lon1(self):
-        return max([p[0] for p in self.settings.view['map._derived']['coordinates']])
-        
-    def paper2latlon(self, x, y):
-        if self.settings.view is None:
-            raise Warning("no view, please zoom")
-        elif self.settings.view['map.bearing']!=0 or self.settings.view['map.pitch']!=0:
-            raise Warning("non-standard view, bearing and pitch must be zero, reset axis and zoom")
-        else:
-            lat = self.lat0 + (self.lat1-self.lat0)*y
-            lon = self.lon0 + (self.lon1-self.lon0)*x
-            return lat,lon
-        
-    def latlon2paper(self, lat,lon):
-        if self.settings.view is None:
-            raise Warning("no view, please zoom")
-        elif self.settings.view['map.bearing']!=0 or self.settings.view['map.pitch']!=0:
-            raise Warning("non-standard view, bearing and pitch must be zero, reset axis and zoom")
-        
-        x = (lon - self.lon0) / (self.lon1-self.lon0)
-        y = (lat - self.lat0) / (self.lat1-self.lat0)
-        return x,y
-
     def initialize(self):
         return html.Div(
             [
@@ -577,12 +538,27 @@ class Map(Panel):
                         dbc.Tooltip("Click to add nodes, double-click to finish a line. Backspace removes the last node, Esc drops the line in progress.",
                                     target=self.id+'_drawline', placement='top'),
                         dcc.Store(id=self.id+'_line_draw'),
+                        dbc.DropdownMenu(
+                            self.delete_line_items(),
+                            id=self.id+'_delete_line',
+                            label="Delete line",
+                            color='danger',
+                            direction='up',
+                            size='sm',
+                            style={
+                                'position': 'absolute',
+                                'bottom': '12px',
+                                'left': '140px',
+                            }
+                        ),
 
                         dbc.Select(
                             options=self.settings.schema['properties']['plot_by']['enum'],
                             id=self.id+'_plot_by',
                             value=self.settings.plot_by,
+                            # kept as the state behind the colour bar title menu (assets/axismenu.js)
                             style={
+                                'display': 'none',
                                 'position': 'absolute',
                                 'bottom': '10px',
                                 'left': '50%',
@@ -592,7 +568,7 @@ class Map(Panel):
                         ),
 
                         dbc.Select(
-                            options=['0-5', '5-10', '10-15', '15-20', '20-30', '30-40', '40-50', '50-75', '75-100', '100-125', '125-150', '150-200', '200-250', '300-400', '400-500'],
+                            options=self.mean_res_options(self.res_panel.settings.y_axis if self.res_panel is not None else 'depth'),
                             id=self.id+'_mean_res',
                             value='0-5',
                             disabled=self.settings.plot_by != 'mean-res',
@@ -622,6 +598,44 @@ class Map(Panel):
             }
         )
 
+    def delete_line_items(self):
+        # one entry per line, with a swatch in the line's map colour (px.line_map assigns line_colors in order)
+        if self.lines is None or len(self.lines) == 0:
+            return [dbc.DropdownMenuItem("No lines", disabled=True)]
+        items = [dbc.DropdownMenuItem([html.Span(style={'display': 'inline-block', 'width': '12px', 'height': '4px', 'marginRight': '8px',
+                                                         'verticalAlign': 'middle', 'backgroundColor': line_colors[i % len(line_colors)]}),
+                                       f'Line {line_id:0.0f}'],
+                                      id={'type': self.id+'_delete_line_item', 'line': int(line_id)})
+                 for i, line_id in enumerate(self.lines['line'].unique())]
+        return items + [dbc.DropdownMenuItem(divider=True),
+                        dbc.DropdownMenuItem("All lines", id={'type': self.id+'_delete_line_item', 'line': -1})]
+
+    def mean_res_options(self, y_axis):
+        """mean-res intervals for the dropdown: depth intervals, or (y_axis 'elevation') elevation slices covering the models"""
+        from __main__ import sesh
+        models = sesh.models
+        if y_axis != 'elevation' or models is None or 'elevation' not in models.columns:
+            return [{'label': f'{i} m', 'value': i} for i in DEPTH_INTERVALS]
+        surface = models.groupby('site_id')['elevation'].first()
+        top = surface.max()
+        deepest = (surface - models.groupby('site_id')['bottom_depth'].max()).min()
+        # about 25 slices, in round steps
+        step = min([1, 2, 5, 10, 20, 25, 50, 100, 200, 500], key=lambda st: abs((top - deepest) / 25 - st))
+        edges = np.arange(np.ceil(top / step) * step, np.floor(deepest / step) * step - step / 2, -step)
+        return [{'label': f'{a:g} to {b:g} m', 'value': f'elev {a:g} {b:g}'} for a, b in zip(edges[:-1], edges[1:])]
+
+    def convert_mean_res(self, value, options):
+        """the option nearest to interval `value`; switching between depth and elevation goes via the median ground elevation"""
+        from __main__ import sesh
+        values = [o['value'] for o in options]
+        if value in values:
+            return value
+        kind, top, bot = parse_mean_res(value)
+        centre = (top + bot) / 2
+        if kind != parse_mean_res(values[0])[0] and sesh.models is not None and 'elevation' in sesh.models.columns:
+            centre = sesh.models.groupby('site_id')['elevation'].first().median() - centre
+        return min(values, key=lambda v: abs(sum(parse_mean_res(v)[1:]) / 2 - centre))
+
     def make_grid(self, models):
         # grid points must be the model sites in rediscretize's row order (sorted site_id), so the gridded values line up
         site_ids = np.sort(models['site_id'].unique())
@@ -649,6 +663,24 @@ class Map(Panel):
             return self.render(), disabled
         
         @app.callback(
+            Output(self.id+'_mean_res', 'options'),
+            Output(self.id+'_mean_res', 'value'),
+            Input({'type': 'settings-model_section', 'key': 'y_axis'}, 'value'),
+            Input(self.id, 'figure'),
+            State(self.id+'_mean_res', 'options'),
+            State(self.id+'_mean_res', 'value'),
+            prevent_initial_call=True
+        )
+        def update_mean_res_options(y_axis, _, options, value):
+            # depth intervals or elevation slices, following the model section's y-axis; the map figure input catches a
+            # newly loaded session (other models, other elevations)
+            new_options = self.mean_res_options(y_axis)
+            new_value = self.convert_mean_res(value, new_options)
+            if new_options == options and new_value == value:
+                raise PreventUpdate
+            return new_options, new_value if new_value != value else no_update
+
+        @app.callback(
             self.output,
             Input(self.id+'_mean_res', 'value'),
             prevent_initial_call=True
@@ -659,63 +691,17 @@ class Map(Panel):
 
         @app.callback(
             self.output,
-            Output('model_section_axis', 'options', allow_duplicate=True),
-            Output({'type': f'settings-model_section', 'key': 'x_axis'}, 'options', allow_duplicate=True),
             Input(self.id, 'relayoutData'),
-            State('model_section_axis', 'options'),
             prevent_initial_call=True
         )
-        def update_view(relayout_data, options):
-            from __main__ import sesh
+        def update_view(relayout_data):
             if 'map.center' in relayout_data:
                 self.settings.view = relayout_data
             elif 'dragmode' in relayout_data:
-                self.settings.dragmode=relayout_data['dragmode']
-                if self.settings.dragmode!='drawline':
-                    sesh.update_site_table()
-
-            elif 'shapes' in relayout_data:
-                if relayout_data['shapes'][-1]['type']=='line':
-                    
-                    lat0,lon0 = self.paper2latlon(relayout_data['shapes'][-1]['x0'], relayout_data['shapes'][-1]['y0'])
-                    lat1,lon1 = self.paper2latlon(relayout_data['shapes'][-1]['x1'], relayout_data['shapes'][-1]['y1'])
-                    line_id = 1
-                    node = 0
-                    if self.lines is None:
-                        self.lines = DataFrame({'latitude':[lat0], 'longitude':[lon0], 'line':[line_id], 'node':[node], 'length':[-1.], 'total_length':[-1.], 'radius':[100.]})
-                    else:
-                        lat, lon, line_id, node, _, __, ___ = self.lines.loc[len(self.lines)-1].tolist()
-                        if cdist(lat,lon, lat0, lon0) > 50:
-                            line_id +=1 
-                            node = 0
-                            self.lines.loc[len(self.lines)] = [lat0, lon0, line_id, node, -1., -1., 100.]
-                    self.lines.loc[len(self.lines)] = [lat1, lon1, line_id, node+1, -1., -1., 100.]
-                    del relayout_data['shapes']
-                    sesh.lines = self.lines.copy()
-                    sesh.update_site_table()
-                    fig=self.render()
-                elif len(relayout_data['shapes'])==len(self.lines.line.unique())-1:
-                    saved_paths = [self.line2path(line_id)['path'] for line_id in self.lines.line.unique()]
-                    remaining_paths = [shape['path'] for shape in relayout_data['shapes']]
-                    for line_id, path in zip(self.lines.line.unique(), saved_paths):
-                        if path not in remaining_paths:
-                            self.lines = self.lines[self.lines.line!=line_id]
-                    sesh.lines = self.lines.copy()
-                    sesh.update_site_table()
+                self.settings.dragmode = relayout_data['dragmode']
             else:
-                key, value = list(relayout_data.items())[0]
-                if key.startswith('shapes[') and key.endswith('].path'):
-                    line_id = int(key.split('[')[1].split(']')[0])+1
-                    lat, lon = self.path2line(value)
-                    self.lines.loc[self.lines.line==line_id, ['latitude', 'longitude']] = np.array([lat, lon]).T
-                    sesh.lines = self.lines.copy()
-                    sesh.update_site_table()
-
-            if sesh.lines is not None:
-                line_ids = sesh.lines['line'].unique()
-                line_options = [f'line {line_id:0.0f}' for line_id in line_ids]
-                options = line_options + [option for option in options if not option.startswith('line')]
-            return self.render(), options, options
+                raise PreventUpdate
+            return self.render()
 
         app.clientside_callback(
             ClientsideFunction('anemone', 'toggleLineDraw'),
@@ -761,6 +747,49 @@ class Map(Panel):
                 line_options = [f'line {line_id:0.0f}' for line_id in sesh.lines['line'].unique()]
                 options = line_options + [option for option in options if not option.startswith('line')]
             return self.render(), self.drawing, options, options
+
+        @app.callback(
+            Output(self.id+'_delete_line', 'children'),
+            Input(self.id, 'figure'),
+        )
+        def update_delete_line_menu(_):
+            return self.delete_line_items()
+
+        @app.callback(
+            self.output,
+            Output('model_section_axis', 'options', allow_duplicate=True),
+            Output({'type': f'settings-model_section', 'key': 'x_axis'}, 'options', allow_duplicate=True),
+            Output('model_section_axis', 'value', allow_duplicate=True),
+            Input({'type': self.id+'_delete_line_item', 'line': ALL}, 'n_clicks'),
+            State('model_section_axis', 'options'),
+            State('model_section_axis', 'value'),
+            prevent_initial_call=True
+        )
+        def delete_line(n_clicks, options, x_axis):
+            # the menu items are re-created with each map render, which fires this with n_clicks None
+            from __main__ import sesh
+            if not ctx.triggered_id or not any(n_clicks) or self.lines is None:
+                raise PreventUpdate
+            line_id = ctx.triggered_id['line']
+            self.lines = self.lines[self.lines['line'] != line_id] if line_id != -1 else self.lines.iloc[0:0]
+            if len(self.lines) == 0:
+                self.lines = None
+                # line_update only rebuilds the per-line columns while there are lines
+                for df in (sesh.data, sesh.site, sesh.models):
+                    if df is not None:
+                        clean_table(df)
+            sesh.lines = None if self.lines is None else self.lines.copy()
+            sesh.update_site_table()
+
+            options = [option for option in (options or []) if not option.startswith('line')]
+            if sesh.lines is not None:
+                options = [f'line {i:0.0f}' for i in sesh.lines['line'].unique()] + options
+            # the sections can't stay on a deleted line
+            if x_axis and x_axis.startswith('line') and int(float(x_axis.split(' ')[-1])) not in (sesh.lines['line'].unique() if sesh.lines is not None else []):
+                x_axis = 'site_id'
+            else:
+                x_axis = no_update
+            return self.render(), options, options, x_axis
 
         @app.callback(
             Output('model_section_axis', 'value', allow_duplicate=True),
@@ -810,6 +839,20 @@ def rediscretize_matrix(z_old, z_new):
     ov /= ov.sum(0, keepdims=True)
     
     return ov
+
+def elevation_mean_res(model_df, top, bot):
+    """thickness-weighted mean resistivity of each site's model between elevations top and bot (rows in sorted site_id
+    order, like rediscretize); NaN where the slice is above ground or below the model"""
+    res = model_df.pivot_table('resistivity', 'site_id', 'center_depth')
+    layers = model_df.groupby('center_depth')[['top_depth', 'bottom_depth']].first().reindex(res.columns)
+    surface = model_df.groupby('site_id')['elevation'].first().reindex(res.index).values[:, None]
+    z1 = np.clip(surface - top, 0, None)  # depth of the slice at each site
+    z2 = np.clip(surface - bot, 0, None)
+    overlap = np.clip(np.minimum(layers['bottom_depth'].values[None, :], z2) - np.maximum(layers['top_depth'].values[None, :], z1), 0, None)
+    thickness = overlap.sum(1)
+    with np.errstate(invalid='ignore', divide='ignore'):
+        return np.where(thickness > 0, np.nansum(res.values * overlap, 1) / thickness, np.nan)
+
 
 def rediscretize(model_df, z_new):
     d_top = model_df['top_depth'].unique()

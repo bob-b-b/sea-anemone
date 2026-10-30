@@ -120,6 +120,7 @@ class ModelSection(Panel):
     highlighted: int = None
     buffer_len = 50
     buffer_start = 0
+    buffer: SiteBuffer = None
     mean_res_interval: tuple = None
     def __init__(self, **kwargs):
         settings = kwargs.pop('settings', ModelSectionSettings(id='model_section'))
@@ -163,7 +164,8 @@ class ModelSection(Panel):
                                             style={"width": "120px"},
                                         ),
                                     ],
-                                    style={"display": "flex", "alignItems": "center", "gap": "8px"},
+                                    # kept as the state behind the x-axis title menu (assets/axismenu.js)
+                                    style={"display": "none"},
                                 ),
                                 html.Div(
                                     [
@@ -185,18 +187,8 @@ class ModelSection(Panel):
                                     style={"display": "flex", "alignItems": "center", "gap": "8px"},
                                 ),
                             ],
-                            style={
-                                "position": "absolute",
-                                "bottom": "12px",
-                                "left": "12px",
-                                "display": "flex",
-                                "flexDirection": "column",
-                                "gap": "8px",
-                                "zIndex": 1000,
-                                "backgroundColor": "rgba(255,255,255,0.85)",
-                                "padding": "6px 8px",
-                                "borderRadius": "6px",
-                            },
+                            id=self.id + "_axis_controls",
+                            style=self.axis_controls_style(False),
                         ),
                         ],
                         style={"position": "relative", "height": "100%"}
@@ -205,6 +197,21 @@ class ModelSection(Panel):
                     style={'height': '100%'} 
                 )
     
+    def axis_controls_style(self, show):
+        # the radius box only applies to lines, so it's only shown while the x-axis is a line
+        return {
+            "position": "absolute",
+            "bottom": "12px",
+            "left": "12px",
+            "display": "flex" if show else "none",
+            "flexDirection": "column",
+            "gap": "8px",
+            "zIndex": 1000,
+            "backgroundColor": "rgba(255,255,255,0.85)",
+            "padding": "6px 8px",
+            "borderRadius": "6px",
+        }
+
     def render_base(self):
         
         if self.dataframe is None: return self.empty_render()
@@ -289,7 +296,7 @@ class ModelSection(Panel):
             aspect='auto',
             origin='lower',
             color_continuous_scale='turbo',
-            labels={'x': x_axis.replace('_x', '').replace('_', ' ').strip(), 'y': y_axis, 'color': 'Resistivity [Ω·m]'},
+            labels={'x': axis_label(x_axis)+' ▾', 'y': y_axis+' ▾', 'color': 'Resistivity [Ω·m]'},
             zmin=np.log10(self.settings.vmin),
             zmax=np.log10(self.settings.vmax),
         )
@@ -315,8 +322,20 @@ class ModelSection(Panel):
             hovermode="x")
         return fig
     
+    def axis_menus(self):
+        return {'x': section_x_menu(),
+                'y': axis_menu({'type': f'settings-{self.id}', 'key': 'y_axis'}, ['depth', 'elevation'], self.settings.y_axis)}
+
     def render(self):
         if self.dataframe is None: return self.empty_render()
+        from __main__ import sesh
+        x_axis = self.settings.x_axis
+        if x_axis.startswith('_line'):
+            near = sesh.models.loc[np.abs(sesh.models[x_axis.replace('_x', '_y')]) < self.settings.radius] if x_axis in sesh.models.columns else sesh.models.iloc[0:0]
+            if len(site_positions(near, x_axis)) == 0:
+                fig = self.message_render(f'No models within {self.settings.radius:g} m of {axis_label(x_axis)}')
+                fig.update_layout(xaxis_title=axis_label(x_axis)+' ▾', yaxis_title=self.settings.y_axis+' ▾', meta={'menus': self.axis_menus()})
+                return fig
         fig = self.render_base()
 
         df = self.dataframe.copy()
@@ -426,39 +445,17 @@ class ModelSection(Panel):
                     )
                 )
 
-            if self.highlighted is not None and self.dataframe is not None:
-
-                selected_df = df[df["site_id"] == self.highlighted]
-
-                if not selected_df.empty:
-                    x_value = selected_df[x_axis].iloc[0]
-
-                    x_vals = np.sort(df[x_axis].dropna().unique())
-
-                    if len(x_vals) > 1:
-                        diffs = np.diff(x_vals)
-                        dx = np.median(diffs) * 0.5
-                    else:
-                        dx = 0.5
-
-                    fig.add_shape(
-                        type="rect",
-                        x0=x_value - dx,
-                        x1=x_value + dx,
-                        y0=df_layers_long["depth"].min(),
-                        y1=df_layers_long["depth"].max()+20,
-                        line=dict(color="black", width=1.5),
-                        fillcolor="rgba(0,0,0,0.0)",
-                    )
-
+        site_x = site_positions(df, x_axis)
         fig.update_xaxes(range=[x_min, x_max], autorange=False)
+        apply_site_buffer(fig, site_x, self.buffer)
         fig.update_yaxes(range=ylim, autorange=False)
 
         if self.settings.misfit:
             fig.update_layout(yaxis2=dict(range=[0, 8]))
 
-        if self.mean_res_interval is not None and self.settings.y_axis == 'depth':
-            top, bot = self.mean_res_interval
+        # the map's mean-res interval, when it's in this section's y units (depth interval or elevation slice)
+        if self.mean_res_interval is not None and self.mean_res_interval[0] == self.settings.y_axis:
+            _, top, bot = self.mean_res_interval
             fig.add_hrect(
                 y0=top, y1=bot,
                 fillcolor='rgba(255,255,255,0.25)',
@@ -466,7 +463,7 @@ class ModelSection(Panel):
                 line_width=1,
                 layer='above',
             )
-        fig.update_layout(meta=site_lookup(df, x_axis))
+        fig.update_layout(meta={**site_lookup(df, x_axis), 'menus': self.axis_menus()})
         return fig
         
         # def add_callbacks(self, app):
@@ -520,6 +517,7 @@ class ModelSection(Panel):
 
         @app.callback(
             Output(self.id+'_radius', 'disabled'),
+            Output(self.id+'_axis_controls', 'style'),
             Output({'type': f'settings-{self.id}', 'key': 'x_axis'}, 'value'),
             Input(self.id+'_axis', 'value'),
             prevent_initial_call=True
@@ -529,7 +527,7 @@ class ModelSection(Panel):
             if x_axis.startswith('line'):
                 disabled = False
             self.settings.x_axis=x_axis
-            return disabled, x_axis
+            return disabled, self.axis_controls_style(not disabled), x_axis
     
         @app.callback(
             Output({'type': f'settings-{self.id}', 'key': 'radius'}, 'value'),
@@ -550,8 +548,7 @@ class ModelSection(Panel):
             if plot_by != 'mean-res':
                 self.mean_res_interval = None
             else:
-                top, bot = [float(b) for b in mean_res_value.split('-')]
-                self.mean_res_interval = (top, bot)
+                self.mean_res_interval = parse_mean_res(mean_res_value)
             return self.render()
 
 

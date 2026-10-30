@@ -176,7 +176,7 @@ def apply_slope_filter(temdf, threshold=1.0, min_points=5):
             (temdf['site_id'] == site) & \
             (temdf['system_id'] == system)
 
-        temdf.loc[mask, 'inuse_manual'] = 0
+        temdf.loc[mask, 'inuse_manual'] = False
 
     return temdf
 
@@ -287,8 +287,10 @@ def from_sweeps(sweeps, folder_path=None):
 
 
     df_data = DataFrame(data_avg)
+    # no manual flag yet (NA); the nullable dtype keeps NA next to True/False
+    df_data['inuse_manual'] = df_data['inuse_manual'].astype('boolean')
     neg_mask = df_data['dbdt'] <= 0
-    df_data.loc[neg_mask, 'inuse_manual'] = 0
+    df_data.loc[neg_mask, 'inuse_manual'] = False
     df_data.sort_values(by=['site_id','system_id', 'gate_id'], inplace=True)
     df_data.reset_index(drop=True, inplace=True)
     
@@ -321,6 +323,11 @@ def from_sweeps(sweeps, folder_path=None):
 
     return df_data, forward_operators
 
+def include_mask(df):
+    """whether each data point is used: the manual flag where one is set (inuse_manual, nullable 'boolean': True,
+    False or NA), otherwise the automatic processing flag"""
+    return df['inuse_manual'].astype('boolean').fillna(df['inuse_auto'].astype(bool)).astype(bool)
+
 def disable(temdf, data_ids):
     temdf['inuse_manual'] = temdf['inuse_manual'].mask(temdf['data_id'].isin(data_ids), False)
     return temdf
@@ -342,8 +349,7 @@ def invert_individually(temdf, dmfwr, res_start, vc=0.4, hc=0.4, max_iterations=
     df_data = temdf.copy()
     df_overview = overview(df_data)
 
-    # this gives a warning and may need to updated if pandas is updated to pandas 3.0
-    df_data['include'] = df_data['inuse_manual'].astype(bool, copy=False).fillna(df_data['inuse_auto'])
+    df_data['include'] = include_mask(df_data)
 
     df_data['dbdt_syn'] = df_data['dbdt']*np.nan
     pivot_multi = df_data[(df_data['site_id']>-1)*(df_data['gate_id']>-1)].pivot_table(
@@ -370,8 +376,8 @@ def invert_individually(temdf, dmfwr, res_start, vc=0.4, hc=0.4, max_iterations=
 
         d_obs = torch.from_numpy(dbdt_values).abs().log()
         d_err = torch.from_numpy(np.log1p(error_values/100.))
-        include_mask = include_values.astype(bool)
-        d_err[~include_mask] = torch.inf  # Set error to zero for included measurements
+        included = include_values.astype(bool)
+        d_err[~included] = torch.inf  # Set error to zero for included measurements
 
         inv = fastJac(d_obs, d_err, res_start, dmfwr, logger=print)
         inv.data_misfit_acceptance_threshold = 0.95
@@ -421,7 +427,7 @@ def invert_individually(temdf, dmfwr, res_start, vc=0.4, hc=0.4, max_iterations=
 def get_site_data(temdf, site_id):
     df_data     = temdf[temdf['site_id']==site_id].copy()
     df_data     = df_data[df_data['gate_id']>-1]
-    df_data['include'] = df_data['inuse_manual'].astype(bool, copy=False).fillna(df_data['inuse_auto'].astype(bool))
+    df_data['include'] = include_mask(df_data)
     df_data.sort_values('data_id', inplace=True)
     dbdt=df_data['dbdt'].values
     d_obs = torch.from_numpy(np.abs(dbdt)).log()
@@ -439,8 +445,7 @@ def invert(temdf, dmfwr, res_start, vc=0.5, hc=0.8, max_iterations=50):
     df_overview = overview(df_data)
 
 
-    # this gives a warning and may need to updated if pandas is updated to pandas 3.0
-    df_data['include'] = df_data['inuse_manual'].astype(bool, copy=False).fillna(df_data['inuse_auto'])
+    df_data['include'] = include_mask(df_data)
 
     df_data['dbdt_syn'] = df_data['dbdt']*np.nan
     pivot_multi = df_data[(df_data['site_id']>-1)*(df_data['gate_id']>-1)].pivot_table(
@@ -471,8 +476,8 @@ def invert(temdf, dmfwr, res_start, vc=0.5, hc=0.8, max_iterations=50):
 
         d_obs = torch.from_numpy(dbdt_values).abs().log()
         d_err = torch.from_numpy(np.log1p(error_values/100.))
-        include_mask = include_values.astype(bool)
-        d_err[~include_mask] = torch.inf  # Set error to zero for included measurements
+        included = include_values.astype(bool)
+        d_err[~included] = torch.inf  # Set error to zero for included measurements
 
         inv = fastJac(d_obs, d_err, res_start.copy(), dmfwr.copy(), logger=silence)
         # inv.setup_matrices()

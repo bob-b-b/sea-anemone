@@ -234,6 +234,8 @@ def sweep2dataframes(sweeps):
         'daytime': np.concatenate([np.ones(n_gates, dtype=float)*x for x in lm.daytime]),
     }
     df_data = pd.concat([df_data, pd.DataFrame(data_avg)], ignore_index=True)
+    # no manual flag yet (NA); the nullable dtype keeps NA next to True/False
+    df_data['inuse_manual'] = df_data['inuse_manual'].astype('boolean')
     df_data = df_data.sort_values(by=['site_id','system_id', 'gate_id'])
     df_data = df_data.reset_index(drop=True)
     

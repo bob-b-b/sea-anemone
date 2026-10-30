@@ -1,0 +1,19 @@
+/* axis / colour bar titles that open a menu (assets/axismenu.js); plotly gives SVG text no pointer events by default */
+.js-plotly-plot [class^="g-x"][class$="title"] text,
+.js-plotly-plot [class^="g-y"][class$="title"] text,
+.js-plotly-plot .cbtitle text,
+.js-plotly-plot .annotation text {
+    pointer-events: all;
+}
+.js-plotly-plot text.axis-menu-title {
+    cursor: pointer;
+}
+.js-plotly-plot text.axis-menu-title:hover {
+    text-decoration: underline;
+}
+.axis-menu {
+    position: fixed;
+    z-index: 100000;  /* above the dash debug menu */
+    max-height: 60vh;
+    overflow-y: auto;
+}

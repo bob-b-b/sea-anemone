@@ -5,6 +5,7 @@ from inversion_panels import MultiInversion, MultiInversionSettings, Single_site
 from model import ModelGraph, ModelGraphSettings, ModelSection, ModelSectionSettings
 
 from dash import dash_table, ctx, no_update
+from temframe import include_mask
 import plotly.io as pio
 
 import numpy as np
@@ -52,6 +53,10 @@ class dbdtSoundingSettings(PanelSettings):
     dbdt_min: float = -12
 
 class dbdtSounding(Panel):
+    def add_axis_menus(self, fig):
+        fig.update_layout(xaxis_title=self.settings.x_axis+' ▾',
+                          meta={'menus': {'x': axis_menu({'type': f'settings-{self.id}', 'key': 'x_axis'}, ['time', 'gate_id'], self.settings.x_axis)}})
+
     dataframe = None
 
 
@@ -70,7 +75,7 @@ class dbdtSounding(Panel):
         y_axis                                             = 'dbdt_syn'
 
         df_tmp                                             = self.dataframe.sort_values(['site_id', 'system_id',  self.settings.x_axis])
-        df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=True).fillna(df_tmp['inuse_auto'])
+        df_tmp['include'] = include_mask(df_tmp)
         # lm_factor = compute_lm_scaling(self.dataframe, self.settings.lm_factor)
         lm_factor = self.settings.lm_factor
         hm_factor = self.settings.hm_factor
@@ -154,7 +159,7 @@ class dbdtSounding(Panel):
 
         y_axis                                             = 'dbdt_syn'
         df_tmp                                             = self.dataframe.sort_values(['site_id', 'system_id',  self.settings.x_axis])
-        df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto']).astype(bool)
+        df_tmp['include'] = include_mask(df_tmp)
         # lm_factor = compute_lm_scaling(self.dataframe, self.settings.lm_factor)
         lm_factor = self.settings.lm_factor
         hm_factor = self.settings.hm_factor
@@ -298,6 +303,7 @@ class dbdtSounding(Panel):
 
         # ---- REMOVE LEGEND TITLE ----
         fig.update_layout(legend_title_text=None)
+        self.add_axis_menus(fig)
         return fig
    
 
@@ -335,7 +341,7 @@ class rhoaSounding(dbdtSounding):
         df_tmp                                             = self.dataframe.sort_values(['site_id', 'system_id',  self.settings.x_axis])
         df_tmp['rhoa'] = self.to_rhoa(df_tmp['time'].values, np.abs(df_tmp['dbdt'].values))
         df_tmp['rhoa_syn'] = self.to_rhoa(df_tmp['time'].values, np.abs(df_tmp['dbdt_syn'].values))
-        df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto'])
+        df_tmp['include'] = include_mask(df_tmp)
         df_tmp.loc[df_tmp['site_id'] == -1, 'include']  = False
 
 
@@ -402,7 +408,7 @@ class rhoaSounding(dbdtSounding):
         y_axis                                             = 'rhoa_syn'
         df_tmp                                             = self.dataframe.sort_values(['site_id', 'system_id',  self.settings.x_axis])
         df_tmp['rhoa'] = self.to_rhoa(df_tmp['time'].values, np.abs(df_tmp['dbdt'].values))
-        df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto']).astype(bool)
+        df_tmp['include'] = include_mask(df_tmp)
         df_tmp.loc[df_tmp['site_id'] == -1, 'include']  = False
 
         df_tmp['system_id']                                = df_tmp['system_id'].map({0: 'lm', 1: 'hm'})
@@ -519,6 +525,7 @@ class rhoaSounding(dbdtSounding):
 
         # ---- REMOVE LEGEND TITLE ----
         fig.update_layout(legend_title_text=None)
+        self.add_axis_menus(fig)
         return fig
 
 @nosj
@@ -547,6 +554,7 @@ class dbdtSection(Panel):
     highlighted: int = None
     buffer_start: int = 0
     buffer_len: int = 50
+    buffer: SiteBuffer = None
 
     def __init__(self, **kwargs):
         settings = kwargs.pop('settings', dbdtSectionSettings(id='tTEM'))
@@ -577,7 +585,7 @@ class dbdtSection(Panel):
         y_axis                                             = self.settings.y_axis
         df_tmp = self.dataframe.copy()
         df_tmp                                             = df_tmp.sort_values(['gate_id', x_axis])
-        df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto'])
+        df_tmp['include'] = include_mask(df_tmp)
 
         # lm_factor = compute_lm_scaling(self.dataframe, self.settings.lm_factor)
         lm_factor = self.settings.lm_factor
@@ -693,7 +701,7 @@ class dbdtSection(Panel):
 
         df_tmp = self.dataframe[self.dataframe['gate_id']>-1]
         df_tmp                                             = df_tmp.sort_values(['gate_id', x_axis])
-        df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto']).astype(bool)
+        df_tmp['include'] = include_mask(df_tmp)
         # lm_factor = compute_lm_scaling(self.dataframe, self.settings.lm_factor)
         lm_factor = self.settings.lm_factor
         hm_factor = self.settings.hm_factor
@@ -829,7 +837,7 @@ class dbdtSection(Panel):
 
         df_tmp = self.dataframe.copy()
         df_tmp                                             = df_tmp.sort_values(['gate_id', x_axis])
-        df_tmp['include'] = df_tmp['inuse_manual'].astype(bool, copy=False).fillna(df_tmp['inuse_auto']).astype(bool)
+        df_tmp['include'] = include_mask(df_tmp)
         # lm_factor = compute_lm_scaling(self.dataframe, self.settings.lm_factor)
         lm_factor = self.settings.lm_factor
         hm_factor = self.settings.hm_factor
@@ -881,24 +889,28 @@ class dbdtSection(Panel):
         print("Rendering section")
         if self.dataframe is None: return self.empty_render()
         x_axis = self.settings.x_axis
-        if x_axis.startswith('_line'):
+        from __main__ import sesh
+        if x_axis.startswith('_line') and x_axis in sesh.data.columns:
             line_id = int(float(x_axis.split('_')[-2]))
-            from __main__ import sesh
             self.dataframe = sesh.data.copy()
             self.dataframe = self.dataframe.loc[np.abs(self.dataframe[x_axis.replace('_x', '_y')])<self.settings.radius]
             x_min = 0
             x_max = sesh.lines[sesh.lines.line==line_id].total_length.max()
-            self.xlim = (x_min, x_max)
-        elif hasattr(self, 'xlim'):
-            x_min,x_max = self.xlim
         else:
+            # back to all sites (the line branch narrows self.dataframe to those near the line)
+            if sesh.data is not None:
+                self.dataframe = sesh.data.copy()
             x_min = None
             x_max = None
-        print(x_min, x_max)
+        if len(site_positions(self.dataframe, x_axis)) == 0:
+            fig = self.message_render(f'No sites within {self.settings.radius:g} m of {axis_label(x_axis)}' if x_axis.startswith('_line') else 'No sites')
+            self.add_axis_menus(fig, x_axis)
+            return fig
 
         if self.settings.y_axis=='gate_id':
             fig = self.observed_by_gate_id()
-            fig.update_layout(meta=site_lookup(self.dataframe, x_axis))
+            apply_site_buffer(fig, site_positions(self.dataframe, x_axis), self.buffer)
+            self.add_axis_menus(fig, x_axis)
             return fig
 
         if 'dbdt_syn' in self.dataframe.columns:
@@ -906,36 +918,6 @@ class dbdtSection(Panel):
         else:
             fig = self.observed_only()
 
-        if self.highlighted is not None and self.dataframe is not None:
-
-            selected_df = self.dataframe[self.dataframe["site_id"] == self.highlighted]
-
-            if not selected_df.empty:
-
-                x_axis = self.settings.x_axis
-                if x_axis.startswith('line'):
-                    line_id = int(float(x_axis.split(' ')[-1]))
-                    x_axis = f'_line_{line_id:0.0f}_x'                
-                x_value = selected_df[x_axis].iloc[0]
-
-                # Compute spacing dynamically
-                x_vals = np.sort(self.dataframe[x_axis].dropna().unique())
-
-                if len(x_vals) > 1:
-                    diffs = np.diff(x_vals)
-                    dx = np.median(diffs) * 0.5
-                else:
-                    dx = 0.5
-
-                fig.add_shape(
-                    type="rect",
-                    x0=x_value - dx,
-                    x1=x_value + dx,
-                    y0=self.dataframe["dbdt"].abs().min() * 0.5,
-                    y1=self.dataframe["dbdt"].max()*self.settings.lm_factor *4,
-                    line=dict(color="rgba(0,0,0,0.8)", width=1.5),
-                    fillcolor="rgba(0,0,0,0.0)",
-                )
         vals = np.abs(self.dataframe["dbdt"].values)
         vals = vals[np.isfinite(vals) & (vals > 0)]
 
@@ -952,7 +934,6 @@ class dbdtSection(Panel):
         fig.update_layout(
             yaxis_type="log",
             yaxis_range=[self.settings.dbdt_min, self.settings.dbdt_max],
-            xaxis_title=self.settings.x_axis,
             yaxis_title="dB/dt [V / m²]",
             margin={"l": 55, "r": 120, "t": 10, "b": 50, "autoexpand": False},
             dragmode='select',
@@ -975,8 +956,15 @@ class dbdtSection(Panel):
         )
         if x_min is not None and x_max is not None:
             fig.update_xaxes(range=[x_min, x_max], autorange=False)
-        fig.update_layout(meta=site_lookup(self.dataframe, x_axis))
+        apply_site_buffer(fig, site_positions(self.dataframe, x_axis), self.buffer)
+        self.add_axis_menus(fig, x_axis)
         return fig
+
+    def add_axis_menus(self, fig, x_axis):
+        menus = {'x': section_x_menu(),
+                 'y': axis_menu({'type': f'settings-{self.id}', 'key': 'y_axis'}, [('dB/dt', 'dbdt_syn'), ('gate id', 'gate_id')], self.settings.y_axis)}
+        fig.update_layout(xaxis_title=axis_label(x_axis)+' ▾', yaxis_title=(fig.layout.yaxis.title.text or '')+' ▾',
+                          meta={**site_lookup(self.dataframe, x_axis), 'menus': menus})
 
 @nosj
 class AutoProcessing(PanelSettings):
@@ -1490,17 +1478,18 @@ class HotKeyReminder(Panel):
             Output("buffer-progress-text", "children"),
             Input("data-buffer", "data"),
             Input("map", "figure"),   # ← triggers when upload completes
+            Input({'type': 'settings-tTEM', 'key': 'x_axis'}, 'value'),  # sites are counted along the section axis
             prevent_initial_call=False
         )
-        def update_buffer_progress(buffer_data, _):
-            from __main__ import sesh
+        def update_buffer_progress(buffer_data, *_):
+            from __main__ import sesh, buf
 
             if sesh.data is None or "site_id" not in sesh.data.columns:
                 return 0, "No data loaded"
 
-            total_sites = sesh.data.loc[
-                sesh.data["site_id"] != -1, "site_id"
-            ].nunique()
+            # sites along the section x axis (fewer than all sites when it's a line)
+            buffer_data = buf.store()
+            total_sites = buffer_data['total']
 
             if total_sites == 0:
                 return 0, "No sites"

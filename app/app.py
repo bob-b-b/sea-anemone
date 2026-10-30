@@ -59,6 +59,10 @@ rhoa      = rhoaSounding(   dataframe=sesh.data)
 mod1      = ModelGraph(     dataframe=sesh.models )
 mod2      = ModelSection(   dataframe=sesh.models )
 m1.res_panel = mod2
+# window of sites the sections zoom to and the soundings show, plus the map selection; ordered along the tTEM section's x axis
+buf = SiteBuffer(length=50)
+buf.section = dbdt2
+m1.buffer = dbdt2.buffer = mod2.buffer = buf
 Multi_inv = MultiInversion( dataframe=sesh.data )
 Sing_inv  = Single_site(    dataframe=sesh.data, rho=10 )
 u1        = Upload(session_files=session_files)
@@ -130,69 +134,50 @@ for panel in panels:
 
 
 
+def show_sites(site_ids):
+    """the sounding panels and the 1D model graph show these sites"""
+    if sesh.data is not None:
+        dbdt1.dataframe = sesh.data[sesh.data['site_id'].isin(site_ids)].copy()
+        rhoa.dataframe  = dbdt1.dataframe.copy()
+    if sesh.models is not None:
+        mod1.dataframe = sesh.models[sesh.models['site_id'].isin(site_ids)].copy()
+        mod1.buffer_start, mod1.buffer_len = 0, max(len(site_ids), 1)
+
+
+def select_sites(site_ids, move=True):
+    """select sites everywhere: dotted boxes in the sections, highlight markers on the map, and the soundings / 1D model
+    graph show them. A single site is also the highlighted site that Previous/Next step from. With move, the buffer
+    window follows sites outside it (scrolling to a single site, centring on several)."""
+    site_ids = list(site_ids)
+    buf.selected = site_ids
+    highlighted = site_ids[0] if len(site_ids) == 1 else None
+    for panel in [m1, mod1, mod2, dbdt2]:
+        panel.highlighted = highlighted
+    if move and not set(site_ids) <= set(buf.window()):
+        if len(site_ids) == 1:
+            buf.scroll_to(site_ids[0])
+        else:
+            buf.center_on(site_ids)
+    show_sites(site_ids)
+
+
 @app.callback(
-    [ 
-        dbdt1.output, dbdt2.output, rhoa.output, mod1.output, mod2.output, m1.output,
-        Output("data-buffer", "data", allow_duplicate=True),
-        Output('buffer-length-input', 'value', allow_duplicate=True),
-    ],
-    [Input('map', 'selectedData')],
+    dbdt1.output, dbdt2.output, rhoa.output, mod1.output, mod2.output, m1.output,
+    Output("data-buffer", "data", allow_duplicate=True),
+    Input('map', 'selectedData'),
     prevent_initial_call=True
 )
 def handle_map_interactions(selected_data):
-    print("Map interaction detected")
-    if not selected_data:
+    if not selected_data or 'points' not in selected_data:
         raise PreventUpdate
-        
-    if 'points' in selected_data:
-        curve_number = m1._layers.index('sites')
-        selected_sites = [point['customdata'][0] for point in selected_data['points'] if point['curveNumber']==curve_number and 'customdata' in point]
-
-
-    if selected_sites:
-        selected_sites = list(set(selected_sites))
-    else:
+    curve_number = m1._layers.index('sites')
+    selected_sites = sorted({point['customdata'][0] for point in selected_data['points'] if point['curveNumber']==curve_number and 'customdata' in point})
+    if not selected_sites:
         raise PreventUpdate
-    
 
-
-    df_data = sesh.data.copy()
-    new_df = df_data[df_data['site_id'].isin(selected_sites)]
-    dbdt1.dataframe = new_df
-    rhoa.dataframe  = new_df
-    
-    if sesh.models is not None:
-        df_mod = sesh.models.copy()
-        new_df = df_mod[df_mod['site_id'].isin(selected_sites)]
-        mod1.dataframe = new_df
-        mod1_patch = mod1.render()
-    else:
-        mod1_patch  = Patch()
-
-
-    xmin,xmax = dbdt2.calc_xlim(selected_sites)
-
-    dbdt1_patch = dbdt1.render()
-    dbdt2_patch = Patch()
-    rhoa_patch  = rhoa.render()
-    
-    
-    mod2_patch  = Patch()
-
-
-    m1.buffer_sites = selected_sites
-    m1_patch = m1.render()
-
-    # m1_patch = Patch()
-    # m1_patch["data"][0]["selected"]   = {"marker": {"size": int(m1.settings.markersize*1.5)}}
-    # m1_patch["data"][0]["unselected"] = {"marker": {"opacity": 0.6}}
-    
-    mod2_patch["layout"]["xaxis"]["range"]  = [xmin, xmax]
-    dbdt2_patch["layout"]["xaxis"]["range"] = [xmin, xmax]
-    dbdt2.xlim = [xmin, xmax]
-    
-    data_buffer = {"length": len(selected_sites), "start_site": min(selected_sites)}
-    return dbdt1_patch, dbdt2_patch, rhoa_patch, mod1_patch, mod2_patch, m1_patch, data_buffer, len(selected_sites)
+    # sites already in the buffer window are just outlined in the sections; otherwise the window moves to centre on them
+    select_sites(selected_sites)
+    return dbdt1.render(), dbdt2.render(), rhoa.render(), mod1.render(), mod2.render(), m1.render(), buf.store()
 
 app.clientside_callback(
     hkr.javascript,
@@ -264,9 +249,9 @@ def show_value(n1, n2, ttem_selected, sounding_selected, rhoa_selected, interpre
     if interpret_layout_color == 'primary':
         raise PreventUpdate
     if str(ctx.triggered_id) == 'disableButton':
-        inuse = 0
+        inuse = False
     elif str(ctx.triggered_id) == 'enableButton':
-        inuse = 1
+        inuse = True
 
     if sounding_selected and len(sounding_selected['points'])>0:
         data_ids = [point['customdata'][1] for point in sounding_selected['points'] if 'customdata' in point]
@@ -283,12 +268,12 @@ def show_value(n1, n2, ttem_selected, sounding_selected, rhoa_selected, interpre
     
     for df_data in [sesh.data, dbdt1.dataframe, dbdt2.dataframe, rhoa.dataframe]:
         df_data.loc[df_data['data_id'].isin(data_ids), 'inuse_manual'] = inuse
-        df_data['include'] = df_data['inuse_manual'].astype(bool, copy=True).fillna(df_data['inuse_auto'])
+        df_data['include'] = temframe.include_mask(df_data)
 
     return dbdt1.render(), dbdt2.render(), rhoa.render()
 
 @app.callback(
-    dbdt1.output, rhoa.output,
+    dbdt1.output, rhoa.output, m1.output, mod1.output, mod2.output, dbdt2.output,
     Input(dbdt2.id, 'selectedData'),
     prevent_initial_call=True,
 )
@@ -296,127 +281,46 @@ def update_selection_from_section(selected_data):
     if not selected_data or 'points' not in selected_data or len(selected_data['points']) == 0:
         raise PreventUpdate
 
-    site_ids = [point['customdata'][2] for point in selected_data['points'] if 'customdata' in point]
+    site_ids = sorted({point['customdata'][2] for point in selected_data['points'] if 'customdata' in point} - {-1})
+    if not site_ids:
+        raise PreventUpdate
+    select_sites(site_ids, move=False)
+    # only the tTEM section's selection boxes are patched, so its own point selection (used by Disable/Enable) stays put
+    boxes = go.Figure()
+    apply_site_buffer(boxes, site_positions(dbdt2.dataframe, dbdt2.settings.x_axis), buf)
+    dbdt2_patch = Patch()
+    dbdt2_patch['layout']['shapes'] = [shape.to_plotly_json() for shape in boxes.layout.shapes]
+    return dbdt1.render(), rhoa.render(), m1.render(), mod1.render(), mod2.render(), dbdt2_patch
 
-    df_data = sesh.data
-    dbdt1.dataframe = df_data[df_data['site_id'].isin(site_ids)]
-    rhoa.dataframe  = df_data[df_data['site_id'].isin(site_ids)]
-    return dbdt1.render(), rhoa.render()
+@app.callback(
+    m1.output, dbdt1.output, dbdt2.output, rhoa.output, mod1.output, mod2.output,
+    Output('data-buffer', 'data', allow_duplicate=True),
+    Input('beginning-buffer', 'n_clicks'),
+    Input('prev-buffer', 'n_clicks'),
+    Input('next-buffer', 'n_clicks'),
+    Input('buffer-length-input', 'value'),
+    prevent_initial_call=True
+)
+def move_buffer(beginning_clicks, prev_clicks, next_clicks, length):
+    trigger = ctx.triggered_id
+    if trigger == 'buffer-length-input':
+        if not length or int(length) < 1:
+            raise PreventUpdate
+        # same start, new length; keeps the selection
+        buf.length = int(length)
+        buf.window()
+        return m1.render(), no_update, dbdt2.render(), no_update, no_update, mod2.render(), buf.store()
 
-# @app.callback(
-#     mod2.output, dbdt2.output, dbdt1.output, m1.output, mod1.output, rhoa.output,
-#     Input('data-buffer', 'data'),
-#     prevent_initial_call=True
-# )
-# def update_model_section_from_buffer(buffer_data):
-#     start  = buffer_data["start_site"]
-#     length = buffer_data["length"]
-
-#     # Update model section buffer
-#     mod2.buffer_start = start
-#     mod2.buffer_len   = length
-#     mod1.buffer_start = start
-#     mod1.buffer_len   = length
-    
-
-#     # Update tTEM buffer
-#     dbdt2.buffer_start = start
-#     dbdt2.buffer_len   = length
-
-
-#     x_axis = dbdt2.settings.x_axis
-#     df = dbdt2.dataframe
-
-#     df_buf = dbdt2.dataframe.copy()
-#     if x_axis == "site_id":
-#         df_buf = df_buf[df_buf["site_id"] != -1]
-#     x_vals = np.sort(df_buf[x_axis].dropna().unique())
-
-#     x_slice = x_vals[start:start+length]
-
-#     buffer_sites = (
-#             df[
-#                 (df[x_axis].isin(x_slice)) &
-#                 (df["site_id"] != -1)
-#             ]["site_id"]
-#             .dropna()
-#             .unique()
-#         )
-
-
-#     if buffer_data.get("source") == "buffer_button":
-#         dbdt1.dataframe = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
-#         rhoa.dataframe  = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
-#     m1.buffer_sites = buffer_sites
-#     m1.is_last_tab = False
-#     # rhoa.dataframe = sesh.data[sesh.data["site_id"].isin(buffer_sites)]
-#     # dbdt1.buffer_sites = buffer_sites
-#     if buffer_data.get("source") == "buffer_button":
-#         mod1.highlighted = None
-#         mod2.highlighted = None
-#         m1.highlighted = None
-#         dbdt2.highlighted = None
-#     return mod2.render(), dbdt2.render(), dbdt1.render(), m1.render(), mod1.render(), rhoa.render()
-
-# @app.callback(
-#     Output('data-buffer', 'data'),
-#     Input('beginning-buffer', 'n_clicks'),
-#     Input('next-buffer', 'n_clicks'),
-#     Input('prev-buffer', 'n_clicks'),
-#     State('data-buffer', 'data'),
-#     prevent_initial_call=True
-# )
-# def update_buffer(next_clicks, prev_clicks, beginning_clicks, buffer_data):
-#     if not ctx.triggered:
-#         raise PreventUpdate
-
-#     trigger = ctx.triggered_id
-
-#     length = buffer_data["length"]
-#     start  = buffer_data["start_site"]
-#     # Get total number of sites from models (safer than tTEM)
-#     if dbdt2.dataframe is None:
-#         raise PreventUpdate
-
-#     x_axis = dbdt2.settings.x_axis
-#     df = dbdt2.dataframe
-
-#     if x_axis == "site_id":
-#         df = df[df["site_id"] != -1]
-
-#     x_vals = np.sort(df[x_axis].dropna().unique())
-#     n_sites = len(x_vals)
-
-#     if trigger == "next-buffer":
-#         start += length
-#     elif trigger == "prev-buffer":
-#         start -= length
-#     elif trigger == "beginning-buffer":
-#         start = 0
-
-#     # Clamp safely
-#     start = max(0, min(start, max(0, n_sites - length)))
-
-#     buffer_data["start_site"] = start
-#     buffer_data['source'] = "buffer_button"
-#     return buffer_data
-
-# @app.callback(
-#     Output('data-buffer', 'data', allow_duplicate=True),
-#     Input('buffer-length-input', 'value'),
-#     State('data-buffer', 'data'),
-#     prevent_initial_call=True,
-# )
-# def update_buffer_length(new_length, buffer_data):
-#     if new_length is None or new_length <= 0:
-#         raise PreventUpdate
-
-#     buffer_data["length"] = int(new_length)
-
-#     # reset start if necessary to avoid overflow
-#     buffer_data["start_site"] = max(0, buffer_data["start_site"])
-
-#     return buffer_data
+    if trigger == 'beginning-buffer':
+        buf.start = 0
+    else:
+        buf.step(-1 if trigger == 'prev-buffer' else 1)
+    window = buf.window()
+    buf.selected = []
+    for panel in [m1, mod1, mod2, dbdt2]:
+        panel.highlighted = None
+    show_sites(window)
+    return m1.render(), dbdt1.render(), dbdt2.render(), rhoa.render(), mod1.render(), mod2.render(), buf.store()
 
 # @app.callback(
 #     Output("model_section", "figure", allow_duplicate=True),
@@ -477,15 +381,14 @@ def save_session(n1):
 @app.callback(
     Output("output-click", "children", allow_duplicate=True),
     m1.output, mod1.output, dbdt1.output, Multi_inv.output, mod2.output, dbdt2.output, rhoa.output,
-    Output("data-buffer", "data", allow_duplicate=True),   # <-- ADD
+    Output("data-buffer", "data", allow_duplicate=True),
     Input('highlight_prev', 'n_clicks'),
     Input('highlight_next', 'n_clicks'),
     State('invert_layout',  'color'),
     State('flex-layout', 'model'),
-    State("data-buffer", "data"),                          # <-- ADD
     prevent_initial_call=True,
 )
-def highlight_change(n1, n2, invert_layout_color, model, buffer_data):
+def highlight_change(n1, n2, invert_layout_color, model):
     if not ctx.triggered:
         raise PreventUpdate
     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
@@ -499,55 +402,23 @@ def highlight_change(n1, n2, invert_layout_color, model, buffer_data):
         raise PreventUpdate
 
     if highlighted is None:
-        raise PreventUpdate
+        # with several sites selected, step from the first / last of them
+        if not buf.selected:
+            raise PreventUpdate
+        order = [site for site in buf.sites() if site in buf.selected]
+        highlighted = (order or buf.selected)[0 if step == -1 else -1]
 
-    highlighted = highlighted + step
+    # step to the neighbouring site along the section x axis
+    sites = buf.sites()
+    idx = np.flatnonzero(sites == highlighted)
+    if len(idx) == 0:
+        highlighted = highlighted + step
+    else:
+        highlighted = sites[int(np.clip(idx[0] + step, 0, len(sites) - 1))]
 
-    # --- your existing updates ---
-    df_data = sesh.data
-    m1.highlighted = highlighted
-    mod1.highlighted = highlighted
-    mod2.highlighted = highlighted
-    dbdt2.highlighted = highlighted
-    dbdt1.dataframe = df_data[df_data['site_id'] == highlighted]
-    rhoa.dataframe  = df_data[df_data['site_id'] == highlighted]
-    # --- NEW: slide buffer only if highlight exits current buffer window ---
-    new_buffer = no_update
-    if buffer_data is not None and dbdt2.dataframe is not None:
-        start  = buffer_data["start_site"]
-        length = buffer_data["length"]
-
-        x_axis = dbdt2.settings.x_axis
-        df = dbdt2.dataframe
-
-        # sorted axis positions
-        # df_buf = dbdt2.dataframe.copy()
-        if x_axis == "site_id":
-            df_buf = df[df["site_id"] != -1]
-        x_vals = np.sort(df[x_axis].dropna().unique())
-        # x_vals = np.sort(df[x_axis].dropna().unique())
-
-        # find index of highlighted site
-        sel = df[df["site_id"] == highlighted]
-        if not sel.empty:
-            x_val = sel[x_axis].iloc[0]
-
-            idx = np.where(x_vals == x_val)[0]
-            if len(idx) > 0:
-                idx = int(idx[0])
-
-                # slide buffer when highlight exits window
-                if idx-1 < start:
-                    start = idx-5
-                elif idx > start + length:
-                    start = idx - length+4
-
-                # clamp
-                start = max(0, min(start, max(0, len(x_vals) - length)))
-
-                buffer_data["start_site"] = start
-                buffer_data["source"] = "site_nav"
-                new_buffer = buffer_data
+    select_sites([highlighted])
+    # slide the buffer window along when the highlight nears its edge
+    buf.scroll_to(highlighted)
     m1.is_last_tab = False
     return (
         ctx.triggered_id,
@@ -558,23 +429,23 @@ def highlight_change(n1, n2, invert_layout_color, model, buffer_data):
         mod2.render(),
         dbdt2.render(),
         rhoa.render(),
-        new_buffer,   # <-- return updated buffer only when needed
+        buf.store(),
     )
 
 from map import cdist
 
 @app.callback(
     m1.output, mod1.output, dbdt1.output, mod2.output, dbdt2.output, rhoa.output,
+    Output('data-buffer', 'data', allow_duplicate=True),
     Input('model_section', 'clickData'),
     Input('tTEM', 'clickData'),
     Input('map', 'clickData'),
     State('invert_layout',  'color'),
     State('review_layout', 'color'),
     State('interpret_layout', 'color'),
-    State('data-buffer', 'data'),
     prevent_initial_call=True
 )
-def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color, review_layout_color, interpret_layout_color, buffer_data):
+def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color, review_layout_color, interpret_layout_color):
     if not ctx.triggered:
         raise PreventUpdate
     trigger_id = ctx.triggered[0]['prop_id'].split('.')[0]
@@ -590,21 +461,16 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color, r
         x_value = click_data['points'][0]['x']
         site_id = mod2.dataframe.query(f'{mod2.settings.x_axis} == @x_value')['site_id'].iloc[0]
     elif trigger_id == 'map':
-        if m1._layers[click_data['points'][0]['curveNumber']] in ('buffer', 'sites'):
+        if m1._layers[click_data['points'][0]['curveNumber']] in ('buffer', 'sites', 'highlight'):
             x_value,y_value = click_data['points'][0]['lon'],click_data['points'][0]['lat']
             all_dist = cdist(m1.dataframe.latitude, m1.dataframe.longitude, y_value+0.00000002, x_value+0.000000002)
             site_id = m1.dataframe.loc[np.argmin(all_dist), 'site_id']
     if site_id is None:
         raise PreventUpdate
 
-    df_data = sesh.data
-    m1.highlighted    = site_id
-    mod1.highlighted  = site_id
-    mod2.highlighted  = site_id
-    dbdt2.highlighted = site_id
-    dbdt1.dataframe   = df_data[df_data['site_id'] == site_id]
-    rhoa.dataframe    = df_data[df_data['site_id'] == site_id]
-    return m1.render(), mod1.render(), dbdt1.render(), mod2.render(), dbdt2.render(), rhoa.render()
+    # a site clicked on the map may be outside the buffer window
+    select_sites([site_id])
+    return m1.render(), mod1.render(), dbdt1.render(), mod2.render(), dbdt2.render(), rhoa.render(), buf.store()
 
 @app.callback(
     Output("starting-model", "data", allow_duplicate=True),
@@ -694,30 +560,15 @@ def upload_file(contents):
         # except Exception as e:
         #     return (html.Div("Upload failed."),no_update,no_update,no_update,no_update,no_update,no_update,build_data_summary(),True,f"Upload failed: Only one geometry is supported at a time",True,True,no_update,no_update,no_update,no_update,no_update,{'display': 'block'}, {'display': 'block'})
     # sesh.site = sesh.overview
-    sesh.data['include'] = sesh.data['inuse_manual'].astype(bool, copy=True).fillna(sesh.data['inuse_auto'])
+    sesh.data['include'] = temframe.include_mask(sesh.data)
     sesh.models          = None
     m1.dataframe    = sesh.overview.copy()
     
     
-    buffer_length = 50
-    # unique_sites = np.sort(sesh.data['site_id'].unique())
-    # unique_sites = np.sort(sesh.data.loc[sesh.data['site_id'] != -1, 'site_id'].unique())
-    unique_sites = np.sort(sesh.site['site_id'].dropna().unique())
-    unique_sites = unique_sites#[unique_sites != -1]
-    initial_sites = unique_sites[:buffer_length]
-
-    m1.buffer_sites = initial_sites.tolist()
     mod1.dataframe  = sesh.models
-    mod1.buffer_sites = initial_sites.tolist()
     mod2.dataframe  = sesh.models
-
-    full_df = sesh.data.copy()
-
-    buffered_df = full_df[full_df['site_id'].isin(initial_sites)].copy()
-
-    dbdt1.dataframe = buffered_df
-    dbdt2.dataframe = full_df          # keep full section view
-    rhoa.dataframe  = buffered_df
+    dbdt2.dataframe = sesh.data.copy()          # keep full section view
+    show_sites(buf.window())
     Multi_inv.dataframe = sesh.data.copy()
     Sing_inv.dataframe = sesh.data.copy()
     
@@ -914,25 +765,10 @@ def handle_url_hash(url_hash, model):
             panel.highlighted = None
 
         if sesh.data is not None:
-            buffer_length = 50
-            start = 0
-            dbdt1.dataframe = sesh.data.copy()    
-            # dbdt2.dataframe = sesh.data.copy()    
             m1.dataframe    = sesh.overview.copy()
-            full_df = sesh.data.copy()
-            unique_sites = np.sort(sesh.site['site_id'].dropna().unique())
-            unique_sites = unique_sites[unique_sites != -1]
-            initial_sites = unique_sites[:buffer_length]
-            buffered_df = full_df[full_df['site_id'].isin(initial_sites)].copy()
-
-            dbdt1.dataframe = buffered_df
-            dbdt2.dataframe = full_df          # keep full section view
-            rhoa.dataframe  = buffered_df
-            m1.buffer_sites = initial_sites.tolist()
-            # dbdt2.buffer_sites = initial_sites.tolist()
-            dbdt2.buffer_start = start
-            dbdt2.buffer_len   = buffer_length
-
+            dbdt2.dataframe = sesh.data.copy()          # keep full section view
+            buf.reset()
+            show_sites(buf.window())
 
             Multi_inv.dataframe = sesh.data.copy()
             Sing_inv.dataframe = sesh.data.copy()
@@ -944,8 +780,8 @@ def handle_url_hash(url_hash, model):
             res[5] = Sing_inv.render()
         
         if sesh.models is not None:
-            mod1.dataframe  = sesh.models.copy()
             mod2.dataframe  = sesh.models.copy()
+            show_sites(buf.window())
             res[6] = mod2.render()
 
             res[8]   = 'secondary'
