@@ -58,6 +58,7 @@ dbdt2     = dbdtSection(    dataframe=sesh.data)
 rhoa      = rhoaSounding(   dataframe=sesh.data)
 mod1      = ModelGraph(     dataframe=sesh.models )
 mod2      = ModelSection(   dataframe=sesh.models )
+m1.res_panel = mod2
 Multi_inv = MultiInversion( dataframe=sesh.data )
 Sing_inv  = Single_site(    dataframe=sesh.data, rho=10 )
 u1        = Upload(session_files=session_files)
@@ -760,6 +761,19 @@ def sync_x_axis(x_axis):
 )
 def sync_radius(radius):
     return radius
+
+@app.callback(
+    m1.output,
+    Input({'type': f'settings-{mod2.id}', 'key': 'vmin'}, 'value'),
+    Input({'type': f'settings-{mod2.id}', 'key': 'vmax'}, 'value'),
+    prevent_initial_call=True
+)
+def sync_mean_res_range(vmin, vmax):
+    # the mean-res map uses the model section's colour range (m1.res_panel); set it here too, as this may run before mod2's own settings callback
+    if m1.settings.plot_by != 'mean-res':
+        raise PreventUpdate
+    mod2.settings.vmin, mod2.settings.vmax = float(vmin), float(vmax)
+    return m1.render()
 
 
 

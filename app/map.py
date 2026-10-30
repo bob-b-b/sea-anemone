@@ -313,6 +313,7 @@ class Map(Panel):
     buffer_sites: list = None
     lines = None
     drawing: bool = False  # click-drawing lines (assets/linedraw.js)
+    res_panel = None  # panel whose settings.vmin/vmax set the mean-res colour range, so it matches that panel (model section)
     
 
     
@@ -426,7 +427,8 @@ class Map(Panel):
             self.make_grid(sesh.models)
             z_new = np.array([float(b) for b in self.settings.mean_res.split('-')])
             res_grid = np.log10(rediscretize(sesh.models, z_new))
-            fig.add_trace(self.grid.graph_object(res_grid, zmin=0, zmax=2, colorscale='Turbo', name='Mean Res'))
+            zmin, zmax = (0, 2) if self.res_panel is None else np.log10([self.res_panel.settings.vmin, self.res_panel.settings.vmax])
+            fig.add_trace(self.grid.graph_object(res_grid, zmin=zmin, zmax=zmax, colorscale='Turbo', name='Mean Res'))
         else:
             # plotly.js keeps a trace's map layers where they were first created, so the mean-res layer must exist
             # (empty) from the first render, otherwise switching to mean-res later draws it on top of the sites
