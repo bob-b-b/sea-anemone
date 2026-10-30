@@ -3,11 +3,11 @@ import plotly.io as pio
 from typing import Literal
 import plotly.express as px
 import plotly.graph_objects as go
-from dash import dash_table, ctx, no_update, Patch
+from dash import dash_table, ctx, no_update, Patch, ClientsideFunction
 import numpy as np
 from nosj import nosj
 import utm
-from pandas import DataFrame
+from pandas import DataFrame, concat
 
 
 line_colors = [
@@ -312,6 +312,7 @@ class Map(Panel):
     highlighted: int = None
     buffer_sites: list = None
     lines = None
+    drawing: bool = False  # click-drawing lines (assets/linedraw.js)
     
 
     
@@ -458,6 +459,11 @@ class Map(Panel):
                                     marker=dict(size=self.settings.markersize*2, color=self.settings.hover_color)))
         self._layers.append('hover')
 
+        # line being click-drawn, filled client-side by assets/linedraw.js
+        fig.add_trace(go.Scattermap(lat=[], lon=[], mode='lines+markers', name='draft', hoverinfo='skip', showlegend=False,
+                                    line=dict(width=self.settings.line_width, color='black'), marker=dict(size=8, color='black')))
+        self._layers.append('draft')
+
         if self.settings.legend:
             fig.update_layout(showlegend=True,
                 legend=dict(x=0.01, y=0.99,
@@ -553,6 +559,22 @@ class Map(Panel):
                                 'marginBottom': '50px'
                             }
                         ),
+
+                        dbc.Button(
+                            "Draw line [L]",
+                            id=self.id+'_drawline',
+                            color='primary',
+                            outline=True,
+                            active=self.drawing,
+                            style={
+                                'position': 'absolute',
+                                'bottom': '10px',
+                                'left': '10px',
+                            }
+                        ),
+                        dbc.Tooltip("Click to add nodes, double-click to finish a line. Backspace removes the last node, Esc drops the line in progress.",
+                                    target=self.id+'_drawline', placement='top'),
+                        dcc.Store(id=self.id+'_line_draw'),
 
                         dbc.Select(
                             options=self.settings.schema['properties']['plot_by']['enum'],
@@ -692,6 +714,51 @@ class Map(Panel):
                 line_options = [f'line {line_id:0.0f}' for line_id in line_ids]
                 options = line_options + [option for option in options if not option.startswith('line')]
             return self.render(), options, options
+
+        app.clientside_callback(
+            ClientsideFunction('anemone', 'toggleLineDraw'),
+            Output(self.id+'_line_draw', 'data', allow_duplicate=True),
+            Input(self.id+'_drawline', 'n_clicks'),
+            prevent_initial_call=True
+        )
+
+        @app.callback(
+            self.output,
+            Output(self.id+'_drawline', 'active'),
+            Output('model_section_axis', 'options', allow_duplicate=True),
+            Output({'type': f'settings-model_section', 'key': 'x_axis'}, 'options', allow_duplicate=True),
+            Input(self.id+'_line_draw', 'data'),
+            State('model_section_axis', 'options'),
+            prevent_initial_call=True
+        )
+        def draw_line(event, options):
+            # events from assets/linedraw.js: 'start'/'stop' toggle click-drawing, 'line' and 'stop' carry the nodes ([lon, lat]) of a finished line
+            from __main__ import sesh
+            if not event:
+                raise PreventUpdate
+            if event['action'] == 'start' and not self.drawing:
+                self.drawing = True
+                self._dragmode_before_drawing = self.settings.dragmode
+                self.settings.dragmode = 'pan'
+
+            nodes = event.get('nodes', [])
+            if len(nodes) >= 2:
+                line_id = 1 if self.lines is None or len(self.lines) == 0 else int(self.lines['line'].max()) + 1
+                new_line = DataFrame({'latitude': [n[1] for n in nodes], 'longitude': [n[0] for n in nodes], 'line': line_id,
+                                      'node': np.arange(len(nodes)), 'length': -1., 'total_length': -1., 'radius': 100.})
+                self.lines = new_line if self.lines is None else concat([self.lines, new_line], ignore_index=True)
+                sesh.lines = self.lines.copy()
+                sesh.update_site_table()
+
+            if event['action'] == 'stop' and self.drawing:
+                self.drawing = False
+                self.settings.dragmode = self._dragmode_before_drawing
+
+            options = options or []
+            if sesh.lines is not None:
+                line_options = [f'line {line_id:0.0f}' for line_id in sesh.lines['line'].unique()]
+                options = line_options + [option for option in options if not option.startswith('line')]
+            return self.render(), self.drawing, options, options
 
         @app.callback(
             Output('model_section_axis', 'value', allow_duplicate=True),

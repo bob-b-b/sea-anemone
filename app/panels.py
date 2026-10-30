@@ -1395,6 +1395,10 @@ class HotKeyReminder(Panel):
                         event.preventDefault()
                         event.stopPropagation()
                     }
+                    if ((event.key == 'l' || event.key == 'L') && !event.ctrlKey && !event.metaKey) {
+                        const drawButton = document.getElementById('map_drawline')
+                        if (drawButton) drawButton.click()
+                    }
                 }
             });
             return window.dash_clientside.no_update       
