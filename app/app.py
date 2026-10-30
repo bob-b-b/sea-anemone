@@ -893,9 +893,12 @@ def handle_url_hash(url_hash, model):
         sesh = session.Session.from_folder(folder)
         res[-5] = sesh.save_dir
 
-        if sesh.lines is not None:
-            m1.lines = sesh.lines.copy()
-            
+        # drop what the panels still hold from the previous session
+        m1.lines = sesh.lines.copy() if sesh.lines is not None else None
+        m1.settings.view = None
+        for panel in [m1, mod1, mod2, dbdt2]:
+            panel.highlighted = None
+
         if sesh.data is not None:
             buffer_length = 50
             start = 0
