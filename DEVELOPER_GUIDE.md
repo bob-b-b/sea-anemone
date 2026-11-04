@@ -162,6 +162,24 @@ python -m pytest benchmarks\benchmark_sea_anemone.py --benchmark-only --benchmar
 
 The suite measures USF archive loading, saved-session restoration, server-side Plotly figure rendering and JSON serialization, single-site inversion, and full inversion using the included 74-site sample archive. It is kept outside `tests/` so the benchmarks do not run as part of the regular CI test suite. Results are machine-dependent; compare runs on the same machine and dataset. These benchmarks do not measure browser rendering or end-to-end point-selection latency.
 
+## Browser Smoke Test
+
+Install the development dependencies and Chromium once:
+
+```cmd
+python -m pip install -r requirements-dev.txt
+python -m playwright install chromium
+```
+
+Start the app with `run_app.bat` or '.\.venv\Scripts\python.exe .\app\app.py', then run the browser test from another terminal:
+
+```cmd
+ .\.venv\Scripts\Activate.ps1
+python -m pytest tests\test_playwright_smoke.py -q
+```
+
+The test uses `http://127.0.0.1:8050` by default. Set `PLAYWRIGHT_BASE_URL` to test a different running instance.
+
 ## Common Issues
 
 ### "pip not found"
