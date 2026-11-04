@@ -157,10 +157,20 @@ Install the development dependencies and run the opt-in benchmarks from the repo
 
 ```cmd
 python -m pip install -r requirements-dev.txt
+python -m playwright install
 python -m pytest benchmarks\benchmark_sea_anemone.py --benchmark-only --benchmark-columns=mean,median,stddev
 ```
 
-The suite measures USF archive loading, saved-session restoration, server-side Plotly figure rendering and JSON serialization, single-site inversion, and full inversion using the included 74-site sample archive. It is kept outside `tests/` so the benchmarks do not run as part of the regular CI test suite. Results are machine-dependent; compare runs on the same machine and dataset. These benchmarks do not measure browser rendering or end-to-end point-selection latency.
+The suite measures USF archive loading, saved-session restoration, server-side Plotly figure rendering and JSON serialization, single-site inversion, and full inversion using the included 74-site sample archive. It is kept outside `tests/` so the benchmarks do not run as part of the regular CI test suite. Results are machine-dependent; compare runs on the same machine and dataset.
+
+To benchmark the map-selection callback and the visible updates to the sounding, apparent-resistivity, and section plots, run the browser benchmark from the repository root:
+
+```cmd
+python -m playwright install chromium
+python -m pytest benchmarks\benchmark_playwright_selection.py --benchmark-only --benchmark-columns=mean,median,stddev
+```
+
+The benchmark starts an isolated app server with the included sample archive loaded, then simulates map point selection in Chromium. It checks that the sounding and apparent-resistivity plots show only the selected site and that the section plot zooms to that site. The reported median and maximum latency cover selection-event to visible linked-plot updates. Results are machine-dependent, so compare repeated runs on the same machine.
 
 ## Browser Smoke Test
 
