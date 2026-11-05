@@ -1,7 +1,10 @@
 import importlib.util
+import os
 import statistics
 import sys
 import threading
+from dataclasses import dataclass
+from types import ModuleType
 from pathlib import Path
 
 import pytest
@@ -12,10 +15,50 @@ from werkzeug.serving import make_server
 
 ROOT = Path(__file__).resolve().parents[1]
 SAMPLE_ARCHIVE = ROOT / "Data" / "L003_S033_2025_1113_125719.zip"
+UPLOAD_ARCHIVE = Path(os.getenv("PLAYWRIGHT_UPLOAD_ARCHIVE", SAMPLE_ARCHIVE))
 LINKED_GRAPHS = ("sounding", "rhoa", "tTEM")
 sys.path.append(str(ROOT / "app"))
 import temframe
 from session import Session
+
+
+@dataclass
+class UploadBenchmarkApp:
+    url: str
+    dash_module: ModuleType
+    main_module: ModuleType
+    archive: Path
+    expected_site_ids: list[str]
+
+    def reset(self):
+        empty_session = Session()
+        self.dash_module.sesh = empty_session
+        self.main_module.sesh = empty_session
+        for panel in (
+            self.dash_module.m1,
+            self.dash_module.dbdt1,
+            self.dash_module.dbdt2,
+            self.dash_module.rhoa,
+            self.dash_module.mod1,
+            self.dash_module.mod2,
+            self.dash_module.Multi_inv,
+            self.dash_module.Sing_inv,
+        ):
+            panel.dataframe = None
+        self.dash_module.m1.buffer_sites = None
+        self.dash_module.mod1.buffer_sites = None
+
+
+def _import_app(module_name: str, initial_session: Session):
+    app_path = ROOT / "app" / "app.py"
+    spec = importlib.util.spec_from_file_location(module_name, app_path)
+    if spec is None or spec.loader is None:
+        raise RuntimeError(f"Unable to load application module from {app_path}")
+    dash_module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = dash_module
+    spec.loader.exec_module(dash_module)
+    dash_module.sesh = initial_session
+    return dash_module
 
 
 @pytest.fixture(scope="module")
@@ -29,16 +72,7 @@ def selection_app_url():
     previous_session = getattr(main_module, "sesh", None)
     main_module.sesh = sample_session
 
-    app_path = ROOT / "app" / "app.py"
-    spec = importlib.util.spec_from_file_location(
-        "sea_anemone_benchmark_app", app_path
-    )
-    if spec is None or spec.loader is None:
-        raise RuntimeError(f"Unable to load application module from {app_path}")
-    dash_module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = dash_module
-    spec.loader.exec_module(dash_module)
-    dash_module.sesh = sample_session
+    dash_module = _import_app("sea_anemone_benchmark_app", sample_session)
     dash_module.m1.dataframe = sample_session.overview
     dash_module.dbdt1.dataframe = sample_session.data.copy()
     dash_module.dbdt2.dataframe = sample_session.data.copy()
@@ -52,6 +86,49 @@ def selection_app_url():
     thread.start()
     try:
         yield f"http://127.0.0.1:{server.server_port}"
+    finally:
+        server.shutdown()
+        thread.join(timeout=5)
+        if had_previous_session:
+            main_module.sesh = previous_session
+        else:
+            del main_module.sesh
+
+
+@pytest.fixture(scope="module")
+def upload_benchmark_app():
+    if not UPLOAD_ARCHIVE.is_file():
+        raise FileNotFoundError(f"Upload benchmark archive not found: {UPLOAD_ARCHIVE}")
+    with UPLOAD_ARCHIVE.open("rb") as archive:
+        sample_data, _ = temframe.from_zip_content(archive.read())
+    expected_session = Session(data=sample_data)
+    expected_site_ids = sorted(
+        (
+            str(site_id)
+            for site_id in expected_session.overview.site_id
+            if site_id != -1
+        ),
+        key=float,
+    )
+
+    main_module = sys.modules["__main__"]
+    had_previous_session = hasattr(main_module, "sesh")
+    previous_session = getattr(main_module, "sesh", None)
+    empty_session = Session()
+    main_module.sesh = empty_session
+    dash_module = _import_app("sea_anemone_upload_benchmark_app", empty_session)
+
+    server = make_server("127.0.0.1", 0, dash_module.app.server, threaded=True)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield UploadBenchmarkApp(
+            url=f"http://127.0.0.1:{server.server_port}",
+            dash_module=dash_module,
+            main_module=main_module,
+            archive=UPLOAD_ARCHIVE,
+            expected_site_ids=expected_site_ids,
+        )
     finally:
         server.shutdown()
         thread.join(timeout=5)

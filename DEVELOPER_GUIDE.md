@@ -178,6 +178,14 @@ python -m pytest benchmarks\benchmark_playwright_selection_sizes.py --benchmark-
 
 Both files start an isolated app server with the included sample archive loaded and simulate map selections in Chromium. The original benchmark covers a single-site update. The comparison benchmark measures 1, 10, 25, and all available sites, making the one-site case a direct baseline for the multi-site cases. Each case verifies the linked plots and repeats the measurement ten times. Results are machine-dependent, so compare runs on the same machine.
 
+To benchmark loading the archive from the app's initial Upload screen through the map and plots becoming usable, run:
+
+```cmd
+python -m pytest benchmarks\benchmark_playwright_load_data.py --benchmark-only --benchmark-columns=mean,median,stddev
+```
+
+This benchmark selects the included archive through the browser file input using Chromium's ZIP MIME type, switches to Process, verifies that the map contains all expected sites and the sounding, apparent-resistivity, and section plots contain their expected data, and reports median and maximum latency. It repeats the workflow three times; app/page reset is outside the reported browser-visible latency. To benchmark a different ZIP, set `PLAYWRIGHT_UPLOAD_ARCHIVE` to its path before running pytest.
+
 ## Browser Smoke Test
 
 Install the development dependencies and Chromium once:
