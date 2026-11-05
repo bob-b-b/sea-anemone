@@ -1,0 +1,32 @@
+image: python:3.12
+
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH && $CI_OPEN_MERGE_REQUESTS'
+      when: never
+    - if: '$CI_COMMIT_BRANCH'
+
+stages:
+  - test
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  ANEMONE_REF: "56f845dd4eb4e2cb98744efc95ac965318016210"
+
+cache:
+  key:
+    files:
+      - requirements.txt
+  paths:
+    - .cache/pip/
+
+test:
+  stage: test
+  before_script:
+    - apt-get update -qq && apt-get install -y --no-install-recommends git
+    - python -m pip install --upgrade pip
+    - python -m pip install -r requirements.txt
+    - python -m pip install "anemone @ git+https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.au.dk/hgg/anemone.git@${ANEMONE_REF}"
+  script:
+    - python -m pytest tests -q
