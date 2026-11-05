@@ -27,6 +27,6 @@ test:
     - apt-get update -qq && apt-get install -y --no-install-recommends git
     - python -m pip install --upgrade pip
     - python -m pip install -r requirements.txt
-    - python -m pip install "anemone @ git+https://gitlab-ci-token:${CI_JOB_TOKEN}@gitlab.au.dk/hgg/anemone.git@${ANEMONE_REF}"
+    - python -m pip install "anemone @ git+https://github.com/HGG/anemone.git@${ANEMONE_REF}"
   script:
     - python -m pytest tests -q
