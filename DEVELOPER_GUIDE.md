@@ -194,6 +194,15 @@ python -m pytest benchmarks\benchmark_playwright_view_switch.py --benchmark-only
 
 The test repeats the Invert → QC → Interpret → Process sequence three times. For each switch it waits for the expected plots to be visible and rendered, verifies Plotly has the map in non-static interactive mode, then records click-to-usable-view latency.
 
+To benchmark the real all-sites inversion's first progress update and completed results separately, run:
+
+```cmd
+python -m pytest benchmarks\benchmark_playwright_inversion_feedback.py --benchmark-only --benchmark-columns=mean,median,stddev
+```
+
+This benchmark uses the included sample archive and repeats each measurement twice, resetting the session between runs. Click-to-first-progress measures when the elapsed-time display first changes from `0:00`
+Click-to-results measures when the inversion button is re-enabled and the results plot displays “Inversion Finished.” 
+
 ## Browser Smoke Test
 
 Install the development dependencies and Chromium once:
