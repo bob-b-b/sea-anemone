@@ -186,6 +186,14 @@ python -m pytest benchmarks\benchmark_playwright_load_data.py --benchmark-only -
 
 This benchmark selects the included archive through the browser file input using Chromium's ZIP MIME type, switches to Process, verifies that the map contains all expected sites and the sounding, apparent-resistivity, and section plots contain their expected data, and reports median and maximum latency. It repeats the workflow three times; app/page reset is outside the reported browser-visible latency. To benchmark a different ZIP, set `PLAYWRIGHT_UPLOAD_ARCHIVE` to its path before running pytest.
 
+To benchmark switching between Process, Invert, QC, and Interpret and verify the resulting views are interactive, run:
+
+```cmd
+python -m pytest benchmarks\benchmark_playwright_view_switch.py --benchmark-only --benchmark-columns=mean,median,stddev
+```
+
+The test repeats the Invert → QC → Interpret → Process sequence three times. For each switch it waits for the expected plots to be visible and rendered, verifies Plotly has the map in non-static interactive mode, then records click-to-usable-view latency.
+
 ## Browser Smoke Test
 
 Install the development dependencies and Chromium once:
