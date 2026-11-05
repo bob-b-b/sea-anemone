@@ -163,14 +163,20 @@ python -m pytest benchmarks\benchmark_sea_anemone.py --benchmark-only --benchmar
 
 The suite measures USF archive loading, saved-session restoration, server-side Plotly figure rendering and JSON serialization, single-site inversion, and full inversion using the included 74-site sample archive. It is kept outside `tests/` so the benchmarks do not run as part of the regular CI test suite. Results are machine-dependent; compare runs on the same machine and dataset.
 
-To benchmark the map-selection callback and the visible updates to the sounding, apparent-resistivity, and section plots, run the browser benchmark from the repository root:
+To run the original single-site end-to-end benchmark:
 
 ```cmd
 python -m playwright install chromium
 python -m pytest benchmarks\benchmark_playwright_selection.py --benchmark-only --benchmark-columns=mean,median,stddev
 ```
 
-The benchmark starts an isolated app server with the included sample archive loaded, then simulates map point selection in Chromium. It checks that the sounding and apparent-resistivity plots show only the selected site and that the section plot zooms to that site. The reported median and maximum latency cover selection-event to visible linked-plot updates. Results are machine-dependent, so compare repeated runs on the same machine.
+For a separate comparison of one site against multiple sites, run:
+
+```cmd
+python -m pytest benchmarks\benchmark_playwright_selection_sizes.py --benchmark-only --benchmark-columns=mean,median,stddev
+```
+
+Both files start an isolated app server with the included sample archive loaded and simulate map selections in Chromium. The original benchmark covers a single-site update. The comparison benchmark measures 1, 10, 25, and all available sites, making the one-site case a direct baseline for the multi-site cases. Each case verifies the linked plots and repeats the measurement ten times. Results are machine-dependent, so compare runs on the same machine.
 
 ## Browser Smoke Test
 
