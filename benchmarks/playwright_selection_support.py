@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from types import ModuleType
 from pathlib import Path
 
+import pandas as pd
 import pytest
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
 from playwright.sync_api import Page, expect
@@ -47,6 +48,13 @@ class UploadBenchmarkApp:
             panel.dataframe = None
         self.dash_module.m1.buffer_sites = None
         self.dash_module.mod1.buffer_sites = None
+
+
+@dataclass
+class PointClickBenchmarkApp:
+    url: str
+    dash_module: ModuleType
+    site_ids: list[str]
 
 
 def _import_app(module_name: str, initial_session: Session):
@@ -93,6 +101,83 @@ def selection_app_url():
             main_module.sesh = previous_session
         else:
             del main_module.sesh
+
+
+@pytest.fixture(scope="module")
+def point_click_app(selection_app_url):
+    dash_module = sys.modules["sea_anemone_benchmark_app"]
+    session = dash_module.sesh
+    original_models = session.models
+    original_mod1_dataframe = dash_module.mod1.dataframe
+    original_mod2_dataframe = dash_module.mod2.dataframe
+    original_children = dash_module.flex_layout.children
+    original_highlighted = (
+        dash_module.m1.highlighted,
+        dash_module.mod1.highlighted,
+        dash_module.mod2.highlighted,
+        dash_module.dbdt2.highlighted,
+    )
+    original_dbdt1_dataframe = dash_module.dbdt1.dataframe
+    original_rhoa_dataframe = dash_module.rhoa.dataframe
+    original_buffer_sites = dash_module.m1.buffer_sites
+    missing_xlim = object()
+    original_dbdt2_xlim = getattr(dash_module.dbdt2, "xlim", missing_xlim)
+
+    sites = session.overview.loc[session.overview["site_id"] != -1]
+    site_ids = sorted(sites["site_id"].dropna().unique().tolist(), key=float)
+    model_rows = []
+    for site in sites.drop_duplicates("site_id").itertuples(index=False):
+        for layer, top, bottom, resistivity in (
+            (0, 0.0, 10.0, 20.0),
+            (1, 10.0, 35.0, 60.0),
+        ):
+            model_rows.append(
+                {
+                    "site_id": site.site_id,
+                    "layer": layer,
+                    "resistivity": resistivity,
+                    "misfit": 1.0,
+                    "doi": 50.0,
+                    "elevation": getattr(site, "elevation", 0.0),
+                    "top_depth": top,
+                    "bottom_depth": bottom,
+                    "center_depth": (top + bottom) / 2.0,
+                }
+            )
+
+    models = pd.DataFrame(model_rows)
+    session.models = models
+    dash_module.mod1.dataframe = models
+    dash_module.mod2.dataframe = models
+    dash_module.flex_layout.children = [
+        node for panel in dash_module.panels for node in panel.to_nodes()
+    ]
+
+    try:
+        yield PointClickBenchmarkApp(
+            url=selection_app_url,
+            dash_module=dash_module,
+            site_ids=site_ids,
+        )
+    finally:
+        session.models = original_models
+        dash_module.mod1.dataframe = original_mod1_dataframe
+        dash_module.mod2.dataframe = original_mod2_dataframe
+        dash_module.flex_layout.children = original_children
+        (
+            dash_module.m1.highlighted,
+            dash_module.mod1.highlighted,
+            dash_module.mod2.highlighted,
+            dash_module.dbdt2.highlighted,
+        ) = original_highlighted
+        dash_module.dbdt1.dataframe = original_dbdt1_dataframe
+        dash_module.rhoa.dataframe = original_rhoa_dataframe
+        dash_module.m1.buffer_sites = original_buffer_sites
+        if original_dbdt2_xlim is missing_xlim:
+            if hasattr(dash_module.dbdt2, "xlim"):
+                del dash_module.dbdt2.xlim
+        else:
+            dash_module.dbdt2.xlim = original_dbdt2_xlim
 
 
 @pytest.fixture(scope="module")
