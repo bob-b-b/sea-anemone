@@ -47,15 +47,17 @@ def _reset_inversion_session(dash_module):
     dash_module.dbdt1.dataframe = session.data.copy()
     dash_module.dbdt2.dataframe = session.data.copy()
     dash_module.rhoa.dataframe = session.data.copy()
+    dash_module.mod1.dataframe = session.models
+    dash_module.mod2.dataframe = session.models
     dash_module.Multi_inv.dataframe = session.data.copy()
-    dash_module.Multi_inv.misfit = None
+    dash_module.Multi_inv.misfit = []
     dash_module.Multi_inv.iterations = []
-    dash_module.Multi_inv.title = "Spatially Constrained Inversion"
+    dash_module.Multi_inv.title = "Inversion in progress"
     dash_module.Sing_inv.dataframe = session.data.copy()
 
     main_module = sys.modules["__main__"]
     main_module.sesh = session
-    main_module.m1 = dash_module.m1
+    main_module.buf = dash_module.buf
     return session
 
 
@@ -63,7 +65,10 @@ def _click_to_progress_ms(page: Page):
     return page.wait_for_function(
         """() => {
             const timer = document.getElementById("inv-timer");
-            return timer &&
+            const button = document.getElementById("invert_all_button");
+            const graph = document.querySelector("#multi_inv .js-plotly-plot");
+            const has_points = graph?.data?.some(trace => trace.y?.length > 0);
+            return button?.disabled && has_points && timer &&
                 timer.textContent.trim() !== "Elapsed time: 0:00"
                 ? performance.now() - window.__inversionClickAt
                 : false;
@@ -92,16 +97,46 @@ def _click_to_results_ms(page: Page):
     ).json_value()
 
 
+def _assert_inverted_models_are_visible(page: Page, expected_site_count: int):
+    page.locator("#interpret_layout").click()
+    graph = page.locator("#model_section .js-plotly-plot")
+    expect(graph).to_be_visible(timeout=30_000)
+    page.wait_for_function(
+        """() => {
+            const graph = document.querySelector("#model_section .js-plotly-plot");
+            return graph?.data?.some(trace =>
+                trace.type === "heatmap" && trace.x?.length && trace.z?.length
+            ) || false;
+        }""",
+        timeout=30_000,
+    )
+
+    page.locator("#review_layout").click()
+    graph = page.locator("#model_graph .js-plotly-plot")
+    expect(graph).to_be_visible(timeout=30_000)
+    page.wait_for_function(
+        """expectedSiteCount => {
+            const graph = document.querySelector("#model_graph .js-plotly-plot");
+            const lineCount = graph?.data?.filter(trace => trace.mode === "lines").length;
+            return lineCount === Math.min(expectedSiteCount, 50);
+        }""",
+        arg=expected_site_count,
+        timeout=30_000,
+    )
+
+
 def _benchmark_inversion_latency(
     page: Page, benchmark, selection_app_url: str, capsys, metric: str
 ):
     dash_module = sys.modules["sea_anemone_benchmark_app"]
     main_module = sys.modules["__main__"]
     previous_sesh = main_module.sesh
-    had_main_map = hasattr(main_module, "m1")
-    previous_main_map = getattr(main_module, "m1", None)
+    had_main_buffer = hasattr(main_module, "buf")
+    previous_main_buffer = getattr(main_module, "buf", None)
     previous_app_session = dash_module.sesh
     previous_map_data = dash_module.m1.dataframe
+    previous_model_graph_data = dash_module.mod1.dataframe
+    previous_model_section_data = dash_module.mod2.dataframe
     multi_inversion_state = {
         name: (
             hasattr(dash_module.Multi_inv, name),
@@ -111,6 +146,13 @@ def _benchmark_inversion_latency(
     }
     timer = BrowserLatencyTimer()
     benchmark._timer = timer
+    callback_errors = []
+
+    def record_callback_error(response):
+        if "/_dash-update-component" in response.url and response.status >= 400:
+            callback_errors.append(f"{response.status} {response.url}")
+
+    page.on("response", record_callback_error)
 
     def run_inversion():
         session = _reset_inversion_session(dash_module)
@@ -122,6 +164,14 @@ def _benchmark_inversion_latency(
         invert_button = page.locator("#invert_all_button")
         invert_button.wait_for(state="visible", timeout=30_000)
         expect(invert_button).to_be_enabled()
+        page.wait_for_function(
+            """() => {
+                const graph = document.querySelector("#multi_inv .js-plotly-plot");
+                return graph?._fullLayout?.title?.text ===
+                    "Spatially Constrained Inversion";
+            }""",
+            timeout=30_000,
+        )
         expect(page.locator("#inv-timer")).to_have_text("Elapsed time: 0:00")
 
         page.evaluate(
@@ -142,6 +192,8 @@ def _benchmark_inversion_latency(
 
         result_ms = _click_to_results_ms(page)
         assert session.models is not None and not session.models.empty
+        expected_site_count = session.models["site_id"].nunique()
+        _assert_inverted_models_are_visible(page, expected_site_count)
         if metric == "results":
             timer.set_latency_ms(result_ms)
 
@@ -153,19 +205,23 @@ def _benchmark_inversion_latency(
             warmup_rounds=0,
         )
     finally:
+        page.remove_listener("response", record_callback_error)
         main_module.sesh = previous_sesh
         dash_module.sesh = previous_app_session
         dash_module.m1.dataframe = previous_map_data
+        dash_module.mod1.dataframe = previous_model_graph_data
+        dash_module.mod2.dataframe = previous_model_section_data
         for name, (was_present, value) in multi_inversion_state.items():
             if was_present:
                 setattr(dash_module.Multi_inv, name, value)
             elif hasattr(dash_module.Multi_inv, name):
                 delattr(dash_module.Multi_inv, name)
-        if had_main_map:
-            main_module.m1 = previous_main_map
-        elif hasattr(main_module, "m1"):
-            del main_module.m1
+        if had_main_buffer:
+            main_module.buf = previous_main_buffer
+        elif hasattr(main_module, "buf"):
+            del main_module.buf
 
+    assert not callback_errors, f"Dash callbacks failed: {callback_errors}"
     median_ms = statistics.median(timer.latencies_ms)
     maximum_ms = max(timer.latencies_ms)
     metric_label = (

@@ -64,6 +64,9 @@ buf = SiteBuffer(length=50)
 buf.section = dbdt2
 m1.buffer = dbdt2.buffer = mod2.buffer = buf
 Multi_inv = MultiInversion( dataframe=sesh.data )
+Multi_inv.map_panel = m1
+Multi_inv.model_graph = mod1
+Multi_inv.model_section = mod2
 Sing_inv  = Single_site(    dataframe=sesh.data, rho=10 )
 u1        = Upload(session_files=session_files)
 
@@ -348,14 +351,13 @@ def move_buffer(beginning_clicks, prev_clicks, next_clicks, length):
     return (map_selection_patch(), dbdt1.render(), section_selection_patch(dbdt2), rhoa.render(),
             mod1.render(), section_selection_patch(mod2), buf.store())
 
-# @app.callback(
-#     Output("model_section", "figure", allow_duplicate=True),
-#     Output("model_graph", "figure", allow_duplicate=True),
-#     Input("review_layout", "n_clicks"),
-#     State("invert_layout", "color"),
-#     prevent_initial_call=True
-# )
-
+@app.callback(
+    Output("model_section", "figure", allow_duplicate=True),
+    Output("model_graph", "figure", allow_duplicate=True),
+    Input("review_layout", "n_clicks"),
+    State("invert_layout", "color"),
+    prevent_initial_call=True
+)
 def update_model_on_review(_, invert_color):
     mod2.dataframe = sesh.models.copy() if sesh.models is not None else None
     mod1.dataframe = sesh.models.copy() if sesh.models is not None else None
