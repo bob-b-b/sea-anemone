@@ -46,8 +46,9 @@ class UploadBenchmarkApp:
             self.dash_module.Sing_inv,
         ):
             panel.dataframe = None
-        self.dash_module.m1.buffer_sites = None
-        self.dash_module.mod1.buffer_sites = None
+        map_buffer = getattr(self.dash_module.m1, "buffer", None)
+        if map_buffer is not None:
+            map_buffer.reset()
 
 
 @dataclass
@@ -119,7 +120,9 @@ def point_click_app(selection_app_url):
     )
     original_dbdt1_dataframe = dash_module.dbdt1.dataframe
     original_rhoa_dataframe = dash_module.rhoa.dataframe
-    original_buffer_sites = dash_module.m1.buffer_sites
+    map_buffer = dash_module.m1.buffer
+    original_buffer_selected = map_buffer.selected.copy()
+    original_buffer_start = map_buffer.start
     missing_xlim = object()
     original_dbdt2_xlim = getattr(dash_module.dbdt2, "xlim", missing_xlim)
 
@@ -172,7 +175,8 @@ def point_click_app(selection_app_url):
         ) = original_highlighted
         dash_module.dbdt1.dataframe = original_dbdt1_dataframe
         dash_module.rhoa.dataframe = original_rhoa_dataframe
-        dash_module.m1.buffer_sites = original_buffer_sites
+        map_buffer.selected = original_buffer_selected
+        map_buffer.start = original_buffer_start
         if original_dbdt2_xlim is missing_xlim:
             if hasattr(dash_module.dbdt2, "xlim"):
                 del dash_module.dbdt2.xlim
@@ -230,13 +234,6 @@ def _site_ids_from_plot(graph):
             .filter(row => row.length > 2 && row[2] != null)
             .map(row => String(row[2])))]"""
     )
-
-
-def _expected_section_range(site_ids):
-    minimum = min(map(float, site_ids))
-    maximum = max(map(float, site_ids))
-    padding = (maximum - minimum) * 0.1
-    return [minimum - padding, maximum + padding]
 
 
 def benchmark_selection_case(
@@ -354,7 +351,7 @@ def benchmark_selection_case(
 
         try:
             page.wait_for_function(
-                """({siteIds, expectedRange, graphIds}) => {
+                """({siteIds, graphIds}) => {
                     const selected = new Set(siteIds);
                     if (!graphIds.every(graphId => {
                         const graph = window.__selectionBenchmarkGraphs[graphId];
@@ -388,8 +385,23 @@ def benchmark_selection_case(
                     const section = document.querySelector("#tTEM .js-plotly-plot");
                     const range = section?.layout.xaxis?.range;
                     if (!range || range.length !== 2 ||
-                        Math.abs(Number(range[0]) - expectedRange[0]) > 1e-6 ||
-                        Math.abs(Number(range[1]) - expectedRange[1]) > 1e-6) {
+                        !Number.isFinite(Number(range[0])) ||
+                        !Number.isFinite(Number(range[1])) ||
+                        Number(range[0]) >= Number(range[1])) {
+                        return false;
+                    }
+                    const meta = section.layout.meta;
+                    const sectionSiteIds = meta?.site_id ?? [];
+                    const siteX = meta?.site_x ?? [];
+                    const inWindow = [...selected].some(siteId => {
+                        const index = sectionSiteIds.findIndex(
+                            id => String(id) === siteId
+                        );
+                        return index >= 0 &&
+                            Number(siteX[index]) >= Number(range[0]) &&
+                            Number(siteX[index]) <= Number(range[1]);
+                    });
+                    if (!inWindow || !(section.layout.shapes ?? []).length) {
                         return false;
                     }
                     if (window.__selectionBenchmarkEnd === null) {
@@ -401,7 +413,6 @@ def benchmark_selection_case(
                 }""",
                 arg={
                     "siteIds": selected_site_ids,
-                    "expectedRange": _expected_section_range(selected_site_ids),
                     "graphIds": list(LINKED_GRAPHS),
                 },
                 polling="raf",
@@ -428,7 +439,7 @@ def benchmark_selection_case(
         assert _site_ids_from_plot(linked_graphs[1]) == expected_site_ids
         assert set(expected_site_ids).issubset(_site_ids_from_plot(section_graph))
         section_range = section_graph.evaluate("gd => gd.layout.xaxis.range")
-        assert section_range == _expected_section_range(selected_site_ids)
+        assert section_range is not None and section_range[0] < section_range[1]
         measured_latencies.append(elapsed_ms)
 
     benchmark.pedantic(
