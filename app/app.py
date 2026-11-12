@@ -161,6 +161,33 @@ def select_sites(site_ids, move=True):
     show_sites(site_ids)
 
 
+def map_selection_patch():
+    patch = Patch()
+    for layer, site_ids in (('buffer', buf.window()), ('highlight', buf.selected)):
+        trace_index = m1._layers.index(layer)
+        sites = m1.dataframe.loc[m1.dataframe['site_id'].isin(site_ids)]
+        patch['data'][trace_index]['lat'] = sites['latitude'].tolist()
+        patch['data'][trace_index]['lon'] = sites['longitude'].tolist()
+        patch['data'][trace_index]['customdata'] = [[site_id] for site_id in sites['site_id'].tolist()]
+    return patch
+
+
+def section_selection_patch(panel):
+    if not hasattr(panel, '_site_buffer_site_x'):
+        return no_update
+    selection = go.Figure()
+    x_range = apply_site_buffer(selection, panel._site_buffer_site_x, panel.buffer)
+    patch = Patch()
+    patch['layout']['shapes'] = (
+        panel._site_buffer_static_shapes
+        + [shape.to_plotly_json() for shape in selection.layout.shapes or ()]
+    )
+    if x_range is not None:
+        patch['layout']['xaxis']['range'] = x_range
+        patch['layout']['xaxis']['autorange'] = False
+    return patch
+
+
 @app.callback(
     dbdt1.output, dbdt2.output, rhoa.output, mod1.output, mod2.output, m1.output,
     Output("data-buffer", "data", allow_duplicate=True),
@@ -177,7 +204,8 @@ def handle_map_interactions(selected_data):
 
     # sites already in the buffer window are just outlined in the sections; otherwise the window moves to centre on them
     select_sites(selected_sites)
-    return dbdt1.render(), dbdt2.render(), rhoa.render(), mod1.render(), mod2.render(), m1.render(), buf.store()
+    return (dbdt1.render(), section_selection_patch(dbdt2), rhoa.render(), mod1.render(),
+            section_selection_patch(mod2), map_selection_patch(), buf.store())
 
 app.clientside_callback(
     hkr.javascript,
@@ -285,12 +313,8 @@ def update_selection_from_section(selected_data):
     if not site_ids:
         raise PreventUpdate
     select_sites(site_ids, move=False)
-    # only the tTEM section's selection boxes are patched, so its own point selection (used by Disable/Enable) stays put
-    boxes = go.Figure()
-    apply_site_buffer(boxes, site_positions(dbdt2.dataframe, dbdt2.settings.x_axis), buf)
-    dbdt2_patch = Patch()
-    dbdt2_patch['layout']['shapes'] = [shape.to_plotly_json() for shape in boxes.layout.shapes]
-    return dbdt1.render(), rhoa.render(), m1.render(), mod1.render(), mod2.render(), dbdt2_patch
+    return (dbdt1.render(), rhoa.render(), map_selection_patch(), mod1.render(),
+            section_selection_patch(mod2), section_selection_patch(dbdt2))
 
 @app.callback(
     m1.output, dbdt1.output, dbdt2.output, rhoa.output, mod1.output, mod2.output,
@@ -309,7 +333,8 @@ def move_buffer(beginning_clicks, prev_clicks, next_clicks, length):
         # same start, new length; keeps the selection
         buf.length = int(length)
         buf.window()
-        return m1.render(), no_update, dbdt2.render(), no_update, no_update, mod2.render(), buf.store()
+        return (map_selection_patch(), no_update, section_selection_patch(dbdt2), no_update,
+                no_update, section_selection_patch(mod2), buf.store())
 
     if trigger == 'beginning-buffer':
         buf.start = 0
@@ -320,7 +345,8 @@ def move_buffer(beginning_clicks, prev_clicks, next_clicks, length):
     for panel in [m1, mod1, mod2, dbdt2]:
         panel.highlighted = None
     show_sites(window)
-    return m1.render(), dbdt1.render(), dbdt2.render(), rhoa.render(), mod1.render(), mod2.render(), buf.store()
+    return (map_selection_patch(), dbdt1.render(), section_selection_patch(dbdt2), rhoa.render(),
+            mod1.render(), section_selection_patch(mod2), buf.store())
 
 # @app.callback(
 #     Output("model_section", "figure", allow_duplicate=True),
@@ -422,12 +448,12 @@ def highlight_change(n1, n2, invert_layout_color, model):
     m1.is_last_tab = False
     return (
         ctx.triggered_id,
-        m1.render(),
+        map_selection_patch(),
         mod1.render(),
         dbdt1.render(),
         Multi_inv.render(),
-        mod2.render(),
-        dbdt2.render(),
+        section_selection_patch(mod2),
+        section_selection_patch(dbdt2),
         rhoa.render(),
         buf.store(),
     )
@@ -470,7 +496,8 @@ def cross_panel_click(model_click, ttem_click, map_click, invert_layout_color, r
 
     # a site clicked on the map may be outside the buffer window
     select_sites([site_id])
-    return m1.render(), mod1.render(), dbdt1.render(), mod2.render(), dbdt2.render(), rhoa.render(), buf.store()
+    return (map_selection_patch(), mod1.render(), dbdt1.render(), section_selection_patch(mod2),
+            section_selection_patch(dbdt2), rhoa.render(), buf.store())
 
 @app.callback(
     Output("starting-model", "data", allow_duplicate=True),

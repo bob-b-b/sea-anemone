@@ -333,8 +333,10 @@ class ModelSection(Panel):
         if x_axis.startswith('_line'):
             near = sesh.models.loc[np.abs(sesh.models[x_axis.replace('_x', '_y')]) < self.settings.radius] if x_axis in sesh.models.columns else sesh.models.iloc[0:0]
             if len(site_positions(near, x_axis)) == 0:
+                self._site_buffer_site_x = pd.Series(dtype=float)
                 fig = self.message_render(f'No models within {self.settings.radius:g} m of {axis_label(x_axis)}')
                 fig.update_layout(xaxis_title=axis_label(x_axis)+' ▾', yaxis_title=self.settings.y_axis+' ▾', meta={'menus': self.axis_menus()})
+                self._site_buffer_static_shapes = site_buffer_static_shapes(fig)
                 return fig
         fig = self.render_base()
 
@@ -446,6 +448,7 @@ class ModelSection(Panel):
                 )
 
         site_x = site_positions(df, x_axis)
+        self._site_buffer_site_x = site_x
         fig.update_xaxes(range=[x_min, x_max], autorange=False)
         apply_site_buffer(fig, site_x, self.buffer)
         fig.update_yaxes(range=ylim, autorange=False)
@@ -464,6 +467,7 @@ class ModelSection(Panel):
                 layer='above',
             )
         fig.update_layout(meta={**site_lookup(df, x_axis), 'menus': self.axis_menus()})
+        self._site_buffer_static_shapes = site_buffer_static_shapes(fig)
         return fig
         
         # def add_callbacks(self, app):

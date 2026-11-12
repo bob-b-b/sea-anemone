@@ -902,15 +902,19 @@ class dbdtSection(Panel):
                 self.dataframe = sesh.data.copy()
             x_min = None
             x_max = None
-        if len(site_positions(self.dataframe, x_axis)) == 0:
+        site_x = site_positions(self.dataframe, x_axis)
+        self._site_buffer_site_x = site_x
+        if len(site_x) == 0:
             fig = self.message_render(f'No sites within {self.settings.radius:g} m of {axis_label(x_axis)}' if x_axis.startswith('_line') else 'No sites')
             self.add_axis_menus(fig, x_axis)
+            self._site_buffer_static_shapes = site_buffer_static_shapes(fig)
             return fig
 
         if self.settings.y_axis=='gate_id':
             fig = self.observed_by_gate_id()
-            apply_site_buffer(fig, site_positions(self.dataframe, x_axis), self.buffer)
+            apply_site_buffer(fig, site_x, self.buffer)
             self.add_axis_menus(fig, x_axis)
+            self._site_buffer_static_shapes = site_buffer_static_shapes(fig)
             return fig
 
         if 'dbdt_syn' in self.dataframe.columns:
@@ -956,8 +960,9 @@ class dbdtSection(Panel):
         )
         if x_min is not None and x_max is not None:
             fig.update_xaxes(range=[x_min, x_max], autorange=False)
-        apply_site_buffer(fig, site_positions(self.dataframe, x_axis), self.buffer)
+        apply_site_buffer(fig, site_x, self.buffer)
         self.add_axis_menus(fig, x_axis)
+        self._site_buffer_static_shapes = site_buffer_static_shapes(fig)
         return fig
 
     def add_axis_menus(self, fig, x_axis):
