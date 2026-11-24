@@ -37,6 +37,8 @@ To launch the application, you can either:
 - Run `python app/app.py` from the installation directory.
 - Run `run_app_console.bat` from the installation directory.
 
+To stop the background server started by `run_app.bat`, run `stop_app.bat` or use the **Stop Anemone** Start Menu shortcut.
+
 ## Requirements
 Ensure you have the following before running the application:
 

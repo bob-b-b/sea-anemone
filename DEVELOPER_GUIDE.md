@@ -61,9 +61,11 @@ Test that everything works before building the installer:
 run_app.bat
 ```
 
+The launcher uses `.venv\Scripts\pythonw.exe` when the project virtual environment is present; otherwise, it uses the bundled `python\pythonw.exe`. The bundled interpreter must be included when building the installer.
+
 - A browser window should open automatically
 - You should see your Dash app running
-- Press Ctrl+C in the command window to stop
+- Run `stop_app.bat` (or use the **Stop Anemone** Start Menu shortcut) to stop the background server.
 
 ### 5. Install NSIS
 

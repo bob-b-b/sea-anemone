@@ -32,6 +32,8 @@ Section "Install"
     File "run_app.bat"
     File "run_app_silent.vbs"
     File "run_app_console.bat"
+    File "stop_app.bat"
+    File "stop_app.ps1"
 
     ; Run setup script
     DetailPrint "Installing Python dependencies (this may take a few minutes)..."
@@ -41,6 +43,7 @@ Section "Install"
     DetailPrint "Creating shortcuts..."
     CreateDirectory "$SMPROGRAMS\${APPNAME}"
     CreateShortCut "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk" "$INSTDIR\run_app_console.bat"
+    CreateShortCut "$SMPROGRAMS\${APPNAME}\Stop ${APPNAME}.lnk" "$INSTDIR\stop_app.bat"
     CreateShortCut "$DESKTOP\${APPNAME}.lnk" "$INSTDIR\run_app_console.bat"
 
     ; Write uninstall entry
@@ -51,6 +54,7 @@ SectionEnd
 
 Section "Uninstall"
     Delete "$SMPROGRAMS\${APPNAME}\${APPNAME}.lnk"
+    Delete "$SMPROGRAMS\${APPNAME}\Stop ${APPNAME}.lnk"
     RMDir "$SMPROGRAMS\${APPNAME}"
     Delete "$DESKTOP\${APPNAME}.lnk"
     RMDir /r "$INSTDIR"

@@ -1,11 +1,25 @@
 @echo on
 setlocal enabledelayedexpansion
 
-rem Set the path to the embedded Python interpreter
-set PYTHON_PATH=python\pythonw.exe
+pushd "%~dp0"
+if errorlevel 1 (
+    echo Error: Could not change to the application directory.
+    exit /b 1
+)
 
-rem Launch the Dash application in the background using the PID wrapper
-start "" "%PYTHON_PATH%" app\app.py --console
+rem Prefer the project environment for development; installed builds use embedded Python.
+set "PYTHON_PATH="
+if exist "%~dp0.venv\Scripts\pythonw.exe" set "PYTHON_PATH=%~dp0.venv\Scripts\pythonw.exe"
+if not defined PYTHON_PATH if exist "%~dp0python\pythonw.exe" set "PYTHON_PATH=%~dp0python\pythonw.exe"
+if not defined PYTHON_PATH (
+    echo Error: Python was not found.
+    echo Expected .venv\Scripts\pythonw.exe or python\pythonw.exe.
+    popd
+    exit /b 1
+)
+
+rem Launch the Dash application in the background.
+start "" "%PYTHON_PATH%" "%~dp0app\app.py"
 
 rem Wait for the server to start and PID file to be created
 @echo off
