@@ -1,4 +1,4 @@
-import sys, os
+import sys, os, uuid
 from tkinter import filedialog, Tk
 
 fpath = os.path.dirname(os.path.abspath(__file__))
@@ -58,6 +58,7 @@ dbdt2     = dbdtSection(    dataframe=sesh.data)
 rhoa      = rhoaSounding(   dataframe=sesh.data)
 mod1      = ModelGraph(     dataframe=sesh.models )
 mod2      = ModelSection(   dataframe=sesh.models )
+table_overview = TableOverview()
 m1.res_panel = mod2
 # window of sites the sections zoom to and the soundings show, plus the map selection; ordered along the tTEM section's x axis
 buf = SiteBuffer(length=50)
@@ -72,7 +73,7 @@ u1        = Upload(session_files=session_files)
 
 hkr       = HotKeyReminder()
 
-panels = [u1, m1, dbdt1, dbdt2, mod1, mod2, Multi_inv, Sing_inv, rhoa, hkr]
+panels = [u1, m1, dbdt1, dbdt2, mod1, table_overview, mod2, Multi_inv, Sing_inv, rhoa, hkr]
 nodes = [node for panel in panels for node in panel.to_nodes()]
 
 
@@ -93,6 +94,7 @@ app.layout = html.Div([
     dcc.Store(id="starting-model", data={"rho": 10.0,"depth": np.cumsum(np.logspace(0, 1.3, 31)).tolist()}),
     dcc.Store(id='starting-model-selected',data=[]),
     dcc.Store(id='data-buffer',data={"length": 50, "start_site":0}),
+    dcc.Store(id='table-overview-refresh', data=None),
     dcc.Store(id='map-hover-site', data=None),
     html.Div([dbc.Toast(
                     "⛔ Please Zoom or Pan in the map.",
@@ -268,6 +270,7 @@ for section_id in [dbdt2.id, mod2.id]:
 
 @app.callback(
     dbdt1.output, dbdt2.output, rhoa.output,
+    Output('table-overview-refresh', 'data', allow_duplicate=True),
     Input("disableButton", "n_clicks"),
     Input("enableButton", "n_clicks"),
     State("tTEM", "selectedData"),
@@ -301,7 +304,7 @@ def show_value(n1, n2, ttem_selected, sounding_selected, rhoa_selected, interpre
         df_data.loc[df_data['data_id'].isin(data_ids), 'inuse_manual'] = inuse
         df_data['include'] = temframe.include_mask(df_data)
 
-    return dbdt1.render(), dbdt2.render(), rhoa.render()
+    return dbdt1.render(), dbdt2.render(), rhoa.render(), uuid.uuid4().hex
 
 @app.callback(
     dbdt1.output, rhoa.output, m1.output, mod1.output, mod2.output, dbdt2.output,

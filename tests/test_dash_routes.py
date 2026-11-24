@@ -34,3 +34,6 @@ def test_dash_root_and_layout_routes(monkeypatch):
     assert b"Sea Anemone" in page.data
     assert layout.status_code == 200
     assert b"flex-layout" in layout.data
+    assert b"table-overview-source" in layout.data
+    assert b"Input measurements" in layout.data
+    assert b"Inversion results" in layout.data

@@ -1263,78 +1263,68 @@ class Upload(Panel):
         )
 
 
-# @nosj
-# class TableSettings(PanelSettings):
-#     max_rows: int = 50
-#     visible_columns: list[bool] = None
+class TableOverview(Panel):
+    def __init__(self):
+        super().__init__(id='table_overview')
 
-#     def special_renders(self):
-#         special_renders = super().special_renders()
-#         vis_check = lambda key,prop: key == 'visible_columns'
-#         def vis_render(key, prop):
-#             checkbox_row = []
-#             if hasattr(self, 'column_names'):
-#                 col_names = self.column_names
-#             else:
-#                 col_names = [str(i) for i in range(self.visible_columns_len)]
+    def initialize(self):
+        return html.Div([
+            dcc.Tabs(
+                id='table-overview-source',
+                value='input',
+                children=[
+                    dcc.Tab(label='Input measurements', value='input'),
+                    dcc.Tab(label='Inversion results', value='models'),
+                ],
+            ),
+            html.Div(id='table-overview-status', style={'color': '#6c757d', 'padding': '6px'}),
+            dash_table.DataTable(
+                id='table-overview-data',
+                data=[],
+                columns=[],
+                page_size=50,
+                sort_action='native',
+                filter_action='native',
+                fixed_rows={'headers': True},
+                style_table={'height': 'calc(100% - 48px)', 'overflowY': 'auto', 'overflowX': 'auto'},
+                style_cell={
+                    'minWidth': '100px',
+                    'width': '140px',
+                    'maxWidth': '300px',
+                    'overflow': 'hidden',
+                    'textOverflow': 'ellipsis',
+                    'textAlign': 'left',
+                    'padding': '6px',
+                },
+                style_header={'fontWeight': 'bold'},
+            ),
+        ], id=self.id, style={'height': '100%', 'display': 'flex', 'flexDirection': 'column', 'padding': '8px'})
 
-#             for i, (val, name) in enumerate(zip(self.visible_columns, col_names)):
-#                 checkbox_row.append(
-#                     html.Div([
-#                         html.Label(name, style={'fontSize': '12px', 'marginLeft': '5px'}),
-#                         dbc.Checkbox(
-#                             id={'type': f'settings-{self.id}', 'key': f'{key}-{i}'},
-#                             #value=self.visible_columns[i] if i < len(self.visible_columns) else True,
-#                             value=val,
-#                             style={'margin': '5px', 'horizontalAlign': 'center', 'verticalAlign': 'middle'}
-#                         ),
-#                     ], style={'display': 'inline-block', 'marginRight': '15px', 'verticalAlign': 'top'})
-#                 )
-            
-#             return html.Div([
-#                 html.Br(),
-#                 html.Div(checkbox_row, style={'display': 'flex', 'flexWrap': 'wrap', 'gap': '10px'}),
-#                 html.Br()])
-        
-#         special_renders.append((vis_check, vis_render))
-#         return special_renders
-    
-# class Table(Panel):
-#     def __init__(self, dataframe, **kwargs):
-#         id = kwargs.pop('id', 'table')
-#         settings = kwargs.pop('settings', TableSettings(id, visible_columns=[True for _ in dataframe.columns.tolist()]))
-#         settings.column_names = dataframe.columns.tolist()
-#         super().__init__(id=id, settings=settings, childname='children')
-#         self.dataframe = dataframe
-#         self.dashtable = None
+    def add_callbacks(self, app):
+        super().add_callbacks(app)
 
-#         for key, value in kwargs.items():
-#             setattr(self, key, value)      
+        @app.callback(
+            Output('table-overview-data', 'data'),
+            Output('table-overview-data', 'columns'),
+            Output('table-overview-status', 'children'),
+            Input('table-overview-source', 'value'),
+            Input('review_layout', 'n_clicks'),
+            Input('table-overview-refresh', 'data'),
+        )
+        def update_table_overview(source, *_):
+            from __main__ import sesh
 
-#     def render(self):
-#         # colums = 
-#         self.dashtable = dash_table.DataTable(
-#             data=self.dataframe.to_dict('records'),
-#             columns=[{"name": name, "id": name} for i,name in enumerate(self.dataframe.columns) if self.settings.visible_columns[i]],
-#             page_size=self.settings.max_rows,
-#             sort_action="native",
-#             style_table={'height': '400px', 'overflowY': 'auto'},
-#             style_cell={'textAlign': 'left', 'padding': '5px', 'fontSize': '12px'},
-#             style_header={'backgroundColor': 'rgb(230, 230, 230)', 'fontWeight': 'bold'},
-#         )
-#         # self.dashtable.SelectedCells = self.dashtable.SelectedCells if hasattr(self.dashtable, 'SelectedCells') else None
-#         return html.Div(self.dashtable, id=self.id)
-                
-#     def initialize(self):
-#         if hasattr(self, 'name'):
-#             name = self.name
-#         else:
-#             name = self.id
-#         return html.Div([
-#             self.render(),
-#             gear_maker(self.id)],
-#             style={'margin':'10px'}#,'height': 'calc(100%-30px)', 'overflow': 'hidden'} 
-#         )
+            dataframe = sesh.data if source == 'input' else sesh.models
+            if dataframe is None or dataframe.empty:
+                status = (
+                    'No input measurements have been loaded.'
+                    if source == 'input'
+                    else 'No inversion/model results are available yet.'
+                )
+                return [], [], status
+
+            columns = [{'name': str(column), 'id': str(column)} for column in dataframe.columns]
+            return dataframe.to_dict('records'), columns, ''
    
     
 import dash_bootstrap_components as dbc
