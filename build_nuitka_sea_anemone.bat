@@ -36,7 +36,7 @@ if /I "%CLEANFLAG%"=="clean" (
   for /d %%D in ("%DISTABS%\*.dist") do rd /s /q "%%~fD"
 )
 
-set "NUITKA_ARGS=--windows-console-mode=disable --output-dir="%DISTDIR%" --assume-yes-for-downloads --enable-plugin=tk-inter --module-parameter=torch-disable-jit=yes --include-package=plotly.graph_objs --include-module=plotly.graph_objs._figure --include-package=_plotly_utils --include-package=narwhals --nofollow-import-to=plotly.matplotlylib.mplexporter.tests --nofollow-import-to=IPython --nofollow-import-to=pytest"
+set "NUITKA_ARGS=--windows-console-mode=disable --output-dir="%DISTDIR%" --assume-yes-for-downloads --low-memory --enable-plugin=tk-inter --module-parameter=torch-disable-jit=yes --include-package=plotly.graph_objs --include-module=plotly.graph_objs._figure --include-package=_plotly_utils --include-package=narwhals --nofollow-import-to=plotly.matplotlylib.mplexporter.tests --nofollow-import-to=IPython --nofollow-import-to=pytest"
 
 if /I "%BUILDMODE%"=="onefile" (
   set "NUITKA_ARGS=%NUITKA_ARGS% --onefile"
