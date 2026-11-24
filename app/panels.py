@@ -960,7 +960,7 @@ class dbdtSection(Panel):
                 fixedrange=True
             ))
         fig.update_layout(
-            legend=dict(x=0.95, y=0.95,xanchor="right",yanchor="top",bgcolor="rgba(255,255,255,0.8)"),
+            legend=dict(x=1.00, y=0.95,xanchor="left",yanchor="top",bgcolor="rgba(255,255,255,0.8)"),
             modebar=dict(add=['lasso'], remove=['zoomIn', 'zoomOut', 'toImage', 'plotly-logomark', 'autoScale', 'resetScale2d'])
         )
         if x_min is not None and x_max is not None:
