@@ -1362,16 +1362,6 @@ class HotKeyReminder(Panel):
                         event.preventDefault()
                         event.stopPropagation()
                     }
-                    if (event.key == 'ArrowLeft') {
-                        document.getElementById('prev-buffer').click()
-                        event.preventDefault()
-                        event.stopPropagation()
-                    }
-                    if (event.key == 'ArrowRight') {
-                        document.getElementById('next-buffer').click()
-                        event.preventDefault()
-                        event.stopPropagation()
-                    }                    
                     if (event.key == 'b') {
                         document.getElementById('beginning-buffer').click()
                         event.preventDefault()
@@ -1390,6 +1380,16 @@ class HotKeyReminder(Panel):
                 
                 // Arrow keys without Ctrl, but only if not typing in an input
                 if (!isInputFocused) {
+                    if (event.key == '<' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                        document.getElementById('prev-buffer').click()
+                        event.preventDefault()
+                        event.stopPropagation()
+                    }
+                    if (event.key == '>' && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                        document.getElementById('next-buffer').click()
+                        event.preventDefault()
+                        event.stopPropagation()
+                    }
                     if (event.key == 'ArrowLeft') {
                         document.getElementById('highlight_prev').click()
                         event.preventDefault()
@@ -1426,13 +1426,13 @@ class HotKeyReminder(Panel):
                     dbc.ButtonGroup([
                         dbc.Button("Beginning [ctrl+b]", id='beginning-buffer', style={}),
                         html.Div(style={'width':'6px'}),
-                        dbc.Button("Previous buffer [ctrl+<-]", id='prev-buffer', style={}),
+                        dbc.Button("Previous buffer [shift + <]", id='prev-buffer', style={}),
                         html.Div(style={'width':'6px'}),
                         dbc.Button("Previous [<-]", id='highlight_prev', style={}),
                         html.Div(style={'width':'6px'}),
                         dbc.Button("Next [->]", id='highlight_next', style={}),
                         html.Div(style={'width':'6px'}),
-                        dbc.Button("Next buffer [ctrl+->]", id='next-buffer', style={}),
+                        dbc.Button("Next buffer [shift + >]", id='next-buffer', style={}),
                         html.Div(style={'width':'12px'}),
                         html.Div(
                             [
