@@ -1426,6 +1426,18 @@ class HotKeyReminder(Panel):
                     html.Div(style={'width':'6px'}),
                     dbc.Button("Enable  [ctrl+e]", id='enableButton'),
                     ]),
+                    dbc.Button("Export to Word", id='exportWordButton', style={"display": "none"}),
+                    html.Small(
+                        id="export-exclusion-status",
+                        children="No sites excluded from Word export.",
+                        style={
+                            "display": "none",
+                            "maxWidth": "280px",
+                            "overflow": "hidden",
+                            "textOverflow": "ellipsis",
+                            "whiteSpace": "nowrap",
+                        },
+                    ),
                     dbc.ButtonGroup([
                         dbc.Button("Beginning [ctrl+b]", id='beginning-buffer', style={}),
                         html.Div(style={'width':'6px'}),
@@ -1477,8 +1489,9 @@ class HotKeyReminder(Panel):
                     ]),
                     html.Div(style={'width':'30px'}),
                     dbc.Tooltip("Save the current session to the default location or select a folder", target='saveButton', placement='top'),
-                    dbc.Tooltip("Used to disable noisy data or data which cannot be fitted in inversions.", target='disableButton', placement='top'),
-                    dbc.Tooltip("Used to enable previously disabled data.", target='enableButton', placement='top'),
+                    dbc.Tooltip("In Process, disable selected data for analysis. In Interpret, exclude selected sites only from the Word export.", target='disableButton', placement='top'),
+                    dbc.Tooltip("In Process, enable selected data for analysis. In Interpret, include selected sites in the Word export.", target='enableButton', placement='top'),
+                    dbc.Tooltip("Download a Word report with the current interpretation, settings, and included model data.", target='exportWordButton', placement='top'),
                     dbc.Tooltip("Go to the first collected data site.", target='beginning-buffer', placement='top'),
                     dbc.Tooltip("Go to the previous buffer of sites.", target='prev-buffer', placement='top'),
                     dbc.Tooltip("Go to the next buffer of sites.", target='next-buffer', placement='top'),
@@ -1486,6 +1499,7 @@ class HotKeyReminder(Panel):
                     dbc.Tooltip("Go to next", target='highlight_next', placement='top'),
                 ], style={'padding': '10px', 'display': 'flex', 'alignItems': 'center', 'justifyContent': 'space-between'}
                 ),
+                dcc.Download(id="interpretWordDownload"),
                 dcc.Location(id='url_button'),
             ]
         , id='processing_buttons')
@@ -1549,6 +1563,8 @@ class HotKeyReminder(Panel):
             Output("buffer-progress", "style"),
             Output("buffer-progress-text", "style"),
             Output('buffer-length-label', 'style'),
+            Output('exportWordButton', 'style'),
+            Output('export-exclusion-status', 'style'),
 
             Input("interpret_layout", "color"),
             prevent_initial_call=True
@@ -1557,6 +1573,8 @@ class HotKeyReminder(Panel):
 
             hidden = {"opacity": 0}
             shown = {"opacity": 1}
+            export_hidden = {"display": "none"}
+            export_shown = {"display": "inline-block"}
 
 
             if color != "primary":
@@ -1572,10 +1590,12 @@ class HotKeyReminder(Panel):
                 shown,  # buffer-progress
                 shown,  # buffer-progress-text
                 shown,  # buffer-length-label
+                export_hidden,
+                export_hidden,
             )
             return (
-                "Delete",
-                "Export",
+                "Exclude from Word export [ctrl+d]",
+                "Include in Word export [ctrl+e]",
                 hidden,  # beginning-buffer
                 hidden,  # prev-buffer
                 hidden,  # next-buffer
@@ -1585,4 +1605,73 @@ class HotKeyReminder(Panel):
                 hidden,  # buffer-progress
                 hidden,  # buffer-progress-text
                 hidden,  # buffer-length-label
+                {"display": "inline-block", "fontSize": "12px"},
+                export_shown,
             )
+
+        @app.callback(
+            Output("interpret-export-excluded-sites", "data"),
+            Output("export-exclusion-status", "children"),
+            Input("disableButton", "n_clicks"),
+            Input("enableButton", "n_clicks"),
+            State("interpret-export-excluded-sites", "data"),
+            State("interpret_layout", "color"),
+            prevent_initial_call=True,
+        )
+        def update_interpret_export_exclusions(
+            disable_clicks, enable_clicks, excluded_sites, interpret_color
+        ):
+            from __main__ import buf
+            from report_export import update_export_exclusions
+
+            if interpret_color != "primary":
+                raise PreventUpdate
+            selected_sites = list(buf.selected)
+            if not selected_sites:
+                return no_update, "Select one or more sites on the map or model section first."
+
+            exclude = ctx.triggered_id == "disableButton"
+            excluded_sites = update_export_exclusions(
+                excluded_sites, selected_sites, exclude
+            )
+            if excluded_sites:
+                sites_text = ", ".join(str(site) for site in excluded_sites)
+                status = (
+                    f"{len(excluded_sites)} site(s) excluded from Word export: "
+                    f"{sites_text}"
+                )
+            else:
+                status = "No sites excluded from Word export."
+            return excluded_sites, status
+
+        @app.callback(
+            Output("interpret-export-excluded-sites", "data", allow_duplicate=True),
+            Output("export-exclusion-status", "children", allow_duplicate=True),
+            Input("upload-data", "contents"),
+            Input("url", "hash"),
+            prevent_initial_call=True,
+        )
+        def reset_interpret_export_exclusions(upload_contents, url_hash):
+            if ctx.triggered_id == "upload-data" and upload_contents is not None:
+                return [], "No sites excluded from Word export."
+            if ctx.triggered_id == "url" and url_hash and url_hash.startswith("#load"):
+                return [], "No sites excluded from Word export."
+            raise PreventUpdate
+
+        @app.callback(
+            Output("interpretWordDownload", "data"),
+            Input("exportWordButton", "n_clicks"),
+            State("interpret-export-excluded-sites", "data"),
+            State("interpret_layout", "color"),
+            prevent_initial_call=True,
+        )
+        def export_interpretation_report(_, excluded_sites, interpret_color):
+            from __main__ import m1, mod2, sesh
+            from report_export import build_interpretation_docx, report_filename
+
+            if interpret_color != "primary":
+                raise PreventUpdate
+            report = build_interpretation_docx(
+                sesh, excluded_sites, m1.settings, mod2.settings
+            )
+            return dcc.send_bytes(report, report_filename(sesh))

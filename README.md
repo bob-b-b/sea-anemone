@@ -39,6 +39,8 @@ To launch the application, you can either:
 
 To stop the background server started by `run_app.bat`, run `stop_app.bat` or use the **Stop Anemone** Start Menu shortcut.
 
+On the Interpret tab, select one or more sites on the map or model section and use **Exclude from Word export** or **Include in Word export**. These controls affect only the generated report, not processing or saved session data. **Export to Word** downloads a report with a site summary, static site/model plots, interpretation settings, and included model-layer data.
+
 ## Requirements
 Ensure you have the following before running the application:
 

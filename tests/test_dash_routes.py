@@ -27,6 +27,18 @@ def test_dash_root_and_layout_routes(monkeypatch):
     dash_app = importlib.import_module("app.app")
     client = dash_app.app.server.test_client()
 
+    ui_callback_entry = next(
+        callback
+        for callback in dash_app.app.callback_map.values()
+        if "callback" in callback
+        and getattr(callback["callback"], "__wrapped__", None)
+        and callback["callback"].__wrapped__.__name__ == "interpret_mode_ui"
+    )
+    ui_callback = ui_callback_entry["callback"].__wrapped__
+    callback_outputs = ui_callback_entry["output"]
+    assert len(ui_callback("secondary")) == len(callback_outputs)
+    assert len(ui_callback("primary")) == len(callback_outputs)
+
     page = client.get("/")
     layout = client.get("/_dash-layout")
 

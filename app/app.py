@@ -94,6 +94,7 @@ app.layout = html.Div([
     dcc.Store(id="starting-model", data={"rho": 10.0,"depth": np.cumsum(np.logspace(0, 1.3, 31)).tolist()}),
     dcc.Store(id='starting-model-selected',data=[]),
     dcc.Store(id='data-buffer',data={"length": 50, "start_site":0}),
+    dcc.Store(id='interpret-export-excluded-sites', data=[], storage_type='memory'),
     dcc.Store(id='table-overview-refresh', data=None),
     dcc.Store(id='map-hover-site', data=None),
     html.Div([dbc.Toast(
@@ -602,6 +603,7 @@ def upload_file(contents):
 
         # except Exception as e:
         #     return (html.Div("Upload failed."),no_update,no_update,no_update,no_update,no_update,no_update,build_data_summary(),True,f"Upload failed: Only one geometry is supported at a time",True,True,no_update,no_update,no_update,no_update,no_update,{'display': 'block'}, {'display': 'block'})
+    buf.reset()
     # sesh.site = sesh.overview
     sesh.data['include'] = temframe.include_mask(sesh.data)
     sesh.models          = None
