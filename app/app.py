@@ -565,7 +565,18 @@ def reset_polling(n):
      Output('invert_layout', 'disabled', allow_duplicate=True),
     ],
     Input('upload-data', 'contents'),
-    running=[(Output("upload-data", "disabled"), True, False)],
+     running=[
+         (Output("upload-data", "disabled"), True, False),
+         (Output("data-loading-overlay", "style"), {
+             'position': 'absolute', 'inset': 0, 'zIndex': 2000, 'display': 'flex',
+             'alignItems': 'center', 'justifyContent': 'center', 'flexDirection': 'column',
+             'backgroundColor': 'rgba(255, 255, 255, 0.45)',
+         }, {
+             'position': 'absolute', 'inset': 0, 'zIndex': 2000, 'display': 'none',
+             'alignItems': 'center', 'justifyContent': 'center', 'flexDirection': 'column',
+             'backgroundColor': 'rgba(255, 255, 255, 0.45)',
+         }),
+     ],
     prevent_initial_call=True
 )
 def upload_file(contents):

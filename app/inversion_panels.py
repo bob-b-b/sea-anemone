@@ -245,7 +245,7 @@ class MultiInversion(Panel):
                              html.Div(style={'height':'30px'}),
                              dbc.Button("Starting model", id='reset_inv_model_button', color='secondary', style={'width':'100%'}),
                              html.Div(style={'height':'40px'}),
-                             html.Div("Elapsed time: 0:00",id="inv-timer",style={"fontWeight": "bold","whiteSpace":"pre-line"}),] , width=2),
+                             html.Div("Elapsed time: 0:00",id="inv-timer",style={"fontWeight": "bold","whiteSpace":"pre-line","position":"relative","zIndex":2001,"backgroundColor":"rgba(255,255,255,0.9)","padding":"4px"}),] , width=2),
                             dbc.Tooltip('Constraint value of (2.0). Inversion will allow a lot of vertical variation in resistivity', target='vc_loose_button'),
                             dbc.Tooltip('Constraint value of (0.8). Inversion will allow a standard vertical variation in resistivity', target='vc_medium_button'),
                             dbc.Tooltip('Constraint value of (0.2). Inversion will be very smooth vertically and have a higher misfit.', target='vc_tight_button'),
@@ -260,7 +260,21 @@ class MultiInversion(Panel):
                 #             id="inv-timer",
                 #             style={"fontWeight": "bold"}
                 #         ),
-                 gear_maker(self.id)], style={'height': '100%', 'overflow': 'hidden'},
+                 gear_maker(self.id),
+                 html.Div([
+                     html.Div(className='spinner-border text-primary', role='status'),
+                     html.Div('Inversion in progress...', style={'marginTop': '10px', 'fontWeight': '600'}),
+                 ], id='inversion-loading-overlay', style={
+                     'position': 'absolute',
+                     'inset': 0,
+                     'zIndex': 2000,
+                     'display': 'none',
+                     'alignItems': 'center',
+                     'justifyContent': 'center',
+                     'flexDirection': 'column',
+                     'backgroundColor': 'rgba(255, 255, 255, 0.2)',
+                     'pointerEvents': 'none',
+                 })], style={'height': '100%', 'overflow': 'hidden', 'position': 'relative'},
                   )
         return init                   
     
@@ -370,7 +384,16 @@ class MultiInversion(Panel):
             (Output("hc_loose_button", "disabled"), True, False),
             (Output("hc_medium_button", "disabled"), True, False),
             (Output("hc_tight_button", "disabled"), True, False),
-            (Output('reset_inv_model_button', "disabled"), True, False)],
+            (Output('reset_inv_model_button', "disabled"), True, False),
+            (Output('inversion-loading-overlay', 'style'), {
+                'position': 'absolute', 'inset': 0, 'zIndex': 2000, 'display': 'flex',
+                'alignItems': 'center', 'justifyContent': 'center', 'flexDirection': 'column',
+                'backgroundColor': 'rgba(255, 255, 255, 0.2)', 'pointerEvents': 'none',
+            }, {
+                'position': 'absolute', 'inset': 0, 'zIndex': 2000, 'display': 'none',
+                'alignItems': 'center', 'justifyContent': 'center', 'flexDirection': 'column',
+                'backgroundColor': 'rgba(255, 255, 255, 0.2)', 'pointerEvents': 'none',
+            })],
             prevent_initial_call=True
         )
         def launch_inversion(n_clicks, current_review_clicks, vc_level,hc_level,starting_model):

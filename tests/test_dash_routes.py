@@ -37,3 +37,6 @@ def test_dash_root_and_layout_routes(monkeypatch):
     assert b"table-overview-source" in layout.data
     assert b"Input measurements" in layout.data
     assert b"Inversion results" in layout.data
+    assert b"data-loading-overlay" in layout.data
+    assert b"inversion-loading-overlay" in layout.data
+    assert b"inv-timer" in layout.data

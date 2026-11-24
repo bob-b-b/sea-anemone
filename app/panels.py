@@ -1258,8 +1258,21 @@ class Upload(Panel):
             ]),
             dcc.Markdown("---"),
             dcc.Markdown(session_text),
-            gear_maker(self.id)],
-            style={'margin':'10px'}#,'height': 'calc(100%-30px)', 'overflow': 'hidden'} 
+            gear_maker(self.id),
+            html.Div([
+                html.Div(className='spinner-border text-primary', role='status'),
+                html.Div('Loading data...', style={'marginTop': '10px', 'fontWeight': '600'}),
+            ], id='data-loading-overlay', style={
+                'position': 'absolute',
+                'inset': 0,
+                'zIndex': 2000,
+                'display': 'none',
+                'alignItems': 'center',
+                'justifyContent': 'center',
+                'flexDirection': 'column',
+                'backgroundColor': 'rgba(255, 255, 255, 0.45)',
+            })],
+            style={'margin': '10px', 'position': 'relative', 'height': '100%'}
         )
 
 
