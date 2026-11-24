@@ -372,7 +372,7 @@ class ModelSection(Panel):
             value_name='depth'
         ).sort_values([x_axis, 'layer', 'depth'])
         fig.update_layout(
-            margin=dict(l=55, r=120, t=10, b=50, autoexpand=False),
+            margin=dict(l=55, r=200, t=10, b=50, autoexpand=False),
             yaxis2=dict(title='Misfit', overlaying='y', side='right', showgrid=False)
         )
         # ---- Misfit only for buffered sites ----
@@ -409,7 +409,7 @@ class ModelSection(Panel):
             fig.add_trace(misfit_trace)
 
             fig.update_layout(
-                legend=dict(x=0.89, y=0.2,xanchor="left",yanchor="top",bgcolor="rgba(255,255,255,0.8)")
+                legend=dict(x=1.05, y=0.2,xanchor="left",yanchor="top",bgcolor="rgba(255,255,255,0.8)")
                 )
 
             fig.update_layout(yaxis2=dict(title=dict(text="Misfit",standoff=10),overlaying="y",side="right",showgrid=False))
