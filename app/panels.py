@@ -1242,7 +1242,14 @@ class Upload(Panel):
                 session_text += f"- [{cfolder}](#load=\"{cfolder.replace(' ', '%20')}\")\n"
         session_text += "- [open session](#open_session)\n"
         return html.Div([
-            dcc.Markdown("# Welcome to sea anemone", style={'textAlign': 'center'}),       
+            html.Div([
+                html.H1("Welcome to sea anemone", style={'textAlign': 'center', 'margin': 0}),
+                html.Img(
+                    src='/assets/logo.png',
+                    alt='HydroGeophysics Group, Aarhus University',
+                    style={'position': 'absolute', 'right': 0, 'top': '50%', 'transform': 'translateY(-50%)', 'width': '200px', 'maxWidth': '20%', 'height': 'auto'}
+                )
+            ], style={'position': 'relative', 'display': 'flex', 'justifyContent': 'center', 'alignItems': 'center', 'minHeight': '70px'}),
             dcc.Markdown("### Upload your data to get started."),
             self.render(),
             html.Div([
