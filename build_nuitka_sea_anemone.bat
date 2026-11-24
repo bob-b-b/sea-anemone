@@ -4,7 +4,8 @@ setlocal enableextensions enabledelayedexpansion
 rem === Usage ===
 rem build_nuitka_sea_anemone.bat [AppName] [IconPath] [OutputDir] [BuildMode] [CleanFlag]
 rem Example:
-rem build_nuitka_sea_anemone.bat SeaAnemone "" dist standalone clean
+rem Use - for IconPath when no icon is needed:
+rem build_nuitka_sea_anemone.bat SeaAnemone - dist standalone clean
 
 set "APPNAME=%~1"
 set "ICON=%~2"
@@ -13,6 +14,7 @@ set "BUILDMODE=%~4"
 set "CLEANFLAG=%~5"
 
 if "%APPNAME%"=="" set "APPNAME=SeaAnemone"
+if "%ICON%"=="-" set "ICON="
 if "%DISTDIR%"=="" set "DISTDIR=dist"
 if "%BUILDMODE%"=="" set "BUILDMODE=standalone"
 
@@ -34,7 +36,7 @@ if /I "%CLEANFLAG%"=="clean" (
   for /d %%D in ("%DISTABS%\*.dist") do rd /s /q "%%~fD"
 )
 
-set "NUITKA_ARGS=--windows-console-mode=disable --output-dir=%DISTDIR% --assume-yes-for-downloads --enable-plugin=tk-inter --module-parameter=torch-disable-jit=yes --include-package=plotly.graph_objs --include-module=plotly.graph_objs._figure --include-package=_plotly_utils --include-package=narwhals --nofollow-import-to=plotly.matplotlylib.mplexporter.tests --nofollow-import-to=IPython --nofollow-import-to=pytest"
+set "NUITKA_ARGS=--windows-console-mode=disable --output-dir="%DISTDIR%" --assume-yes-for-downloads --enable-plugin=tk-inter --module-parameter=torch-disable-jit=yes --include-package=plotly.graph_objs --include-module=plotly.graph_objs._figure --include-package=_plotly_utils --include-package=narwhals --nofollow-import-to=plotly.matplotlylib.mplexporter.tests --nofollow-import-to=IPython --nofollow-import-to=pytest"
 
 if /I "%BUILDMODE%"=="onefile" (
   set "NUITKA_ARGS=%NUITKA_ARGS% --onefile"
@@ -44,18 +46,18 @@ if /I "%BUILDMODE%"=="onefile" (
 
 if not "%ICON%"=="" (
   if exist "%ICON%" (
-    set "NUITKA_ARGS=%NUITKA_ARGS% --windows-icon-from-ico=%ICON%"
+    set "NUITKA_ARGS=%NUITKA_ARGS% --windows-icon-from-ico="%ICON%""
   ) else (
     echo [WARN] Icon file not found, skip icon: %ICON%
   )
 )
 
-if exist "%ROOT%\app\assets" set "NUITKA_ARGS=%NUITKA_ARGS% --include-data-dir=%ROOT%\app\assets=assets"
-if exist "%ROOT%\app\recent_projects.txt" set "NUITKA_ARGS=%NUITKA_ARGS% --include-data-file=%ROOT%\app\recent_projects.txt=app/recent_projects.txt"
-if exist "%ROOT%\docs\build\html" set "NUITKA_ARGS=%NUITKA_ARGS% --include-data-dir=%ROOT%\docs\build\html=docs/build/html"
-if exist "%ROOT%\cache\dem" set "NUITKA_ARGS=%NUITKA_ARGS% --include-data-dir=%ROOT%\cache\dem=cache/dem"
+if exist "%ROOT%\app\assets" set "NUITKA_ARGS=%NUITKA_ARGS% --include-data-dir="%ROOT%\app\assets=assets""
+if exist "%ROOT%\app\recent_projects.txt" set "NUITKA_ARGS=%NUITKA_ARGS% --include-data-file="%ROOT%\app\recent_projects.txt=app/recent_projects.txt""
+if exist "%ROOT%\docs\build\html" set "NUITKA_ARGS=%NUITKA_ARGS% --include-data-dir="%ROOT%\docs\build\html=docs/build/html""
+if exist "%ROOT%\cache\dem" set "NUITKA_ARGS=%NUITKA_ARGS% --include-data-dir="%ROOT%\cache\dem=cache/dem""
 
-set "NUITKA_ARGS=%NUITKA_ARGS% --output-filename=%APPNAME%.exe %ENTRY%"
+set "NUITKA_ARGS=%NUITKA_ARGS% --output-filename=%APPNAME%.exe "%ENTRY%""
 
 echo.
 echo [INFO] Build mode : %BUILDMODE%
