@@ -1579,8 +1579,8 @@ class HotKeyReminder(Panel):
                 hidden,  # beginning-buffer
                 hidden,  # prev-buffer
                 hidden,  # next-buffer
-                "Previous profile",  # highlight_prev
-                "Next profile",  # highlight_next
+                "Previous sounding",  # highlight_prev
+                "Next sounding",  # highlight_next
                 hidden,  # buffer-length-input
                 hidden,  # buffer-progress
                 hidden,  # buffer-progress-text
